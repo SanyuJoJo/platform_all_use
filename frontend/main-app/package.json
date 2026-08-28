@@ -1,0 +1,21 @@
+{
+  "name": "main-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite --port 3000 --mode development",
+    "build": "vue-tsc --noEmit && vite build --mode production",
+    "preview": "vite preview --port 3000"
+  },
+  "dependencies": {
+    "vue": "^3.4.15",
+    "vue-router": "^4.2.5",
+    "pinia": "^2.1.7",
+    "axios": "^1.6.5",
+    "qiankun": "^2.10.15",
+    "naive-ui": "^2.35.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.4"
+  }
+}
