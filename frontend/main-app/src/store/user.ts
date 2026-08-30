@@ -1,29 +1,56 @@
-// main-app/src/store/user.ts
 import { defineStore } from 'pinia';
-import { login, getUserInfo } from '@/api/auth';
-import type { UserInfo, LoginParams } from '@/api/types';
+
+export interface User {
+  id: number;
+  username: string;
+  nickname: string;
+  email?: string;
+  avatar?: string;
+  status: number;
+  roles: string[];
+  permissions: string[];
+}
+
 export const useUserStore = defineStore('user', {
-  state: () => ({
-    token: localStorage.getItem('token') || '',
-    userInfo: null as UserInfo | null,
-    roles: [] as string[],
-  }),
+  state: () => {
+    // 从 localStorage 恢复状态
+    const token = localStorage.getItem('token') || '';
+    const userStr = localStorage.getItem('user');
+    let user: User | null = null;
+    let permissions: string[] = [];
+    if (userStr) {
+      try {
+        user = JSON.parse(userStr);
+        permissions = user.permissions || [];
+      } catch {}
+    }
+    return {
+      token,
+      user,
+      permissions,
+    };
+  },
   actions: {
-    async login(params: LoginParams) {
-      const res = await login(params);
-      this.token = res.token;
-      localStorage.setItem('token', res.token);
-      await this.fetchUserInfo();
+    setToken(newToken: string) {
+      this.token = newToken;
+      localStorage.setItem('token', newToken);
     },
-    async fetchUserInfo() {
-      const res = await getUserInfo();
-      this.userInfo = res;
-      this.roles = res.roles;
+    setUser(userInfo: User) {
+      this.user = userInfo;
+      this.permissions = userInfo.permissions || [];
+      localStorage.setItem('user', JSON.stringify(userInfo));
+      localStorage.setItem('permissions', JSON.stringify(userInfo.permissions || []));
     },
     logout() {
       this.token = '';
-      this.userInfo = null;
+      this.user = null;
+      this.permissions = [];
       localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      localStorage.removeItem('permissions');
     },
+  },
+  getters: {
+    isLoggedIn: (state) => !!state.token,
   },
 });

@@ -1,44 +1,42 @@
 {
-  "name": "frontend-workspace",
-  "version": "1.0.0",
+  "name": "platform-frontend",
   "private": true,
+  "version": "1.0.0",
   "scripts": {
-    "dev:all": "concurrently \"pnpm run dev:main\" \"pnpm run dev:subapp\"",
     "dev:main": "pnpm --filter main-app dev",
-    "dev:subapp": "pnpm --filter './sub-apps/*' dev",
-    "build:all": "pnpm run build:main && pnpm run build:subapps",
+    "dev:subapp": "pnpm --filter \"./sub-apps/*\" --filter \"!./sub-apps/_template\" dev",
+    "dev:all": "concurrently \"pnpm dev:main\" \"pnpm dev:subapp\"",
     "build:main": "pnpm --filter main-app build",
-    "build:subapps": "pnpm --filter './sub-apps/*' build",
-    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix",
+    "build:all": "concurrently \"pnpm --filter main-app build\" \"pnpm --filter \"./sub-apps/*\" --filter \"!./sub-apps/_template\" build\"",
+    "lint": "eslint . --ext .vue,.ts,.tsx --fix",
     "format": "prettier --write .",
-    "prepare": "cd .. && husky install frontend/.husky",
-    "test": "vitest run"
+    "test": "pnpm --filter main-app test",
+    "prepare": "cd .. && husky install front/.husky"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
-    "@typescript-eslint/eslint-plugin": "^6.21.0",
-    "@typescript-eslint/parser": "^6.21.0",
-    "@vitejs/plugin-vue": "^5.0.4",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vue/eslint-config-prettier": "^9.0.0",
+    "@vue/eslint-config-typescript": "^13.0.0",
     "concurrently": "^8.2.2",
     "eslint": "^8.56.0",
-    "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-vue": "^9.21.1",
+    "eslint-plugin-vue": "^9.20.0",
     "husky": "^8.0.3",
     "lint-staged": "^15.2.0",
-    "prettier": "^3.2.5",
-    "typescript": "^5.3.3",
-    "vite": "^5.1.0",
-    "vitest": "^1.2.0",
-    "vue-tsc": "^1.8.27"
-  },
-  "lint-staged": {
-    "*.{vue,ts,js}": [
-      "eslint --fix",
-      "prettier --write"
-    ]
+    "prettier": "^3.2.4",
+    "typescript": "^5.3.3"
   },
   "engines": {
-    "node": ">=18.18.0",
-    "pnpm": ">=8.0.0"
+    "node": ">=18.18.0"
+  },
+  "packageManager": "pnpm@8.15.4",
+  "lint-staged": {
+    "*.{vue,ts,tsx}": ["eslint --fix", "prettier --write"]
+  },
+  "pnpm": {
+    "overrides": {
+      "undici": "5.28.4"
+    }
   }
 }

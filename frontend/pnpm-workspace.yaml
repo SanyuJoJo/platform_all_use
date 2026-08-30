@@ -1,4 +1,0 @@
-packages:
-  - 'main-app'
-  - 'sub-apps/*'
-  - 'shared'
