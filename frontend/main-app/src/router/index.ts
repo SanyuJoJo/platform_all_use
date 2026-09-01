@@ -1,9 +1,7 @@
-import { createRouter, createWebHistory } from 'vue-router';
-import type { RouteRecordRaw } from 'vue-router';
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import { useUserStore } from '@/store/user';
 import { useMenuStore } from '@/store/menu';
-import { SUB_APP_PREFIXES } from '@/micro-frontend/constants';
-
+import { useModuleStore } from '@/store/module';
 const routes: RouteRecordRaw[] = [
   {
     path: '/login',
@@ -11,6 +9,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/login/index.vue'),
     meta: { ignoreAuth: true },
   },
+  {
+  path: '/dashboard',
+  name: 'Dashboard',
+  component: () => import('@/views/dashboard/index.vue'),
+  meta: { title: '仪表盘', permission: 'dashboard:view' }
+ },
   {
     path: '/',
     component: () => import('@/layouts/default/index.vue'),
@@ -20,7 +24,7 @@ const routes: RouteRecordRaw[] = [
         path: 'dashboard',
         name: 'Dashboard',
         component: () => import('@/views/dashboard/index.vue'),
-        meta: { title: '仪表盘', icon: 'Dashboard', permission: 'dashboard:view', isMicroApp: false },
+        meta: { title: '仪表盘', icon: 'Grid', permission: 'dashboard:view' },
       },
     ],
   },
@@ -44,37 +48,55 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore();
   const menuStore = useMenuStore();
-
-  // 直接从 localStorage 获取 token，作为后备
-  const token = localStorage.getItem('token') || userStore.token || '';
-
-  console.log('🛡️ 路由守卫检查:', to.path, '| token:', token);
-  console.log('🛡️ userStore.token:', userStore.token);
-  console.log('🛡️ localStorage token:', localStorage.getItem('token'));
+  const moduleStore = useModuleStore();
+  // 1. 忽略认证的路由直接放行
   if (to.meta.ignoreAuth) {
-    console.log('🛡️ 白名单，放行');
     next();
     return;
   }
-  if (!userStore.token) {
-    console.log('🛡️ 无 token，跳转登录');
+  // 2. 检查登录状态
+  const token = userStore.token || localStorage.getItem('token');
+  if (!token) {
     next({ path: '/login', query: { redirect: to.fullPath } });
     return;
   }
-  const isSubApp = SUB_APP_PREFIXES.some(prefix => to.path.startsWith(prefix));
-  to.meta.isMicroApp = isSubApp;
-  if (!isSubApp && to.meta.permission && !userStore.permissions.includes(to.meta.permission as string)) {
-    next('/403');
-    return;
+  // 确保 store 中的 token 被同步
+  if (!userStore.token && token) {
+    userStore.setToken(token);
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        userStore.setUser(user);
+      } catch (e) {
+        // 忽略
+      }
+    }
   }
-  if (!menuStore.menuLoaded && userStore.token) {
+  // 3. 动态判断当前路由是否为子应用路径
+  // 先确保模块列表已加载
+  if (!moduleStore.loaded) {
+    await moduleStore.fetchModules().catch(() => {});
+  }
+  const activeIds = moduleStore.getActiveModuleIds();
+  const isSubApp = activeIds.some((id) => to.path.startsWith(`/${id}`));
+  to.meta.isMicroApp = isSubApp;
+  // 4. 对于非子应用路由，校验权限
+  if (!isSubApp && to.meta.permission) {
+    const hasPerm = userStore.permissions?.includes(to.meta.permission as string) ?? false;
+    if (!hasPerm) {
+      next('/403');
+      return;
+    }
+  }
+  // 5. 首次加载或菜单未构建时，构建菜单
+  if (!menuStore.menuLoaded) {
     try {
       await menuStore.buildMenus();
     } catch (error) {
-      console.error('[Menu] Build menus failed:', error);
+      console.error('[Router] 构建菜单失败:', error);
     }
   }
-  console.log('🛡️ 已认证，放行');
   next();
 });
 export default router;

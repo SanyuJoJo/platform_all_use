@@ -11,10 +11,16 @@
     </n-layout-header>
     <n-layout has-sider>
       <n-layout-sider bordered style="width:240px;">
-        <n-menu :options="menuStore.menuTree" @select="handleMenuSelect" />
+        <n-menu
+          :options="menuStore.menuTree"
+	  @update:value="handleMenuSelect"
+          :value="activeMenuKey"
+        />
       </n-layout-sider>
       <n-layout-content style="padding:20px;">
+        <!-- qiankun 子应用挂载点 -->
         <div id="subapp-container" style="height:100%;" />
+        <!-- 主应用路由视图（非子应用路由） -->
         <router-view v-if="!$route.meta.isMicroApp" />
       </n-layout-content>
     </n-layout>
@@ -22,7 +28,8 @@
 </template>
 
 <script setup lang="ts">
-import { useRouter } from 'vue-router';
+import { computed } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import {
   NLayout,
   NLayoutHeader,
@@ -35,8 +42,11 @@ import { useUserStore } from '@/store/user';
 import { useMenuStore } from '@/store/menu';
 
 const router = useRouter();
+const route = useRoute();
 const userStore = useUserStore();
 const menuStore = useMenuStore();
+
+const activeMenuKey = computed(() => route.name || '');
 
 function handleMenuSelect(key: string, item: any) {
   if (item.path) {
@@ -49,3 +59,9 @@ function handleLogout() {
   router.push('/login');
 }
 </script>
+
+<style scoped>
+#subapp-container {
+  min-height: 300px;
+}
+</style>

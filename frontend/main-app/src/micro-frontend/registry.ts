@@ -1,48 +1,84 @@
-import { registerMicroApps, start, initGlobalState, type MicroAppStateActions } from 'qiankun';
+import {
+  registerMicroApps,
+  start,
+  initGlobalState,
+  type MicroAppStateActions,
+} from 'qiankun';
 import type { Router } from 'vue-router';
-import { SUB_APP_PREFIXES } from './constants';
+import { message } from '@/utils/naive';
+import type { Module } from '@/types/module';
+
 let actions: MicroAppStateActions | null = null;
+let isRegistered = false; // 防止重复注册
+
 /**
- * 初始化 qiankun 微前端
- *
- * 生产环境建议从后端动态获取已安装且启用的模块列表，示例实现：
- * 
- * import { getActiveModules } from '@/api/module';
- * 
- * async function registerDynamicModules(router: Router) {
- *   const modules = await getActiveModules();
- *   const apps = modules.map(mod => ({
- *     name: mod.id,
- *     entry: mod.entry_frontend,
- *     container: '#subapp-container',
- *     activeRule: `/${mod.id}`,
- *     props: { mainRouter: router },
- *   }));
- *   registerMicroApps(apps);
- * }
+ * 动态注册子应用
+ * @param modules - 模块列表（需包含活跃模块）
+ * @param router - 主应用路由实例
  */
-export function setupQiankun(router: Router) {
-  // 示例：静态列表（开发测试用）
-  const modules = [
-    {
-      name: 'auth',
-      entry: import.meta.env.VITE_SUBAPP_ENTRY_AUTH || '//localhost:3001/',
+export function registerModules(modules: Module[], router: Router) {
+  if (isRegistered) {
+    console.warn('[qiankun] 子应用已注册，跳过重复注册');
+    return;
+  }
+
+  if (!modules || modules.length === 0) {
+    console.warn('[qiankun] 没有可用的子应用模块');
+    return;
+  }
+
+  const activeModules = modules.filter((m) => m.status === 'active');
+  if (activeModules.length === 0) {
+    console.warn('[qiankun] 没有激活的子应用');
+    return;
+  }
+
+  const apps = activeModules.map((module) => {
+    let entry = module.entry_frontend;
+    if (!entry) {
+      const prefix = import.meta.env.VITE_DEFAULT_ENTRY_PREFIX || '/sub-apps/';
+      entry = `${prefix}${module.id}/`;
+      console.warn(`[qiankun] 模块 ${module.id} 未指定 entry，使用备选 ${entry}`);
+    }
+    return {
+      name: module.id,
+      entry,
       container: '#subapp-container',
-      activeRule: '/auth',
-      props: { mainRouter: router },
-    },
-    // 更多子应用可在此添加，或从后端动态获取
-  ];
-  registerMicroApps(modules, {
-    beforeLoad: (app) => console.log(`[qiankun] before load ${app.name}`),
-    afterMount: (app) => console.log(`[qiankun] after mount ${app.name}`),
+      activeRule: `/${module.id}`,
+      props: {
+        mainRouter: router,
+      },
+    };
   });
+
+  registerMicroApps(apps, {
+    beforeLoad: (app) => {
+      console.log(`[qiankun] 开始加载子应用 ${app.name}`);
+    },
+    afterMount: (app) => {
+      console.log(`[qiankun] 子应用 ${app.name} 加载完成`);
+    },
+    error: (err) => {
+      console.error('[qiankun] 子应用加载失败:', err);
+      message.error(`子应用加载失败，请检查网络或联系管理员`);
+    },
+  });
+
+  start({
+    prefetch: true,
+    sandbox: {
+      experimentalStyleIsolation: true,
+    },
+  });
+
   actions = initGlobalState({ user: null });
   actions.onGlobalStateChange((state, prev) => {
-    console.log('global state changed', state, prev);
+    console.log('[qiankun] 全局状态变更:', state, prev);
   });
-  start({ prefetch: true });
+
+  isRegistered = true;
 }
+
 export function getGlobalActions() {
   return actions;
 }

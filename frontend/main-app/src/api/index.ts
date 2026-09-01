@@ -1,9 +1,15 @@
 import axios from 'axios';
 import { useUserStore } from '@/store/user';
+
+// 从环境变量获取后端基础地址，并拼接 API 前缀
+const baseURL = (import.meta.env.VITE_API_BASE_URL || '') + '/api/v1';
+
 const instance = axios.create({
-  baseURL: '/api/v1',
+  baseURL,
   timeout: 10000,
+  withCredentials: true,
 });
+
 instance.interceptors.request.use((config) => {
   const userStore = useUserStore();
   if (userStore.token) {
@@ -11,6 +17,7 @@ instance.interceptors.request.use((config) => {
   }
   return config;
 });
+
 instance.interceptors.response.use(
   (res) => {
     const { code, message, data } = res.data;
@@ -35,4 +42,5 @@ instance.interceptors.response.use(
     return Promise.reject({ code: -1, message: '网络异常' });
   }
 );
+
 export default instance;

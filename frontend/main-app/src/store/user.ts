@@ -1,5 +1,4 @@
 import { defineStore } from 'pinia';
-
 export interface User {
   id: number;
   username: string;
@@ -10,19 +9,19 @@ export interface User {
   roles: string[];
   permissions: string[];
 }
-
 export const useUserStore = defineStore('user', {
   state: () => {
-    // 从 localStorage 恢复状态
     const token = localStorage.getItem('token') || '';
-    const userStr = localStorage.getItem('user');
     let user: User | null = null;
     let permissions: string[] = [];
+    const userStr = localStorage.getItem('user');
     if (userStr) {
       try {
         user = JSON.parse(userStr);
         permissions = user.permissions || [];
-      } catch {}
+      } catch {
+        // 忽略
+      }
     }
     return {
       token,
