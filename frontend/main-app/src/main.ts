@@ -6,7 +6,9 @@ import naive from 'naive-ui';
 import { setupPermission } from './composables/usePermission';
 import { useUserStore } from './store/user';
 import { useModuleStore } from './store/module';
-import { registerModules } from './micro-frontend/registry';
+import { useMenuStore } from './store/menu';
+import { initMicroAppLoader, registerModules } from './micro-frontend/registry';
+import { message } from './utils/naive';
 
 const app = createApp(App);
 const pinia = createPinia();
@@ -16,18 +18,22 @@ app.use(router);
 app.use(naive);
 setupPermission(app);
 
-// 等待路由准备就绪后，检查用户是否已登录（刷新页面场景）
+initMicroAppLoader();
+
 router.isReady().then(async () => {
   const userStore = useUserStore();
-  // 如果用户已登录（token 存在），则加载模块并注册子应用
   if (userStore.token) {
     try {
       const moduleStore = useModuleStore();
+      const menuStore = useMenuStore();
       const modules = await moduleStore.fetchModules();
-      registerModules(modules, router);
+      registerModules(modules);
+      // ✅ 刷新页面时构建菜单
+      await menuStore.buildMenus(modules);
+      message.success('模块加载成功');
     } catch (error) {
-      console.error('[Main] 登录状态下加载子应用失败:', error);
-      // 可选：显示提示，但不阻塞主流程
+      console.error('[Main] 加载模块失败:', error);
+      message.error('加载模块失败，请刷新页面重试');
     }
   }
 });
