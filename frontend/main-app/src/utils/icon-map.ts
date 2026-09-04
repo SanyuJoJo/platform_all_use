@@ -1,3 +1,4 @@
+// src/utils/icon-map.ts
 import { h, type VNode } from 'vue';
 import { NIcon } from 'naive-ui';
 import {
@@ -13,10 +14,12 @@ import {
   TrashOutline as DeleteIcon,
   AddOutline as AddIcon,
   SearchOutline as SearchIcon,
-  FolderOpenOutline as FolderOpenIcon,  // ✅ 存在
-  HomeOutline as HomeIcon,              // ✅ 存在
-  AppsOutline as AppsIcon,              // ✅ 存在
+  FolderOpenOutline as FolderOpenIcon,
+  HomeOutline as HomeIcon,
+  AppsOutline as AppsIcon,
 } from '@vicons/ionicons5';
+
+console.log('[DEBUG] utils/icon-map.ts: 图标映射初始化');
 
 const iconMap: Record<string, any> = {
   People: PeopleIcon,
@@ -25,10 +28,10 @@ const iconMap: Record<string, any> = {
   Person: PersonIcon,
   Grid: GridIcon,
   List: ListIcon,
-  Dashboard: GridIcon,           // ✅ Dashboard 使用 GridIcon
-  FolderOpen: FolderOpenIcon,    // ✅ 对应 FolderOpenOutline
-  Home: HomeIcon,                // ✅ 对应 HomeOutline
-  Apps: AppsIcon,                // ✅ 对应 AppsOutline
+  Dashboard: GridIcon,
+  FolderOpen: FolderOpenIcon,
+  Home: HomeIcon,
+  Apps: AppsIcon,
   Settings: SettingsIcon,
   File: FileIcon,
   Edit: EditIcon,
@@ -40,7 +43,7 @@ const iconMap: Record<string, any> = {
 export function renderIcon(iconName: string): () => VNode {
   const IconComponent = iconMap[iconName];
   if (!IconComponent) {
-    console.warn(`[Menu] 图标 "${iconName}" 未找到，使用默认图标 Grid`);
+    console.warn(`[DEBUG] renderIcon: 图标 "${iconName}" 未找到，使用默认 Grid`);
     const FallbackIcon = GridIcon;
     return () => h(NIcon, null, { default: () => h(FallbackIcon) });
   }

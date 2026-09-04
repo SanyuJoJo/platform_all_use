@@ -32,12 +32,15 @@ import { registerModules } from '@/micro-frontend/registry';
 import { login } from '@/api/auth';
 import { message } from '@/utils/naive';
 
+console.log('[DEBUG] login/index.vue: 登录页组件初始化');
+
 const router = useRouter();
 const route = useRoute();
 const userStore = useUserStore();
 const moduleStore = useModuleStore();
 const menuStore = useMenuStore();
 const loading = ref(false);
+const formRef = ref();
 
 const form = reactive({
   username: 'admin',
@@ -45,32 +48,40 @@ const form = reactive({
 });
 
 async function handleLogin() {
-  console.log('🔥 点击登录');
+  console.log('[DEBUG] login: 点击登录按钮');
   loading.value = true;
   try {
+    console.log('[DEBUG] login: 调用登录接口', form);
     const res = await login(form);
-    console.log('✅ 登录响应:', res);
+    console.log('[DEBUG] login: 登录响应', res);
     const { access_token, user } = res.data;
     userStore.setToken(access_token);
     userStore.setUser(user);
+    console.log('[DEBUG] login: token 和用户信息已保存');
 
     // 加载模块列表
+    console.log('[DEBUG] login: 开始获取模块列表');
     const modules = await moduleStore.fetchModules();
-    console.log('📦 模块列表:', modules);
-    registerModules(modules);
+    console.log('[DEBUG] login: 模块列表获取成功，数量:', modules.length);
 
-    // ✅ 传入数据构建菜单
+    // 注册子应用
+    registerModules(modules, router);
+    console.log('[DEBUG] login: 子应用注册完成');
+
+    // 构建菜单
     await menuStore.buildMenus(modules);
-    console.log('📋 菜单树:', menuStore.menuTree);
+    console.log('[DEBUG] login: 菜单构建完成');
 
     message.success('登录成功');
     const redirect = route.query.redirect as string || '/dashboard';
+    console.log('[DEBUG] login: 跳转到', redirect);
     await router.push(redirect);
   } catch (error: any) {
-    console.error('❌ 登录失败:', error);
+    console.error('[DEBUG] login: 登录失败', error);
     message.error(error.message || '登录失败，请检查用户名和密码');
   } finally {
     loading.value = false;
+    console.log('[DEBUG] login: 登录流程结束');
   }
 }
 </script>

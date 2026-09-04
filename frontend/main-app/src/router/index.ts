@@ -2,33 +2,15 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useUserStore } from '@/store/user';
 import { useMenuStore } from '@/store/menu';
 import { useModuleStore } from '@/store/module';
-import { 
-  loadSubApp, 
-  unloadCurrentApp, 
-  getCurrentModuleId, 
-  isSubAppLoaded 
-} from '@/micro-frontend/registry';
-import { message } from '@/utils/naive';
+import DefaultLayout from '@/layouts/default/index.vue';
 
 const routes: RouteRecordRaw[] = [
+  // 不需要布局的页面
   {
     path: '/login',
     name: 'Login',
     component: () => import('@/views/login/index.vue'),
     meta: { ignoreAuth: true },
-  },
-  {
-    path: '/',
-    component: () => import('@/layouts/default/index.vue'),
-    redirect: '/dashboard',
-    children: [
-      {
-        path: 'dashboard',
-        name: 'Dashboard',
-        component: () => import('@/views/dashboard/index.vue'),
-        meta: { title: '仪表盘', icon: 'Grid', permission: 'dashboard:view' },
-      },
-    ],
   },
   {
     path: '/403',
@@ -37,10 +19,36 @@ const routes: RouteRecordRaw[] = [
     meta: { ignoreAuth: true },
   },
   {
-    path: '/:pathMatch(.*)*',
+    path: '/404',
     name: 'NotFound',
     component: () => import('@/views/error/404.vue'),
     meta: { ignoreAuth: true },
+  },
+
+  // 需要布局的页面，给布局路由起名 'Layout'
+  {
+    path: '/',
+    name: 'Layout',   // ✅ 关键：命名布局路由
+    component: DefaultLayout,
+    children: [
+      {
+        path: '',
+        redirect: '/dashboard',
+      },
+      {
+        path: 'dashboard',
+        name: 'Dashboard',
+        component: () => import('@/views/dashboard/index.vue'),
+        meta: { title: '仪表盘', permission: 'dashboard:view' },
+      },
+      // 其他主应用页面在此添加 children
+    ],
+  },
+
+  // 通配符路由（真正的 404）
+  {
+    path: '/:pathMatch(.*)*',
+    redirect: '/404',
   },
 ];
 
@@ -49,99 +57,81 @@ const router = createRouter({
   routes,
 });
 
-const isDev = import.meta.env.MODE === 'development';
+let subRoutesAdded = false;
 
 router.beforeEach(async (to, from, next) => {
+  console.log(`[Router] 目标路径: ${to.path}`);
+
   const userStore = useUserStore();
   const menuStore = useMenuStore();
   const moduleStore = useModuleStore();
 
+  // 1. 忽略认证的页面
   if (to.meta.ignoreAuth) {
     next();
     return;
   }
 
+  // 2. 检查登录
   const token = userStore.token || localStorage.getItem('token');
   if (!token) {
     next({ path: '/login', query: { redirect: to.fullPath } });
     return;
   }
 
-  if (!userStore.token && token) {
-    userStore.setToken(token);
-    const userStr = localStorage.getItem('user');
-    if (userStr) {
-      try {
-        const user = JSON.parse(userStr);
-        userStore.setUser(user);
-      } catch (e) { /* ignore */ }
+  // 3. 加载模块（如果未加载）
+  if (!moduleStore.loaded) {
+    try {
+      await moduleStore.fetchModules();
+    } catch (e) {
+      console.error('[Router] 模块加载失败', e);
     }
   }
 
-  // 确保模块列表已加载
-  if (!moduleStore.loaded.value) {
-    await moduleStore.fetchModules().catch(() => {});
+  // 4. 构建菜单（如果未构建）
+  if (!menuStore.menuLoaded) {
+    const modules = moduleStore.modules;
+    if (modules && modules.length > 0) {
+      await menuStore.buildMenus(modules);
+    } else {
+      console.warn('[Router] 模块列表为空，无法构建菜单');
+    }
   }
 
-  const activeIds = moduleStore.getActiveModuleIds();
-  const matchedModuleId = activeIds.find(id => {
-    const path = to.path;
-    return path === '/' + id || path.startsWith('/' + id + '/');
-  });
-  const isSubApp = !!matchedModuleId;
-  to.meta.isMicroApp = isSubApp;
+  // 5. 添加子应用动态路由到布局的 children 中（一次性）
+  if (moduleStore.loaded && !subRoutesAdded) {
+    const modules = moduleStore.modules;
+    modules.forEach(m => {
+      const routeName = `subapp_${m.id}`;
+      if (!router.hasRoute(routeName)) {
+        // ✅ 关键：添加到名为 'Layout' 的父路由下
+        router.addRoute('Layout', {
+          path: `/${m.id}/:pathMatch(.*)*`,
+          name: routeName,
+          component: { render: () => null }, // 空组件，实际由 qiankun 渲染
+          meta: { ignoreAuth: true, isSubApp: true },
+        });
+        console.log(`[Router] 添加子应用路由到 Layout: /${m.id}/:pathMatch(.*)*`);
+      }
+    });
+    subRoutesAdded = true;
+    // 重新导航以匹配新路由
+    next({ ...to, replace: true });
+    return;
+  }
 
-  if (!isSubApp && to.meta.permission) {
+  // 6. 如果当前路径是子应用路由，直接放行
+  if (to.meta.isSubApp) {
+    next();
+    return;
+  }
+
+  // 7. 主应用页面权限检查
+  if (to.meta.permission) {
     const hasPerm = userStore.permissions?.includes(to.meta.permission as string) ?? false;
     if (!hasPerm) {
       next('/403');
       return;
-    }
-  }
-
-  // ✅ 只在菜单未加载时构建，且传入数据
-  if (!menuStore.menuLoaded.value) {
-    const modules = moduleStore.modules.value;
-    if (modules && modules.length > 0) {
-      await menuStore.buildMenus(modules);
-    } else {
-      // 若模块数据为空，尝试重新获取
-      await moduleStore.fetchModules();
-      const newModules = moduleStore.modules.value;
-      if (newModules && newModules.length > 0) {
-        await menuStore.buildMenus(newModules);
-      }
-    }
-  }
-
-  // 子应用加载/卸载逻辑
-  if (isSubApp && matchedModuleId) {
-    const currentId = getCurrentModuleId();
-    if (!isSubAppLoaded() || currentId !== matchedModuleId) {
-      const module = moduleStore.modules.value.find(m => m.id === matchedModuleId);
-      if (module) {
-        try {
-          await loadSubApp(module, router);
-          if (isDev) {
-            console.log(`[Router] 子应用 ${matchedModuleId} 加载成功`);
-          }
-        } catch (error) {
-          console.error('[Router] 加载子应用失败:', error);
-          message.error(`加载模块 ${module.name || matchedModuleId} 失败`);
-          next('/404');
-          return;
-        }
-      } else {
-        next('/404');
-        return;
-      }
-    }
-  } else {
-    if (isSubAppLoaded()) {
-      await unloadCurrentApp();
-      if (isDev) {
-        console.log('[Router] 已卸载子应用（切换到非子应用路由）');
-      }
     }
   }
 

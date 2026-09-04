@@ -1,0 +1,74 @@
+import { createApp } from 'vue'
+import { createRouter, createWebHistory } from 'vue-router'
+import App from './App.vue'
+import { renderWithQiankun, qiankunWindow } from 'vite-plugin-qiankun/dist/helper'
+
+console.log('[SubApp] 入口文件执行，是否在 qiankun 环境?', qiankunWindow.__POWERED_BY_QIANKUN__)
+
+let app = null
+let router = null
+
+// 渲染函数
+function render(props = {}) {
+  console.log('[SubApp] render 被调用，props=', props)
+  const { container } = props
+  console.log('[SubApp] container 参数:', container)
+
+  // 确定挂载节点
+  const mountEl = container ? container.querySelector('#app') : document.querySelector('#app')
+  console.log('[SubApp] 挂载节点:', mountEl)
+
+  if (!mountEl) {
+    console.error('[SubApp] 找不到挂载节点！')
+    return
+  }
+
+  // 创建路由
+  const base = qiankunWindow.__POWERED_BY_QIANKUN__ ? '/sub-app' : '/'
+  console.log('[SubApp] 路由 base:', base)
+
+  router = createRouter({
+    history: createWebHistory(base),
+    routes: [
+      { path: '/', component: () => import('./views/Dashboard.vue') },
+	  {path: '/list', component: () => import('./views/Users.vue') }
+    ]
+  })
+
+  app = createApp(App)
+  app.use(router)
+  app.mount(mountEl)
+  console.log('[SubApp] 应用已挂载到', mountEl)
+}
+
+// 独立运行时直接渲染
+if (!qiankunWindow.__POWERED_BY_QIANKUN__) {
+  console.log('[SubApp] 独立运行模式，直接渲染')
+  render()
+} else {
+  console.log('[SubApp] qiankun 模式，等待生命周期调用')
+}
+
+
+// 使用 renderWithQiankun 包装生命周期
+renderWithQiankun({
+  bootstrap(props) {
+    console.log('[SubApp] bootstrap 执行', props)
+    // 可执行初始化操作，必须返回 Promise
+    return Promise.resolve()
+  },
+  mount(props) {
+    console.log('[SubApp] mount 执行', props)
+    render(props)
+    return Promise.resolve()
+  },
+  unmount(props) {
+    console.log('[SubApp] unmount 执行', props)
+    if (app) {
+      app.unmount()
+      app = null
+      router = null
+    }
+    return Promise.resolve()
+  }
+})

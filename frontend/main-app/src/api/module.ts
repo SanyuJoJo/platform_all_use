@@ -1,19 +1,23 @@
+// src/api/module.ts
 import request from './index';
 import type { Module } from '@/types/module';
-/**
- * 获取已激活的模块列表（包含 menus）
- * @returns Promise<Module[]>
- */
+
+// 真实后端接口（若未实现，可用以下 Mock 版本）
 export async function getActiveModules(): Promise<Module[]> {
-  try {
-    const res = await request.get('/modules', {
-      params: { status: 'active' },
-    });
-    // 兼容响应格式
-    const items = res.data?.items || res.data || [];
-    return Array.isArray(items) ? items : [];
-  } catch (error) {
-    console.error('[API] 获取模块列表失败:', error);
-    throw error;
-  }
+  const res = await request.get('/modules', { params: { status: 'active' } });
+  return res.data?.items || res.data || [];
+}
+
+export async function createModule(data: Partial<Module>): Promise<Module> {
+  const res = await request.post('/modules', data);
+  return res.data;
+}
+
+export async function updateModule(id: string, data: Partial<Module>): Promise<Module> {
+  const res = await request.put(`/modules/${id}`, data);
+  return res.data;
+}
+
+export async function deleteModule(id: string): Promise<void> {
+  await request.delete(`/modules/${id}`);
 }

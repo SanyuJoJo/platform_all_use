@@ -7,8 +7,10 @@ import { setupPermission } from './composables/usePermission';
 import { useUserStore } from './store/user';
 import { useModuleStore } from './store/module';
 import { useMenuStore } from './store/menu';
-import { initMicroAppLoader, registerModules } from './micro-frontend/registry';
+import { registerModules } from './micro-frontend/registry';
 import { message } from './utils/naive';
+
+console.log('[Main] 应用启动');
 
 const app = createApp(App);
 const pinia = createPinia();
@@ -18,24 +20,28 @@ app.use(router);
 app.use(naive);
 setupPermission(app);
 
-initMicroAppLoader();
-
+// 等待路由就绪，检查登录状态
 router.isReady().then(async () => {
+  console.log('[Main] 路由准备就绪');
   const userStore = useUserStore();
   if (userStore.token) {
     try {
       const moduleStore = useModuleStore();
       const menuStore = useMenuStore();
       const modules = await moduleStore.fetchModules();
-      registerModules(modules);
-      // ✅ 刷新页面时构建菜单
+      // 注册子应用（qiankun）
+      registerModules(modules, router);
+      // 构建菜单
       await menuStore.buildMenus(modules);
-      message.success('模块加载成功');
+      console.log('[Main] 模块注册和菜单构建完成');
     } catch (error) {
-      console.error('[Main] 加载模块失败:', error);
-      message.error('加载模块失败，请刷新页面重试');
+      console.error('[Main] 初始化失败:', error);
+      message.error('初始化失败，请刷新页面重试');
     }
+  } else {
+    console.log('[Main] 未登录，跳过模块加载');
   }
 });
 
 app.mount('#app');
+console.log('[Main] 应用挂载完成');
