@@ -1,17 +1,14 @@
 <template>
-  <div class="subapp-root">
-    <router-view />
-  </div>
+  <n-message-provider>
+    <n-dialog-provider>
+      <n-notification-provider>
+        <router-view />
+      </n-notification-provider>
+    </n-dialog-provider>
+  </n-message-provider>
 </template>
 
 <script setup lang="ts">
-console.log('[SubApp] App 组件加载');
+import { NMessageProvider, NDialogProvider, NNotificationProvider } from 'naive-ui';
+console.log('[Auth] App 组件加载（含 Provider）');
 </script>
-
-<style scoped>
-/* 将子应用所有全局样式限制在此类名下 */
-.subapp-root {
-  /* 覆盖可能继承的样式 */
-  color: inherit;
-}
-</style>

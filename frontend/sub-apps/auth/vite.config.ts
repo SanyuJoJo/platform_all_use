@@ -1,4 +1,3 @@
-// vite.config.ts
 import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import qiankun from 'vite-plugin-qiankun';
@@ -18,8 +17,8 @@ export default defineConfig(({ mode }) => {
       __MODULE_ID__: JSON.stringify(MODULE_ID),
     },
     server: {
-	  host: '0.0.0.0',
-	  cors: true,
+      host: '0.0.0.0',
+      cors: true,
       port: PORT,
       headers: {
         'Access-Control-Allow-Origin': '*',
@@ -27,13 +26,12 @@ export default defineConfig(({ mode }) => {
     },
     resolve: {
       alias: {
-         '@': path.resolve(__dirname, 'src'),
+        '@': path.resolve(__dirname, 'src'),
         'shared': path.resolve(__dirname, '../../shared'),
       },
     },
     build: {
       outDir: 'dist',
     },
-    //base: '/', // 明确设为根路径
   };
 });
