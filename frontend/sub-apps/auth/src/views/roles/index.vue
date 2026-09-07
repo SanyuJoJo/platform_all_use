@@ -39,8 +39,10 @@ import { roleApi } from '@/api/role';
 import RoleFormModal from './components/RoleFormModal.vue';
 import { useUserStore } from '@/store/user';
 import type { Role } from '@/types';
+
 const message = useMessage();
 const userStore = useUserStore();
+
 const roleList = ref<Role[]>([]);
 const loading = ref(false);
 const total = ref(0);
@@ -49,6 +51,7 @@ const pagination = reactive({
   pageSize: 20,
 });
 const searchKeyword = ref('');
+
 const columns = [
   { title: 'ID', key: 'id' },
   { title: '角色名', key: 'name' },
@@ -108,9 +111,11 @@ const columns = [
     },
   },
 ];
+
 const formModalVisible = ref(false);
 const formMode = ref<'create' | 'edit'>('create');
 const editData = ref<Role | null>(null);
+
 async function fetchRoles() {
   loading.value = true;
   try {
@@ -127,42 +132,57 @@ async function fetchRoles() {
     loading.value = false;
   }
 }
+
 function handleSearch() {
   pagination.page = 1;
   fetchRoles();
 }
+
 function resetSearch() {
   searchKeyword.value = '';
   pagination.page = 1;
   fetchRoles();
 }
+
 function onPageChange(page: number) {
   pagination.page = page;
   fetchRoles();
 }
+
 function onPageSizeChange(size: number) {
   pagination.pageSize = size;
   pagination.page = 1;
   fetchRoles();
 }
+
 function handleCreate() {
   formMode.value = 'create';
   editData.value = null;
   formModalVisible.value = true;
 }
+
 function handleEdit(row: Role) {
   formMode.value = 'edit';
   editData.value = row;
   formModalVisible.value = true;
 }
+
 async function handleDelete(row: Role) {
   try {
     await roleApi.delete(row.id);
     message.success('删除成功');
     fetchRoles();
   } catch (error: any) {
-    message.error(error.message || '删除失败');
+    // 根据错误码给出更友好的提示
+    if (error.code === 20003) {
+      message.error('系统内置角色不可删除');
+    } else if (error.code === 20005) {
+      message.error('角色已被用户使用，请先解除关联');
+    } else {
+      message.error(error.message || '删除失败');
+    }
   }
 }
+
 onMounted(fetchRoles);
 </script>

@@ -1,12 +1,5 @@
 <template>
   <div id="app">
-    <!-- 子应用容器 -->
-    <div
-      id="subapp-container"
-      v-show="showSubAppContainer"
-      style="position: absolute; top: 64px; left: 240px; right: 0; bottom: 0; padding: 20px; overflow: auto; background: #fff; z-index: 10;"
-    ></div>
-
     <!-- 主布局 -->
     <n-layout style="height: 100vh;">
       <!-- 顶部栏 -->
@@ -42,7 +35,17 @@
 
         <!-- 内容区域 -->
         <n-layout-content style="padding:20px; position: relative;">
-          <router-view v-if="!isSubAppRoute" />
+          <!-- 内容容器：子应用和主应用路由共用同一位置 -->
+          <div style="position: relative; height: 100%;">
+            <!-- 子应用容器 -->
+            <div
+              id="subapp-container"
+              v-show="isSubAppRoute"
+              style="height:100%; min-height:300px; background:#fff; z-index:10;"
+            ></div>
+            <!-- 主应用路由视图 -->
+            <router-view v-show="!isSubAppRoute" />
+          </div>
         </n-layout-content>
       </n-layout>
     </n-layout>
@@ -74,12 +77,11 @@ const moduleStore = useModuleStore();
 const activeMenuKey = computed(() => route.name || '');
 const menuTreeKey = ref(0);
 
+// 判断当前路由是否为子应用路由
 const isSubAppRoute = computed(() => {
   const modules = moduleStore.modules;
   return modules.some(m => route.path.startsWith(`/${m.id}`));
 });
-
-const showSubAppContainer = computed(() => isSubAppRoute.value);
 
 watch(
   () => menuStore.menuTree.length,

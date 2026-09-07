@@ -3,9 +3,9 @@ import { createPinia } from 'pinia';
 import naive from 'naive-ui';
 import App from './App.vue';
 import router from './router';
-import { registerModules } from './micro-frontend/registry';
 import { useModuleStore } from './store/module';
 import { useMenuStore } from './store/menu';
+import { registerModules } from './micro-frontend/registry';
 
 console.log('[Main] 应用启动');
 
@@ -16,27 +16,48 @@ app.use(pinia);
 app.use(router);
 app.use(naive);
 
-app.mount('#app');
-
-// 在路由准备就绪后，加载模块并构建菜单，再注册子应用
-router.isReady().then(async () => {
-  console.log('[Main] 路由准备就绪');
-  const moduleStore = useModuleStore();
-  if (!moduleStore.loaded) {
-    await moduleStore.fetchModules();
-  }
-  const modules = moduleStore.modules;
-  if (modules && modules.length > 0) {
-    // 先构建菜单（确保在子应用加载前菜单数据存在）
-    const menuStore = useMenuStore();
-    if (!menuStore.menuLoaded || menuStore.menuTree.length === 0) {
-      await menuStore.buildMenus(modules);
-      console.log('[Main] 菜单构建完成，数量:', menuStore.menuTree.length);
+// 在挂载前，如果已登录，提前加载模块并添加子应用路由
+(async () => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    console.log('[Main] 检测到 token，提前加载模块');
+    const moduleStore = useModuleStore();
+    if (!moduleStore.loaded) {
+      await moduleStore.fetchModules();
     }
-    // 再注册子应用
-    registerModules(modules, router);
+    const modules = moduleStore.modules;
+    if (modules && modules.length > 0) {
+      const menuStore = useMenuStore();
+      if (!menuStore.menuLoaded || menuStore.menuTree.length === 0) {
+        await menuStore.buildMenus(modules);
+        console.log('[Main] 菜单构建完成，数量:', menuStore.menuTree.length);
+      }
+      // 添加子应用路由到 router
+      modules.forEach(m => {
+        const routeName = `subapp_${m.id}`;
+        if (!router.hasRoute(routeName)) {
+          router.addRoute('Layout', {
+            path: `/${m.id}/:pathMatch(.*)*`,
+            name: routeName,
+            component: { render: () => null },
+            meta: { ignoreAuth: true, isSubApp: true },
+          });
+          console.log(`[Main] 添加子应用路由: ${routeName}`);
+        }
+      });
+    }
   }
-  console.log('[Main] 模块注册和菜单构建完成');
-});
 
-console.log('[Main] 应用挂载完成');
+  // 挂载应用
+  app.mount('#app');
+  console.log('[Main] 应用挂载完成');
+
+  // 挂载后，注册子应用（qiankun）
+  router.isReady().then(() => {
+    console.log('[Main] 路由准备就绪，注册子应用');
+    const moduleStore = useModuleStore();
+    if (moduleStore.loaded && moduleStore.modules.length > 0) {
+      registerModules(moduleStore.modules, router);
+    }
+  });
+})();

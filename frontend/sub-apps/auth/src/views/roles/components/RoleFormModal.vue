@@ -5,7 +5,7 @@
         <n-input v-model:value="formData.name" placeholder="如：访客" />
       </n-form-item>
       <n-form-item label="角色编码" path="code" v-if="mode === 'create'">
-        <n-input v-model:value="formData.code" placeholder="如：guest" />
+        <n-input v-model:value="formData.code" placeholder="如：guest（只能小写字母和下划线）" />
       </n-form-item>
       <n-form-item label="描述" path="description">
         <n-input v-model:value="formData.description" placeholder="可选" type="textarea" />
@@ -27,15 +27,18 @@ import { NModal, NForm, NFormItem, NInput, NButton, useMessage } from 'naive-ui'
 import { roleApi } from '@/api/role';
 import PermissionTree from '@/components/PermissionTree.vue';
 import type { Role } from '@/types';
+
 const props = defineProps<{
   visible: boolean;
   mode: 'create' | 'edit';
   initialData?: Role | null;
 }>();
 const emit = defineEmits(['update:visible', 'success']);
+
 const message = useMessage();
 const formRef = ref<any>(null);
 const submitting = ref(false);
+
 // 表单数据
 const formData = reactive({
   name: '',
@@ -43,15 +46,22 @@ const formData = reactive({
   description: '',
   permission_codes: [] as string[],
 });
+
 const visible = computed({
   get: () => props.visible,
   set: (val) => emit('update:visible', val),
 });
 const modalTitle = computed(() => (props.mode === 'create' ? '创建角色' : '编辑角色'));
+
+// 校验规则
 const rules = {
   name: [{ required: true, message: '请输入角色名称', trigger: 'blur' }],
-  code: [{ required: true, message: '请输入角色编码', trigger: 'blur' }],
+  code: [
+    { required: true, message: '请输入角色编码', trigger: 'blur' },
+    { pattern: /^[a-z_]+$/, message: '编码只能包含小写字母和下划线', trigger: 'blur' },
+  ],
 };
+
 watch(
   () => props.visible,
   (val) => {
@@ -72,9 +82,11 @@ watch(
   },
   { immediate: true }
 );
+
 function handleClose() {
   visible.value = false;
 }
+
 async function handleSubmit() {
   try {
     await formRef.value?.validate();
@@ -98,7 +110,14 @@ async function handleSubmit() {
     emit('success');
     handleClose();
   } catch (error: any) {
-    message.error(error.message || '操作失败');
+    // 根据错误码给出更友好的提示
+    if (error.code === 20001) {
+      message.error('角色编码已存在，请使用其他编码');
+    } else if (error.code === 20004) {
+      message.error('角色名称已存在，请使用其他名称');
+    } else {
+      message.error(error.message || '操作失败');
+    }
   } finally {
     submitting.value = false;
   }
