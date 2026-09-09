@@ -1,0 +1,27 @@
+{
+  "name": "module-license",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 3004",
+    "build": "vue-tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@fingerprintjs/fingerprintjs": "^3.4.1",
+    "axios": "^1.6.0",
+    "pinia": "^2.1.7",
+    "qiankun": "^2.10.16",
+    "vue": "^3.4.0",
+    "vue-router": "^4.2.5",
+    "naive-ui": "^2.38.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.0",
+    "@vue/tsconfig": "^0.5.1",
+    "vite": "^5.0.0",
+    "vite-plugin-qiankun": "^1.0.12",
+    "vue-tsc": "^1.8.27"
+  }
+}
