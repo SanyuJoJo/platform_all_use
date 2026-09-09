@@ -18,7 +18,6 @@ dependencies = [
     "python-multipart>=0.0.9",
     "httpx>=0.27.0",
 ]
-# 定义开发依赖组（uv 识别）
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",
