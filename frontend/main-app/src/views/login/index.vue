@@ -50,7 +50,9 @@ const form = reactive({
 async function handleLogin() {
   console.log('[DEBUG] login: 点击登录按钮');
   loading.value = true;
+
   try {
+    // ========== 第一步：调用登录接口（★ 只有这一步失败才算"登录失败"）==========
     console.log('[DEBUG] login: 调用登录接口', form);
     const res = await login(form);
     console.log('[DEBUG] login: 登录响应', res);
@@ -59,26 +61,33 @@ async function handleLogin() {
     userStore.setUser(user);
     console.log('[DEBUG] login: token 和用户信息已保存');
 
-    // 加载模块列表
+    // ========== 第二步：加载模块 + 注册子应用 + 构建菜单（★ 独立 try-catch，失败不影响登录）==========
     console.log('[DEBUG] login: 开始获取模块列表');
-    const modules = await moduleStore.fetchModules();
-    console.log('[DEBUG] login: 模块列表获取成功，数量:', modules.length);
+    try {
+      const modules = await moduleStore.fetchModules();
+      console.log('[DEBUG] login: 模块列表获取成功，数量:', modules.length);
 
-    // 注册子应用
-    registerModules(modules, router);
-    console.log('[DEBUG] login: 子应用注册完成');
+      registerModules(modules, router);
+      console.log('[DEBUG] login: 子应用注册完成');
 
-    // 构建菜单
-    await menuStore.buildMenus(modules);
-    console.log('[DEBUG] login: 菜单构建完成');
+      await menuStore.buildMenus(modules);
+      console.log('[DEBUG] login: 菜单构建完成');
+    } catch (moduleError) {
+      console.warn(
+        '[DEBUG] login: 模块加载失败，但不影响登录（可能后端 /modules 未实现）',
+        moduleError
+      );
+    }
 
+    // ========== 第三步：提示成功并跳转 ==========
     message.success('登录成功');
-    const redirect = route.query.redirect as string || '/dashboard';
+    const redirect = (route.query.redirect as string) || '/dashboard';
     console.log('[DEBUG] login: 跳转到', redirect);
     await router.push(redirect);
   } catch (error: any) {
+    // ★ 这个 catch 只捕获 login() 本身的错误
     console.error('[DEBUG] login: 登录失败', error);
-    message.error(error.message || '登录失败，请检查用户名和密码');
+    message.error(error?.message || '登录失败，请检查用户名和密码');
   } finally {
     loading.value = false;
     console.log('[DEBUG] login: 登录流程结束');

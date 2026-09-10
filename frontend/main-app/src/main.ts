@@ -19,32 +19,43 @@ app.use(naive);
 // 在挂载前，如果已登录，提前加载模块并添加子应用路由
 (async () => {
   const token = localStorage.getItem('token');
+
   if (token) {
     console.log('[Main] 检测到 token，提前加载模块');
-    const moduleStore = useModuleStore();
-    if (!moduleStore.loaded) {
-      await moduleStore.fetchModules();
-    }
-    const modules = moduleStore.modules;
-    if (modules && modules.length > 0) {
-      const menuStore = useMenuStore();
-      if (!menuStore.menuLoaded || menuStore.menuTree.length === 0) {
-        await menuStore.buildMenus(modules);
-        console.log('[Main] 菜单构建完成，数量:', menuStore.menuTree.length);
+
+    // ★ 唯一改动：整个"提前加载"逻辑用 try-catch 包裹，
+    //    无论成功失败，都不阻塞下面的 app.mount('#app')
+    try {
+      const moduleStore = useModuleStore();
+
+      if (!moduleStore.loaded) {
+        await moduleStore.fetchModules();
       }
-      // 添加子应用路由到 router
-      modules.forEach(m => {
-        const routeName = `subapp_${m.id}`;
-        if (!router.hasRoute(routeName)) {
-          router.addRoute('Layout', {
-            path: `/${m.id}/:pathMatch(.*)*`,
-            name: routeName,
-            component: { render: () => null },
-            meta: { ignoreAuth: true, isSubApp: true },
-          });
-          console.log(`[Main] 添加子应用路由: ${routeName}`);
+
+      const modules = moduleStore.modules;
+      if (modules && modules.length > 0) {
+        const menuStore = useMenuStore();
+        if (!menuStore.menuLoaded || menuStore.menuTree.length === 0) {
+          await menuStore.buildMenus(modules);
+          console.log('[Main] 菜单构建完成，数量:', menuStore.menuTree.length);
         }
-      });
+
+        // 添加子应用路由到 router
+        modules.forEach(m => {
+          const routeName = `subapp_${m.id}`;
+          if (!router.hasRoute(routeName)) {
+            router.addRoute('Layout', {
+              path: `/${m.id}/:pathMatch(.*)*`,
+              name: routeName,
+              component: { render: () => null },
+              meta: { ignoreAuth: true, isSubApp: true },
+            });
+            console.log(`[Main] 添加子应用路由: ${routeName}`);
+          }
+        });
+      }
+    } catch (error) {
+      console.warn('[Main] 提前加载模块失败，但不阻塞应用启动:', error);
     }
   }
 
