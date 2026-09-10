@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import { useUserStore } from '@/store/user';
-import { useMenuStore } from '@/store/menu';
 import { useModuleStore } from '@/store/module';
 
 const routes: RouteRecordRaw[] = [
@@ -18,7 +17,6 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/',
-    // ★ 关键：加回 name: 'Layout'，main.ts 中的 router.addRoute('Layout', ...) 依赖它
     name: 'Layout',
     component: () => import('@/layouts/default/index.vue'),
     redirect: '/dashboard',
@@ -35,7 +33,8 @@ const routes: RouteRecordRaw[] = [
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     component: () => import('@/views/error/404.vue'),
-    meta: { ignoreAuth: true },
+    // ★ 不要再加 ignoreAuth：否则刷新时命中 NotFound 会直接放行，
+    //   导致模块未加载、subapp_* 路由未注册，最终停在这里。
   },
 ];
 
@@ -45,19 +44,15 @@ const router = createRouter({
 });
 
 let subRoutesAdded = false;
-
-function isSubAppPath(path: string, modules: any[]) {
-  return modules.some(m => path.startsWith(`/${m.id}`));
-}
+let addingSubRoutes = false;
 
 router.beforeEach(async (to, from, next) => {
   console.log(`[Router] 目标路径: ${to.path}, 当前匹配路由名: ${to.name}`);
 
   const userStore = useUserStore();
-  const menuStore = useMenuStore();
   const moduleStore = useModuleStore();
 
-  // 1. 白名单路由直接放行
+  // 1. 白名单路由（登录页 / 403）直接放行
   if (to.meta.ignoreAuth) {
     next();
     return;
@@ -70,7 +65,7 @@ router.beforeEach(async (to, from, next) => {
     return;
   }
 
-  // 3. 加载模块（如果未加载）
+  // 3. 加载模块（幂等，store 内部会缓存）
   if (!moduleStore.loaded) {
     try {
       await moduleStore.fetchModules();
@@ -80,10 +75,10 @@ router.beforeEach(async (to, from, next) => {
     }
   }
 
-  // 4. 添加所有子应用路由（仅首次）
-  if (moduleStore.loaded && !subRoutesAdded) {
-    const modules = moduleStore.modules;
-    modules.forEach(m => {
+  // 4. 首次注册子应用路由 → 用 to.fullPath 重新导航
+  if (moduleStore.loaded && !subRoutesAdded && !addingSubRoutes) {
+    addingSubRoutes = true;
+    moduleStore.modules.forEach(m => {
       const routeName = `subapp_${m.id}`;
       if (!router.hasRoute(routeName)) {
         router.addRoute('Layout', {
@@ -92,12 +87,18 @@ router.beforeEach(async (to, from, next) => {
           component: { render: () => null },
           meta: { ignoreAuth: true, isSubApp: true },
         });
+        console.log(`[Router] 添加子应用路由: ${routeName}`);
       }
     });
     subRoutesAdded = true;
+    addingSubRoutes = false;
+
+    // ★ 关键：重新匹配当前路径，避免本次导航落在 NotFound
+    next({ path: to.fullPath, replace: true });
+    return;
   }
 
-  // 5. 子应用路由放行
+  // 5. 子应用路由直接放行（子应用内部自己有路由/守卫）
   if (to.meta.isSubApp) {
     next();
     return;
