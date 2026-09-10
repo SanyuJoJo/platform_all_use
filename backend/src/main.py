@@ -16,6 +16,8 @@ from src.modules.auth.router import router as auth_router
 from src.modules.auth.service import ensure_auth_seed_data
 # 用户管理模块路由
 from src.modules.auth.user_router import router as user_router
+# 角色管理模块路由
+from src.modules.auth.role_router import router as role_router
 # 初始化日志
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -73,3 +75,4 @@ async def health_check():
 # ---------------------------------------------------------------------------
 app.include_router(auth_router)       # /api/v1/auth/*
 app.include_router(user_router)       # /api/v1/auth/users/*
+app.include_router(role_router)       # /api/v1/auth/roles/*
