@@ -64,7 +64,7 @@ const columns = [
       return h(
         NTag,
         { type: row.is_system ? 'info' : 'default' },
-        { default: () => row.is_system ? '是' : '否' }
+        { default: () => (row.is_system ? '是' : '否') }
       );
     },
   },
@@ -75,7 +75,11 @@ const columns = [
       return row.permission_codes.length;
     },
   },
-  { title: '创建时间', key: 'created_at', render: (row: Role) => new Date(row.created_at).toLocaleString() },
+  {
+    title: '创建时间',
+    key: 'created_at',
+    render: (row: Role) => new Date(row.created_at).toLocaleString(),
+  },
   {
     title: '操作',
     key: 'actions',
@@ -85,7 +89,11 @@ const columns = [
       const buttons = [];
       if (canEdit) {
         buttons.push(
-          h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' })
+          h(
+            NButton,
+            { size: 'small', onClick: () => handleEdit(row) },
+            { default: () => '编辑' }
+          )
         );
       }
       if (canDelete) {
@@ -100,7 +108,12 @@ const columns = [
               trigger: () =>
                 h(
                   NButton,
-                  { size: 'small', type: 'error', disabled: row.is_system },
+                  {
+                    size: 'small',
+                    type: 'error',
+                    // ★ 修复：Number(1/0) → Boolean
+                    disabled: Boolean(row.is_system),
+                  },
                   { default: () => '删除' }
                 ),
             }

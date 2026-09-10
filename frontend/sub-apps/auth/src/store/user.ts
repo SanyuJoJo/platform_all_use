@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
+
 // 从 localStorage 读取权限列表
 function getInitialPermissions(): string[] {
   try {
@@ -8,22 +9,38 @@ function getInitialPermissions(): string[] {
     return [];
   }
 }
+
+// ★ 修复：从 localStorage 恢复用户信息
+function getInitialUser(): any {
+  try {
+    const raw = localStorage.getItem('user');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 export const useUserStore = defineStore('user', () => {
   const token = ref<string>(localStorage.getItem('token') || '');
   const permissions = ref<string[]>(getInitialPermissions());
-  const userInfo = ref<any>(null);
+  // ★ 修复：初始化时从 localStorage 恢复
+  const userInfo = ref<any>(getInitialUser());
+
   const setToken = (newToken: string) => {
     token.value = newToken;
     localStorage.setItem('token', newToken);
   };
+
   const setPermissions = (perms: string[]) => {
     permissions.value = perms;
     localStorage.setItem('permissions', JSON.stringify(perms));
   };
+
   const setUser = (user: any) => {
     userInfo.value = user;
     localStorage.setItem('user', JSON.stringify(user));
   };
+
   const logout = () => {
     token.value = '';
     permissions.value = [];
@@ -32,7 +49,9 @@ export const useUserStore = defineStore('user', () => {
     localStorage.removeItem('permissions');
     localStorage.removeItem('user');
   };
+
   const hasPermission = (code: string) => permissions.value.includes(code);
+
   return {
     token,
     permissions,
