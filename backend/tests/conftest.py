@@ -1,87 +1,65 @@
 """
-Pytest 全局夹具。
-- session 级夹具确保认证种子数据就绪；
-- 提供独立测试用户（禁用用户、改密用户）的创建与清理；
-- 所有夹具均在数据库层面操作，不依赖其他测试的执行顺序。
+Pytest 全局配置（v1.3）
+v1.3 变更：
+- P2-2：session 开始时若 KEEP_TEST_DB != 1 则删除旧 test_app.db，
+        再通过 Base.metadata.create_all 重建，确保 schema 与模型一致。
+- P2-6：新增 KEEP_TEST_DB 环境变量开关，默认清理 test_app.db。
+v1.2 引入：
+- P2-6：测试数据库隔离（默认 test_app.db）。
+关键点：
+    必须在本文件顶部、任何 src.* 模块被导入之前设置 DATABASE_URL
+    环境变量，因为 src.core.config.settings 在首次导入时即固化配置。
 """
-import pytest
-from sqlalchemy import delete, select
-from src.core.database import AsyncSessionLocal
-from src.core.security import hash_password
-from src.modules.auth.models import Role, User, UserRole
-from src.modules.auth.service import ensure_auth_seed_data
+import os
+# ---- 必须在导入 src 之前设置 ----
+_TEST_DB_URL = os.environ.get(
+    "TEST_DATABASE_URL",
+    "sqlite+aiosqlite:///./test_app.db",
+)
+os.environ["DATABASE_URL"] = _TEST_DB_URL
+# 测试库清理开关（默认清理）
+_KEEP_TEST_DB = os.environ.get("KEEP_TEST_DB", "") == "1"
+# 从 URL 中提取文件路径（仅对 sqlite 有效）
+_TEST_DB_PATH = _TEST_DB_URL.split("///")[-1] if "sqlite" in _TEST_DB_URL else ""
+# ---- 现在可以安全导入 src ----
+import pytest  # noqa: E402
+from src.core.database import AsyncSessionLocal, Base, engine  # noqa: E402
+from src.modules.auth.service import ensure_auth_seed_data  # noqa: E402
 @pytest.fixture(scope="session", autouse=True)
-async def init_seed_data():
-    """确保认证种子数据存在（幂等）。"""
+async def setup_test_database():
+    """
+    会话级夹具：
+    1. （P2-2）session 开始时若 KEEP_TEST_DB != 1，删除旧 test_app.db，
+       确保 schema 与模型一致。
+    2. 通过 Base.metadata.create_all 快速建表。
+    3. 初始化种子数据（幂等）。
+    4. （P2-6）session 结束时若 KEEP_TEST_DB != 1，删除 test_app.db。
+    说明：
+        生产环境的迁移由 Alembic 管理。测试库通过 Base.metadata.create_all
+        快速建表，避免每次运行测试都走完整的迁移链。
+        若需测试迁移本身（tests/test_migrations.py），请在开发库上运行，
+        不要在此夹具中处理。
+    """
+    # P2-2：删除旧测试库，确保 schema 与模型一致
+    if not _KEEP_TEST_DB and _TEST_DB_PATH and os.path.exists(_TEST_DB_PATH):
+        try:
+            os.remove(_TEST_DB_PATH)
+        except OSError:
+            # 文件被占用等极端情况，忽略，交由 create_all 处理
+            pass
+    # 延迟导入所有模型，确保 Base.metadata 完整
+    import src.core.models  # noqa: F401
+    from src.modules.auth import models as _auth_models  # noqa: F401
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     async with AsyncSessionLocal() as session:
         await ensure_auth_seed_data(session)
     yield
-@pytest.fixture
-async def disabled_user():
-    """
-    创建一个独立禁用用户 `disabled_user`，测试结束后删除。
-    避免直接修改 guest 状态而污染其他测试。
-    """
-    username = "disabled_user"
-    async with AsyncSessionLocal() as session:
-        existing = await session.scalar(select(User).where(User.username == username))
-        if existing:
-            await session.execute(
-                delete(UserRole).where(UserRole.user_id == existing.id)
-            )
-            await session.delete(existing)
-            await session.commit()
-        user = User(
-            username=username,
-            password_hash=hash_password("123456"),
-            nickname="禁用用户",
-            email="disabled@example.com",
-            status=0,
-        )
-        session.add(user)
-        await session.commit()
-        await session.refresh(user)
-        user_id = user.id
-    yield {"id": user_id, "username": username, "password": "123456"}
-    async with AsyncSessionLocal() as session:
-        await session.execute(delete(UserRole).where(UserRole.user_id == user_id))
-        user = await session.get(User, user_id)
-        if user:
-            await session.delete(user)
-            await session.commit()
-@pytest.fixture
-async def password_test_user():
-    """
-    创建独立用户 `pwd_test_user` 用于改密测试，测试结束后删除。
-    """
-    username = "pwd_test_user"
-    async with AsyncSessionLocal() as session:
-        existing = await session.scalar(select(User).where(User.username == username))
-        if existing:
-            await session.execute(
-                delete(UserRole).where(UserRole.user_id == existing.id)
-            )
-            await session.delete(existing)
-            await session.commit()
-        user = User(
-            username=username,
-            password_hash=hash_password("123456"),
-            nickname="改密测试用户",
-            email="pwd_test@example.com",
-            status=1,
-        )
-        session.add(user)
-        await session.commit()
-        await session.refresh(user)
-        user_id = user.id
-        guest_role = await session.scalar(select(Role).where(Role.code == "guest"))
-        if guest_role:
-            session.add(UserRole(user_id=user_id, role_id=guest_role.id))
-            await session.commit()
-    yield {"id": user_id, "username": username, "password": "123456"}
-    async with AsyncSessionLocal() as session:
-        await session.execute(delete(UserRole).where(UserRole.user_id == user_id))
-        user = await session.get(User, user_id)
-        if user:
-            await session.delete(user)
-            await session.commit()
+    # 关闭引擎
+    await engine.dispose()
+    # P2-6：删除测试库
+    if not _KEEP_TEST_DB and _TEST_DB_PATH and os.path.exists(_TEST_DB_PATH):
+        try:
+            os.remove(_TEST_DB_PATH)
+        except OSError:
+            pass

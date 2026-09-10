@@ -11,8 +11,11 @@ from src.core.response import success_response
 # 导入模型，确保 Base.metadata 包含表定义
 import src.core.models  # noqa: F401
 from src.modules.auth import models as auth_models  # noqa: F401
+# 认证模块路由
 from src.modules.auth.router import router as auth_router
 from src.modules.auth.service import ensure_auth_seed_data
+# 用户管理模块路由
+from src.modules.auth.user_router import router as user_router
 # 初始化日志
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -21,8 +24,6 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理。"""
     await init_db()
     logger.info("数据库连接初始化完成")
-    # 初始化认证种子数据（幂等，不破坏已授权权限）。
-    # 若尚未执行迁移，仅记录警告，不阻塞启动。
     try:
         async with AsyncSessionLocal() as session:
             await ensure_auth_seed_data(session)
@@ -40,21 +41,15 @@ app = FastAPI(
     description="统一权限管理平台 API",
     lifespan=lifespan,
 )
-# ---------------------------------------------------------------------------
-# CORS：从 settings 读取允许的源，避免硬编码
-# ---------------------------------------------------------------------------
 _origins = settings.cors_origins_list
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,
-    # 当源为 "*" 时浏览器不允许携带凭证，因此自动关闭 credentials
     allow_credentials=("*" not in _origins),
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# 请求 ID 中间件
 app.add_middleware(RequestIdMiddleware)
-# 全局异常处理
 setup_exception_handlers(app)
 @app.get("/health", tags=["System"])
 async def health_check():
@@ -73,5 +68,8 @@ async def health_check():
             "database": "connected" if db_ok else "unavailable",
         }
     )
-# 注册认证模块路由
-app.include_router(auth_router)
+# ---------------------------------------------------------------------------
+# 注册模块路由
+# ---------------------------------------------------------------------------
+app.include_router(auth_router)       # /api/v1/auth/*
+app.include_router(user_router)       # /api/v1/auth/users/*
