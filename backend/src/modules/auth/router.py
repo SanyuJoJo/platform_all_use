@@ -1,89 +1,109 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from src.core.dependencies import get_current_user
-from src.core.response import success_response
+"""
+认证模块 - 路由定义
+"""
+from typing import Optional, Tuple
+from fastapi import APIRouter, Body, Depends, Header, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+from src.core.database import get_db
 from src.core.exceptions import PlatformException
-from .schemas import LoginReq, TokenResp, UserInfo
-from .service import authenticate_user, create_tokens_for_user, refresh_access_token, get_user_info
+from src.core.response import success_response
+from src.modules.auth.dependencies import CurrentUser, get_current_user
+from src.modules.auth.schemas import ChangePasswordReq, LoginReq, RefreshReq
+from src.modules.auth.service import (
+    authenticate_user,
+    change_password as change_password_service,
+    create_tokens_for_user,
+    log_auth_event,
+    refresh_access_token,
+    revoke_refresh_token,
+)
 router = APIRouter(prefix="/api/v1/auth", tags=["Auth"])
+def _extract_client_info(request: Request) -> Tuple[Optional[str], Optional[str]]:
+    """从请求中提取客户端 IP 与 User-Agent。"""
+    ip = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+    return ip, user_agent
 @router.post("/login")
-async def login(req: LoginReq):
-    user = authenticate_user(req.username, req.password)
-    access_token, refresh_token = create_tokens_for_user(user)
-    user_info = UserInfo(
-        id=user["id"],
-        username=user["username"],
-        nickname=user["nickname"],
-        email=user.get("email"),
-        avatar=user.get("avatar"),
-        status=user["status"],
-        roles=user["roles"],
-        permissions=user["permissions"]
+async def login(
+    req: LoginReq,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """用户登录。"""
+    ip, user_agent = _extract_client_info(request)
+    user_info = await authenticate_user(
+        db, req.username, req.password, ip, user_agent
     )
+    tokens = await create_tokens_for_user(db, user_info, ip, user_agent)
     return success_response(
-        data={
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "token_type": "bearer",
-            "expires_in": 1440,
-            "user": user_info.dict()
-        },
-        message="登录成功"
+        data={**tokens, "user": user_info},
+        message="登录成功",
     )
 @router.post("/refresh")
-async def refresh(refresh_token: str = Depends(OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=True))):
-    # 注意：这里直接从请求头获取 refresh_token，实际应用可能需要放在请求体
-    # 简单起见，我们用依赖注入获取，但需注意 OAuth2PasswordBearer 期望的是 access_token
-    # 我们改为从请求体或查询参数获取，或使用 Header
-    # 但为了快速演示，我们从请求头 Authorization 中读取 refresh_token（但规范要求用 refresh_token 换 access_token）
-    # 此处我们接收一个请求体：{"refresh_token": "xxx"} 更合适，但为了简化，我们使用查询参数
-    pass
-# 更规范的做法：用 POST /refresh 接收 json body
-@router.post("/refresh")
-async def refresh_token(req: dict):  # 简单接收 {"refresh_token": "..."}
-    token = req.get("refresh_token")
+async def refresh(
+    req: Optional[RefreshReq] = Body(None),
+    authorization: Optional[str] = Header(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    刷新 Access Token（v1.2 起同时轮换 Refresh Token）。
+    优先从 Authorization: Bearer <refresh_token> 读取，
+    也兼容请求体 {"refresh_token": "..."}。
+    响应 data 包含新的 access_token 与 refresh_token；
+    旧 refresh_token 立即失效。
+    v1.3（N-1）：移除未使用的 `request` 参数。
+    """
+    token = None
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1]
+    elif req and req.refresh_token:
+        token = req.refresh_token
     if not token:
-        raise PlatformException(code=10001, message="缺少refresh_token", status_code=400)
-    new_token = refresh_access_token(token)
-    return success_response(data={"access_token": new_token, "expires_in": 1440})
-@router.get("/me")
-async def me(current_user: dict = Depends(get_current_user)):
-    # get_current_user 已从 token 解析出用户信息（模拟）
-    # 但我们需要完整用户信息，可调用 service 获取
-    user = get_user_info(current_user["id"])
-    if not user:
-        raise PlatformException(code=10002, message="用户不存在", status_code=404)
-    user_info = UserInfo(
-        id=user["id"],
-        username=user["username"],
-        nickname=user["nickname"],
-        email=user.get("email"),
-        avatar=user.get("avatar"),
-        status=user["status"],
-        roles=user["roles"],
-        permissions=user["permissions"]
-    )
-    return success_response(data=user_info.dict())
-# 注意：为方便测试，也支持 /logout（可返回成功）
+        raise PlatformException(
+            code=10001, message="缺少refresh token", status_code=401
+        )
+    data = await refresh_access_token(db, token)
+    return success_response(data=data, message="刷新成功")
 @router.post("/logout")
-async def logout():
+async def logout(
+    req: Optional[RefreshReq] = Body(None),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    用户登出。
+    - 若请求体提供 refresh_token，则将其标记为已撤销，后续无法用于刷新；
+    - Access Token 为无状态 JWT，服务端无法立即失效，前端应主动清除本地存储。
+    v1.3（N-1）：移除未使用的 `request` 参数。
+    """
+    if req and req.refresh_token:
+        await revoke_refresh_token(db, req.refresh_token)
+    log_auth_event(
+        "logout",
+        user_id=current_user["id"],
+        username=current_user["username"],
+        status="success",
+    )
     return success_response(message="登出成功", data=None)
-
-# 在现有 router 后追加以下代码
+@router.get("/me")
+async def me(current_user: CurrentUser = Depends(get_current_user)):
+    """获取当前用户信息。"""
+    return success_response(data=current_user)
 @router.put("/me/password")
 async def change_password(
-    req: dict,  # 实际应使用 Pydantic schema，为简洁直接使用 dict
-    current_user: dict = Depends(get_current_user),
+    request: Request,
+    req: ChangePasswordReq,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    old = req.get("old_password")
-    new = req.get("new_password")
-    confirm = req.get("confirm_password")
-    if not old or not new or not confirm:
-        raise PlatformException(code=90001, message="参数不完整", status_code=400)
-    if new != confirm:
-        raise PlatformException(code=10004, message="两次密码不一致", status_code=400)
-    # 模拟验证旧密码（假设所有用户旧密码均为 "123456"）
-    if old != "123456":
-        raise PlatformException(code=10003, message="原密码错误", status_code=400)
-    # 模拟更新（实际需更新数据库）
+    """修改当前用户密码。修改成功后，该用户全部 Refresh Token 将被撤销。"""
+    ip, _ = _extract_client_info(request)
+    await change_password_service(
+        db=db,
+        user_id=current_user["id"],
+        old_password=req.old_password,
+        new_password=req.new_password,
+        confirm_password=req.confirm_password,
+        ip=ip,
+    )
     return success_response(message="密码修改成功", data=None)

@@ -1,8 +1,8 @@
 """init
 
-Revision ID: 63fa01b050b9
+Revision ID: 041c6783a402
 Revises: 
-Create Date: 2026-09-10 00:07:11.585320
+Create Date: 2026-09-10 10:36:15.583885
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '63fa01b050b9'
+revision: str = '041c6783a402'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -74,6 +74,24 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_sys_config_id'), 'sys_config', ['id'], unique=False)
     op.create_index(op.f('ix_sys_config_key'), 'sys_config', ['key'], unique=True)
+    op.create_table('auth_refresh_token',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.Column('token_hash', sa.String(length=64), nullable=False),
+    sa.Column('expires_at', sa.DateTime(), nullable=False),
+    sa.Column('revoked', sa.SmallInteger(), nullable=False, comment='1-已撤销 0-有效'),
+    sa.Column('revoked_at', sa.DateTime(), nullable=True),
+    sa.Column('ip', sa.String(length=45), nullable=True),
+    sa.Column('user_agent', sa.String(length=255), nullable=True),
+    sa.Column('created_at', sa.DateTime(), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('updated_at', sa.DateTime(), nullable=True),
+    sa.ForeignKeyConstraint(['user_id'], ['auth_user.id'], ondelete='CASCADE'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index(op.f('ix_auth_refresh_token_expires_at'), 'auth_refresh_token', ['expires_at'], unique=False)
+    op.create_index(op.f('ix_auth_refresh_token_id'), 'auth_refresh_token', ['id'], unique=False)
+    op.create_index(op.f('ix_auth_refresh_token_token_hash'), 'auth_refresh_token', ['token_hash'], unique=True)
+    op.create_index(op.f('ix_auth_refresh_token_user_id'), 'auth_refresh_token', ['user_id'], unique=False)
     op.create_table('auth_role_permission',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('role_id', sa.Integer(), nullable=False),
@@ -106,6 +124,11 @@ def downgrade() -> None:
     op.drop_table('auth_user_role')
     op.drop_index(op.f('ix_auth_role_permission_id'), table_name='auth_role_permission')
     op.drop_table('auth_role_permission')
+    op.drop_index(op.f('ix_auth_refresh_token_user_id'), table_name='auth_refresh_token')
+    op.drop_index(op.f('ix_auth_refresh_token_token_hash'), table_name='auth_refresh_token')
+    op.drop_index(op.f('ix_auth_refresh_token_id'), table_name='auth_refresh_token')
+    op.drop_index(op.f('ix_auth_refresh_token_expires_at'), table_name='auth_refresh_token')
+    op.drop_table('auth_refresh_token')
     op.drop_index(op.f('ix_sys_config_key'), table_name='sys_config')
     op.drop_index(op.f('ix_sys_config_id'), table_name='sys_config')
     op.drop_table('sys_config')
