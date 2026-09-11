@@ -86,6 +86,6 @@ def setup_exception_handlers(app):
             content=error_response(
                 code=99999,
                 message="服务器内部错误",
-                request_id=request.headers.get("X-Request-ID"),
+                #request_id=request.headers.get("X-Request-ID"),
             ),
         )

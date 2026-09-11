@@ -1,44 +1,23 @@
 """
-权限管理模块 - 业务逻辑（v1.3）
+权限管理模块 - 业务逻辑（v1.2）
 
-v1.3 新增（P2-NEW-6 配套）：
-- 新增 audit_permission_format 巡检函数，用于 CI/运维检查权限编码格式合规性。
-
-v1.2 修复（保留）：
-- P2-NEW-1：list_permissions 增加 module_id 格式校验。
-- P2-NEW-2：register_permissions 失败路径补充 PERMISSION_EVENT ... status=fail 日志。
-- P2-NEW-4：register_permissions 数据库操作阶段使用 async with db.begin_nested()
-        建立 savepoint，异常时自动回滚，保证 session 可用。
-- P2-NEW-5：perm.module_id != module_id 分支明确标注为防御性代码。
-
-v1.1 修复（保留）：
-- P0-1：register_permissions 事务原子性修复。
-- P0-2：_validate_permission_item 增加 isinstance(value, str) 类型校验。
-- P0-3：重复 code 视为参数错误，返回 90001（HTTP 400）。
-- P1-1：模块 ID 正则改为 ^[a-z][a-z0-9_]*$。
-- P1-2：权限编码正则改为 ^[a-z0-9_]+:[a-z0-9_]+:[a-z0-9_]+$。
-- P1-6：register_permissions 增加结构化日志记录。
-- P1-7：已存在且同模块时仅更新 name。
-- P2-4：返回 total 改为 created + updated。
-- P2-5：get_permissions_by_module 增加 module_id 格式校验。
+v1.2 变更：
+- V11-P0-09：将 delete / RolePermission 的导入从函数内移到文件顶部。
 """
-
 import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import PlatformException
-from src.modules.auth.models import Permission
+from src.modules.auth.models import Permission, RolePermission
 
 logger = logging.getLogger(__name__)
 
-# 权限编码：{module}:{resource}:{action}，v1.1 起强制小写
-_PERMISSION_CODE_PATTERN = re.compile(
-    r"^[a-z0-9_]+:[a-z0-9_]+:[a-z0-9_]+$"
-)
+# 权限编码：{module}:{resource}:{action}
+_PERMISSION_CODE_PATTERN = re.compile(r"^[a-z0-9_]+:[a-z0-9_]+:[a-z0-9_]+$")
 # 模块 ID：小写字母开头，后跟小写字母 / 数字 / 下划线
 _MODULE_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -61,7 +40,7 @@ def _serialize_permission(perm: Permission) -> Dict[str, Any]:
 
 
 def _validate_module_id(module_id: str) -> None:
-    """校验模块 ID（v1.1：强制小写；v1.1：类型校验）。"""
+    """校验模块 ID。"""
     if not module_id or not isinstance(module_id, str):
         raise PlatformException(
             code=90001,
@@ -77,12 +56,10 @@ def _validate_module_id(module_id: str) -> None:
 
 
 def _validate_permission_item(module_id: str, item: Dict[str, Any]) -> None:
-    """校验单个权限注册项（v1.1 增加类型校验与小写编码）。"""
+    """校验单个权限注册项。"""
     if not isinstance(item, dict):
         raise PlatformException(
-            code=90001,
-            message="权限项必须为对象",
-            status_code=400,
+            code=90001, message="权限项必须为对象", status_code=400
         )
 
     for field in ("code", "name", "resource", "action"):
@@ -106,9 +83,7 @@ def _validate_permission_item(module_id: str, item: Dict[str, Any]) -> None:
     parts = code.split(":")
     if len(parts) != 3:
         raise PlatformException(
-            code=20054,
-            message=f"权限编码格式无效：{code}",
-            status_code=400,
+            code=20054, message=f"权限编码格式无效：{code}", status_code=400
         )
 
     code_module, code_resource, code_action = parts
@@ -154,7 +129,7 @@ async def list_permissions(
     module_id: Optional[str] = None,
     resource: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
-    """查询权限列表。v1.2（P2-NEW-1）：module_id 提供时进行格式校验。"""
+    """查询权限列表。"""
     if module_id is not None and module_id != "":
         _validate_module_id(module_id)
 
@@ -177,28 +152,15 @@ async def list_permissions(
 
 
 async def get_permissions_by_module(
-    db: AsyncSession,
-    module_id: str,
+    db: AsyncSession, module_id: str
 ) -> List[Dict[str, Any]]:
-    """获取指定模块的所有权限。v1.1（P2-5）：增加 module_id 格式校验。"""
+    """获取指定模块的所有权限。"""
     _validate_module_id(module_id)
     return await list_permissions(db, module_id=module_id)
 
 
 async def audit_permission_format(db: AsyncSession) -> Dict[str, Any]:
-    """
-    ★ v1.3 新增（P2-NEW-6 配套）：巡检所有权限编码格式。
-
-    用于 CI 或运维检查权限编码是否全部符合
-    `{module}:{resource}:{action}` 三段格式。
-
-    返回：
-        {
-            "total": 权限总数,
-            "invalid_count": 非法权限数量,
-            "invalid": [{"id": ..., "code": ..., "module_id": ...}, ...]
-        }
-    """
+    """巡检所有权限编码格式。"""
     result = await db.execute(select(Permission))
     all_perms = list(result.scalars().all())
 
@@ -228,7 +190,7 @@ async def register_permissions(
     *,
     commit: bool = True,
 ) -> Dict[str, int]:
-    """注册模块权限（供模块管理安装模块时调用）。完整说明见 v1.2 文档。"""
+    """注册模块权限（供模块管理安装模块时调用）。"""
     _validate_module_id(module_id)
 
     if permissions is None:
@@ -236,9 +198,7 @@ async def register_permissions(
 
     if not isinstance(permissions, list):
         raise PlatformException(
-            code=90001,
-            message="permissions 必须为数组",
-            status_code=400,
+            code=90001, message="permissions 必须为数组", status_code=400
         )
 
     normalized: List[Dict[str, Any]] = []
@@ -250,9 +210,7 @@ async def register_permissions(
 
         if code in seen:
             raise PlatformException(
-                code=90001,
-                message=f"权限编码重复：{code}",
-                status_code=400,
+                code=90001, message=f"权限编码重复：{code}", status_code=400
             )
         seen.add(code)
 
@@ -276,7 +234,6 @@ async def register_permissions(
                 )
 
                 if perm:
-                    # P2-NEW-5：防御性代码。正常 API 路径不可达。
                     if perm.module_id != module_id:
                         raise PlatformException(
                             code=20053,
@@ -330,3 +287,56 @@ async def register_permissions(
         "updated": updated,
         "total": created + updated,
     }
+
+
+# ---------------------------------------------------------------------------
+# v1.1 新增：权限卸载（v1.2：导入顶部化）
+# ---------------------------------------------------------------------------
+async def unregister_permissions(
+    db: AsyncSession,
+    module_id: str,
+    *,
+    commit: bool = True,
+) -> int:
+    """
+    卸载模块时清理该模块注册的所有权限。
+
+    执行步骤：
+        1. 查询该模块下所有 Permission.id；
+        2. 删除这些权限对应的 auth_role_permission 关联；
+        3. 删除 auth_permission 记录；
+        4. commit（可选）。
+    """
+    _validate_module_id(module_id)
+
+    result = await db.execute(
+        select(Permission.id).where(Permission.module_id == module_id)
+    )
+    perm_ids = [row[0] for row in result.all()]
+
+    if not perm_ids:
+        logger.info(
+            "PERMISSION_EVENT action=unregister_permissions "
+            "module_id=%s deleted=0 status=success",
+            module_id,
+        )
+        return 0
+
+    await db.execute(
+        delete(RolePermission).where(RolePermission.permission_id.in_(perm_ids))
+    )
+    delete_result = await db.execute(
+        delete(Permission).where(Permission.id.in_(perm_ids))
+    )
+
+    if commit:
+        await db.commit()
+
+    deleted = delete_result.rowcount or 0
+    logger.info(
+        "PERMISSION_EVENT action=unregister_permissions "
+        "module_id=%s deleted=%s status=success",
+        module_id,
+        deleted,
+    )
+    return deleted
