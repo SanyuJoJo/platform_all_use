@@ -206,7 +206,7 @@ CORE_MODULES: List[Dict[str, Any]] = [
         "homepage": None,
         "status": "active",
         "entry_backend": "router:router",
-        "entry_frontend": None,
+        "entry_frontend": f"{_FRONTEND_HOST}:3004/",
         "manifest": {
             "id": "license",
             "name": "License 管理",
@@ -220,7 +220,7 @@ CORE_MODULES: List[Dict[str, Any]] = [
                     "parent_id": None,
                     "title": "License 管理",
                     "icon": "Key",
-                    "path": "/license",
+                    "path": "/status",
                     "component": "views/license/index.vue",
                     "permission": "license:license:view",
                     "order": 50,
