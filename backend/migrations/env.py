@@ -12,7 +12,8 @@ from src.core.database import Base
 import src.core.models
 from src.modules.auth import models as auth_models
 from src.modules.module_manager import models as module_manager_models
-from src.modules.audit_log import models as audit_log_models  # noqa: F401
+from src.modules.audit_log import models as audit_log_models
+from src.modules.license import models as license_models  # noqa: F401
 # ==========================================
 config = context.config
 if config.config_file_name is not None:

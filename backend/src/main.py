@@ -13,6 +13,7 @@ import src.core.models  # noqa: F401
 from src.modules.auth import models as auth_models  # noqa: F401
 from src.modules.module_manager import models as module_manager_models  # noqa: F401
 from src.modules.audit_log import models as audit_log_models  # noqa: F401
+from src.modules.license import models as license_models  # noqa: F401
 # 认证模块路由
 from src.modules.auth.router import router as auth_router
 from src.modules.auth.service import ensure_auth_seed_data
@@ -32,6 +33,9 @@ from src.modules.audit_log.middleware import (
     AuditLogMiddleware,
     wait_pending_audit_tasks,
 )
+# License 管理模块路由与启动校验
+from src.modules.license.router import router as license_router
+from src.modules.license.service import verify_license_on_startup
 setup_logging()
 logger = logging.getLogger(__name__)
 @asynccontextmanager
@@ -39,17 +43,19 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理。"""
     await init_db()
     logger.info("数据库连接初始化完成")
-    # V12-P1-07：启动时清理模块目录残留
+    # 启动时清理模块目录残留
     try:
         cleanup_module_residue()
     except Exception as exc:
         logger.warning("清理模块残留失败：%s", exc)
+    # 认证种子数据
     try:
         async with AsyncSessionLocal() as session:
             await ensure_auth_seed_data(session)
         logger.info("认证种子数据检查完成")
     except Exception as exc:
         logger.warning("认证种子数据初始化失败：%s", exc)
+    # 模块种子数据与动态加载
     try:
         async with AsyncSessionLocal() as session:
             await ensure_module_seed_data(session)
@@ -58,8 +64,20 @@ async def lifespan(app: FastAPI):
         logger.info("模块种子数据与动态加载完成")
     except Exception as exc:
         logger.warning("模块初始化失败：%s", exc)
+    # License 启动校验
+    try:
+        async with AsyncSessionLocal() as session:
+            result = await verify_license_on_startup(session)
+            if not result.get("ok"):
+                logger.warning(
+                    "License 启动校验未通过：code=%s message=%s",
+                    result.get("code"),
+                    result.get("message"),
+                )
+    except Exception as exc:
+        logger.warning("License 启动校验异常：%s", exc)
     yield
-    # P1-2：关闭前等待审计日志后台任务（最多 5 秒）
+    # 关闭前等待审计日志后台任务（最多 5 秒）
     try:
         await wait_pending_audit_tasks(timeout=5.0)
     except Exception as exc:
@@ -72,15 +90,6 @@ app = FastAPI(
     description="统一权限管理平台 API",
     lifespan=lifespan,
 )
-# ---------------------------------------------------------------------------
-# 中间件注册顺序（Starlette LIFO：add_middleware 是 insert(0)）：
-#   请求 → RequestIdMiddleware → AuditLogMiddleware → CORSMiddleware → 路由
-#   响应 ← RequestIdMiddleware ← AuditLogMiddleware ← CORSMiddleware ← 路由
-#
-# 注意：最后添加的最先执行（请求路径）。
-# 先添加 AuditLogMiddleware，再添加 RequestIdMiddleware，
-# 保证 RequestIdMiddleware 在请求路径上先执行，request_id 已就绪。
-# ---------------------------------------------------------------------------
 _origins = settings.cors_origins_list
 app.add_middleware(
     CORSMiddleware,
@@ -118,3 +127,4 @@ app.include_router(role_router)              # /api/v1/auth/roles/*
 app.include_router(permission_router)        # /api/v1/auth/permissions/*
 app.include_router(module_manager_router)    # /api/v1/modules/*
 app.include_router(audit_log_router)         # /api/v1/audit-logs/*
+app.include_router(license_router)           # /api/v1/license/*
