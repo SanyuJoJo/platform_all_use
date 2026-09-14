@@ -1,0 +1,4 @@
+create_package/.staging/
+create_package/out/
+create_package/bin/bin/backend.tar.gz
+create_package/bin/bin/dist.war

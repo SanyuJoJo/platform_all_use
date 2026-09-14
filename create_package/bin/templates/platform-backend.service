@@ -1,0 +1,20 @@
+# systemd service 模板（v1.2，v1.3 未变更）
+# v1.2 变更：
+#   - P0-1 / P1-1：使用 @BACKEND_DIR@ / @ENV_FILE@ 占位符，
+#                    由 install.sh 的 replace_vars 统一替换
+#   - P2-1：Group 使用主组 @RUN_GROUP@
+[Unit]
+Description=Platform Backend Service
+After=network.target
+[Service]
+Type=simple
+User=@RUN_USER@
+Group=@RUN_GROUP@
+WorkingDirectory=@BACKEND_DIR@
+EnvironmentFile=@ENV_FILE@
+ExecStart=@BACKEND_DIR@/.venv/bin/uvicorn src.main:app --host ${HOST} --port ${PORT} --workers ${WORKERS}
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65535
+[Install]
+WantedBy=multi-user.target
