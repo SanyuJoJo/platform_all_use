@@ -1,7 +1,8 @@
-import uuid
 from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
+from typing import Dict, Optional
+
 from src.core.exceptions import PlatformException
+
 # ---- 模拟数据存储 ----
 # 预设用户（与 auth 模块一致，但为了统一管理，此处单独维护）
 MOCK_USERS: Dict[int, dict] = {

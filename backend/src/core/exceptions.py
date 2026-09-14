@@ -5,11 +5,14 @@ v1.1 变更：
 """
 import logging
 from typing import Any, Dict, Optional
+
 from fastapi import Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
 from src.core.response import error_response
+
 logger = logging.getLogger(__name__)
 class PlatformException(Exception):
     """自定义业务异常。"""

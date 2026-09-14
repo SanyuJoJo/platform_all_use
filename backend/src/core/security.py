@@ -1,7 +1,11 @@
+from datetime import datetime, timedelta, timezone
+
 import bcrypt
 import jwt
-from datetime import datetime, timedelta, timezone
+
 from src.core.config import settings
+
+
 def hash_password(password: str) -> str:
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")

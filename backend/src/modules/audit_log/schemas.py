@@ -1,7 +1,10 @@
 """日志审计模块 - Pydantic Schema。"""
 from datetime import datetime
 from typing import Optional
+
 from pydantic import BaseModel, ConfigDict
+
+
 class AuditLogOut(BaseModel):
     """操作日志响应对象。"""
     id: int

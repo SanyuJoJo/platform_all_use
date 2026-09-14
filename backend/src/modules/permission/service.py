@@ -1,5 +1,6 @@
-from typing import List, Optional, Dict
 from datetime import datetime, timezone
+from typing import List, Optional
+
 # 模拟所有权限（从各模块 manifest 汇总）
 MOCK_PERMISSIONS = [
     {"id": 1, "code": "dashboard:view", "name": "查看仪表盘", "module_id": "platform", "resource": "dashboard", "action": "view", "created_at": datetime(2026,1,1,tzinfo=timezone.utc)},

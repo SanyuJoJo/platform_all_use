@@ -9,8 +9,10 @@ v1.1 变更：
 """
 import logging
 from typing import Optional
+
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.core.database import get_db
 from src.core.exceptions import PlatformException
 from src.core.response import success_response
@@ -21,6 +23,7 @@ from src.modules.license.constants import (
 )
 from src.modules.license.dependencies import CurrentUser, require_permission
 from src.modules.license.schemas import LicenseActivateReq
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/license", tags=["License"])
 @router.get("/status")

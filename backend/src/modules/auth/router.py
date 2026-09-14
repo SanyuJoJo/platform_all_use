@@ -2,8 +2,10 @@
 认证模块 - 路由定义
 """
 from typing import Optional, Tuple
+
 from fastapi import APIRouter, Body, Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.core.database import get_db
 from src.core.exceptions import PlatformException
 from src.core.response import success_response
@@ -11,12 +13,15 @@ from src.modules.auth.dependencies import CurrentUser, get_current_user
 from src.modules.auth.schemas import ChangePasswordReq, LoginReq, RefreshReq
 from src.modules.auth.service import (
     authenticate_user,
-    change_password as change_password_service,
     create_tokens_for_user,
     log_auth_event,
     refresh_access_token,
     revoke_refresh_token,
 )
+from src.modules.auth.service import (
+    change_password as change_password_service,
+)
+
 router = APIRouter(prefix="/api/v1/auth", tags=["Auth"])
 def _extract_client_info(request: Request) -> Tuple[Optional[str], Optional[str]]:
     """从请求中提取客户端 IP 与 User-Agent。"""

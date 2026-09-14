@@ -4,14 +4,17 @@
 - check_license(module_id)：模块授权校验依赖工厂
 """
 from typing import Callable
+
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.core.database import get_db
 from src.modules.auth.dependencies import (  # noqa: F401
     CurrentUser,
     require_permission,
 )
 from src.modules.license.service import check_module_authorized
+
 __all__ = [
     "CurrentUser",
     "require_permission",

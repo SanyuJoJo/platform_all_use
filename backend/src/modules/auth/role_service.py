@@ -33,7 +33,7 @@ v1.1 修复（保留）：
 import re
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -42,7 +42,6 @@ from src.core.exceptions import PlatformException
 from src.modules.auth.models import (
     Permission,
     Role,
-    RolePermission,
     UserRole,
 )
 from src.modules.auth.service import log_auth_event

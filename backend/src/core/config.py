@@ -1,6 +1,8 @@
 """应用配置。"""
 import logging
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
 logger = logging.getLogger(__name__)
 class Settings(BaseSettings):
     """应用配置，从环境变量加载。"""

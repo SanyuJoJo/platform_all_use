@@ -13,8 +13,8 @@ from src.core.config import settings
 from src.core.database import get_db
 from src.core.exceptions import PlatformException
 from src.modules.module_manager.constants import CORE_MODULE_IDS
-from src.modules.module_manager.models import Module
 from src.modules.module_manager.manifest import load_manifest_from_dir
+from src.modules.module_manager.models import Module
 
 logger = logging.getLogger(__name__)
 

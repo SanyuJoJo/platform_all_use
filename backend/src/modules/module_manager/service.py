@@ -1,5 +1,17 @@
-"""模块管理模块 - 业务逻辑（v1.5）。"""
-import copy
+"""模块管理模块 - 业务逻辑（v1.5.1）。
+
+v1.5.1 修复：
+- F841：删除 upgrade_module 中未使用的 snapshot 变量
+        （v1.5 采用延迟提交方案后，DB 回滚天然恢复一切，
+        不再需要快照作为补偿依据）。
+- 同时移除 import copy（无其他调用点）。
+
+v1.5 变更（保留）：
+- V14-P0-01：延迟提交方案，DB commit 为最后一步。
+- V14-P1-02：_restore_role_permissions 批量优化。
+- V14-P1-04：补偿失败清理加载标记。
+- V14-P1-06：new_dir 清理幂等。
+"""
 import logging
 import os
 import re
@@ -13,7 +25,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import FastAPI
 from packaging.version import InvalidVersion, Version
-from sqlalchemy import delete, func, or_, select, text as sa_text
+from sqlalchemy import delete, func, or_, select
+from sqlalchemy import text as sa_text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -163,7 +176,7 @@ def _safe_rmtree_quiet(path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# FS 三工具函数（V14-P0-01 核心）
+# FS 三工具函数
 # ---------------------------------------------------------------------------
 def _prepare_new_dir(source: Path, target: Path) -> Path:
     """复制源码到 <target>.new。"""
@@ -191,12 +204,7 @@ def _prepare_new_dir(source: Path, target: Path) -> Path:
 
 
 def _swap_new_to_target(new_dir: Path, target: Path) -> Optional[Path]:
-    """
-    将 new_dir 替换为 target，保留旧版本为 target.old。
-
-    返回 old_backup 路径（若 target 之前不存在则返回 None）。
-    失败时恢复旧目录、清理 new_dir，并抛出 PlatformException。
-    """
+    """将 new_dir 替换为 target，保留旧版本为 target.old。"""
     old_backup = target.with_name(target.name + ".old")
     if old_backup.exists():
         _safe_rmtree_quiet(old_backup)
@@ -233,11 +241,7 @@ def _finalize_swap(old_backup: Optional[Path]) -> None:
 
 
 def _rollback_swap(target: Path, old_backup: Optional[Path]) -> None:
-    """
-    回滚 FS：删除 target（若存在），恢复 old_backup 到 target。
-    - install：old_backup=None，删除 target，回到初始
-    - upgrade：old_backup=target.old，删除 target，恢复旧版本
-    """
+    """回滚 FS：删除 target（若存在），恢复 old_backup 到 target。"""
     if target.exists():
         _safe_rmtree_quiet(target)
     if old_backup and old_backup.exists():
@@ -439,7 +443,7 @@ async def _check_dependencies(db: AsyncSession, dependencies: List[str]) -> None
 
 
 # ---------------------------------------------------------------------------
-# 角色-权限关联快照 / 恢复（工具函数，供未来扩展使用）
+# 角色-权限关联快照 / 恢复（工具函数）
 # ---------------------------------------------------------------------------
 async def _snapshot_role_permissions(
     db: AsyncSession, module_id: str
@@ -458,15 +462,9 @@ async def _restore_role_permissions(
     db: AsyncSession,
     pairs: List[Tuple[int, str]],
 ) -> None:
-    """
-    恢复角色-权限关联（幂等，批量）。
+    """恢复角色-权限关联（幂等，批量）。
 
-    v1.5（V14-P1-02）：
-        - 批量查询 Permission（IN 查询）；
-        - 批量查询已有 RolePermission；
-        - db.add_all 一次写入。
-
-    注意：v1.5 采用延迟提交方案后，正常路径**不再需要**此函数作为补偿；
+    v1.5 采用延迟提交方案后，正常路径不再需要此函数作为补偿；
     保留作为工具函数，供未来可能的扩展场景使用。
     """
     if not pairs:
@@ -618,7 +616,7 @@ async def list_modules(
 
 
 # ---------------------------------------------------------------------------
-# 安装（V14-P0-01：延迟提交方案）
+# 安装
 # ---------------------------------------------------------------------------
 async def install_module(
     db: AsyncSession,
@@ -627,21 +625,7 @@ async def install_module(
     source_path: Optional[str],
     operator: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """
-    安装模块（v1.5）：
-
-        阶段 1：staging + manifest 校验 + 依赖检查
-        阶段 2：_prepare_new_dir → <target>.new
-        阶段 3：_swap_new_to_target → <target>（install 时 target 不存在）
-        阶段 4：DB 修改（add Module + ModuleDependency + register_permissions）
-        阶段 5：await db.commit()   ← 最后一步
-        阶段 6：_finalize_swap（install 时为 None，无操作）
-
-    失败补偿：
-        - 阶段 1/2 失败：清理 new_dir，DB 无修改
-        - 阶段 3 失败：_swap_new_to_target 内部恢复
-        - 阶段 4/5 失败：db.rollback() + _rollback_swap 删除 target
-    """
+    """安装模块（v1.5）。"""
     temp_dir = Path(tempfile.mkdtemp(prefix="module_install_"))
     module_id: Optional[str] = None
     target_dir: Optional[Path] = None
@@ -719,7 +703,7 @@ async def install_module(
 
         # ---- 阶段 6：finalize ----
         _finalize_swap(old_backup)
-        fs_swapped = False  # 已 finalize，无需回滚
+        fs_swapped = False
 
         module = await _load_module_with_deps(db, module_id)
 
@@ -785,7 +769,6 @@ async def install_module(
 
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
-        # V14-P1-06：确保 new_dir 清理（幂等）
         if new_dir is not None and new_dir.exists():
             _safe_rmtree_quiet(new_dir)
         if install_type == "zip":
@@ -793,7 +776,7 @@ async def install_module(
 
 
 # ---------------------------------------------------------------------------
-# 升级（V14-P0-01：延迟提交方案；V14-P1-04：失败清理加载标记）
+# 升级（v1.5.1：移除 snapshot 变量）
 # ---------------------------------------------------------------------------
 async def upgrade_module(
     db: AsyncSession,
@@ -804,21 +787,20 @@ async def upgrade_module(
     operator: Dict[str, Any],
     app: FastAPI,
 ) -> Dict[str, Any]:
-    """
-    升级模块（v1.5）：
+    """升级模块（v1.5）。
 
-        阶段 1：快照（在 try 内，V14-P1-05）
-        阶段 2：staging + manifest 校验 + 版本比较 + 依赖检查
-        阶段 3：_prepare_new_dir → <target>.new
-        阶段 4：_swap_new_to_target → <target>（保留 <target>.old）
-        阶段 5：DB 修改（不 commit）
-        阶段 6：await db.commit()   ← 最后一步
-        阶段 7：_finalize_swap 删除 <target>.old
-        阶段 8：active 模块重载路由
+    阶段：
+        1. staging + manifest 校验 + 版本比较 + 依赖检查
+        2. _prepare_new_dir → <target>.new
+        3. _swap_new_to_target → <target>（保留 <target>.old）
+        4. DB 修改（不 commit）
+        5. await db.commit()   ← 最后一步
+        6. _finalize_swap 删除 <target>.old
+        7. active 模块重载路由
 
     失败处理：
-        - 阶段 5/6 失败：db.rollback() + _rollback_swap 恢复旧版本
-        - 补偿失败：unmark_module_loaded(app, module_id)（V14-P1-04）
+        - 阶段 4/5 失败：db.rollback() + _rollback_swap 恢复旧版本
+        - 补偿失败：unmark_module_loaded(app, module_id)
     """
     _ensure_not_core_module(module_id, "upgrade")
 
@@ -835,23 +817,7 @@ async def upgrade_module(
     new_ver: Optional[Version] = None
 
     try:
-        # ---- 阶段 1：快照（V14-P1-05：放入 try 内）----
-        old_manifest = copy.deepcopy(module.manifest)
-        old_dependencies = [d.dependency_id for d in module.dependencies]
-        snapshot = {
-            "name": module.name,
-            "version": module.version,
-            "description": module.description,
-            "author": module.author,
-            "homepage": module.homepage,
-            "entry_backend": module.entry_backend,
-            "entry_frontend": module.entry_frontend,
-            "manifest": old_manifest,
-            "status": module.status,
-            "dependencies": old_dependencies,
-        }
-
-        # ---- 阶段 2：staging 与校验 ----
+        # ---- 阶段 1：staging 与校验 ----
         source_root = _resolve_module_source(
             install_type, file_path, source_path, temp_dir
         )
@@ -884,14 +850,14 @@ async def upgrade_module(
 
         target_dir = get_module_dir(module_id)
 
-        # ---- 阶段 3：准备 new_dir ----
+        # ---- 阶段 2：准备 new_dir ----
         new_dir = _prepare_new_dir(source_root, target_dir)
 
-        # ---- 阶段 4：FS 替换（保留 old_backup）----
+        # ---- 阶段 3：FS 替换（保留 old_backup）----
         old_backup = _swap_new_to_target(new_dir, target_dir)
         fs_swapped = True
 
-        # ---- 阶段 5：DB 修改（不 commit）----
+        # ---- 阶段 4：DB 修改（不 commit）----
         module.name = manifest.name
         module.version = manifest.version
         module.description = manifest.description
@@ -902,7 +868,9 @@ async def upgrade_module(
         module.manifest = raw_manifest
 
         await db.execute(
-            delete(ModuleDependency).where(ModuleDependency.module_id == module_id)
+            delete(ModuleDependency).where(
+                ModuleDependency.module_id == module_id
+            )
         )
         for dep in manifest.dependencies:
             db.add(ModuleDependency(module_id=module_id, dependency_id=dep))
@@ -915,16 +883,16 @@ async def upgrade_module(
                 commit=False,
             )
 
-        # ---- 阶段 6：commit（最后一步）----
+        # ---- 阶段 5：commit（最后一步）----
         await db.commit()
 
-        # ---- 阶段 7：finalize ----
+        # ---- 阶段 6：finalize ----
         _finalize_swap(old_backup)
-        fs_swapped = False  # 已 finalize，无需回滚
+        fs_swapped = False
 
         module = await _load_module_with_deps(db, module_id)
 
-        # ---- 阶段 8：active 模块重载路由 ----
+        # ---- 阶段 7：active 模块重载路由 ----
         if module.status == "active":
             try:
                 unmark_module_loaded(app, module_id)
@@ -946,7 +914,6 @@ async def upgrade_module(
         await db.rollback()
         if fs_swapped and target_dir is not None:
             _rollback_swap(target_dir, old_backup)
-            # V14-P1-04：清理加载标记
             unmark_module_loaded(app, module_id)
         elif new_dir is not None:
             _safe_rmtree_quiet(new_dir)
@@ -964,7 +931,6 @@ async def upgrade_module(
         await db.rollback()
         if fs_swapped and target_dir is not None:
             _rollback_swap(target_dir, old_backup)
-            # V14-P1-04：清理加载标记
             unmark_module_loaded(app, module_id)
         elif new_dir is not None:
             _safe_rmtree_quiet(new_dir)
@@ -980,10 +946,8 @@ async def upgrade_module(
 
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
-        # V14-P1-06：确保 new_dir 清理（幂等）
         if new_dir is not None and new_dir.exists():
             _safe_rmtree_quiet(new_dir)
-        # 升级时不清理上传 ZIP（用户可能希望保留升级包）
 
 
 # ---------------------------------------------------------------------------

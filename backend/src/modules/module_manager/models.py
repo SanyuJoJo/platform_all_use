@@ -2,11 +2,11 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    JSON,
     Column,
     DateTime,
     ForeignKey,
     Integer,
-    JSON,
     String,
     Text,
     UniqueConstraint,

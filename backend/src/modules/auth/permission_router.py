@@ -6,12 +6,15 @@ v1.1 变更：
 - P1-5：路由函数重命名，避免与 service 函数同名。
 """
 from typing import Optional
+
 from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.core.database import get_db
 from src.core.response import success_response
 from src.modules.auth import permission_service
 from src.modules.auth.dependencies import CurrentUser, require_permission
+
 router = APIRouter(prefix="/api/v1/auth/permissions", tags=["Permission"])
 @router.get("")
 async def list_permissions_endpoint(

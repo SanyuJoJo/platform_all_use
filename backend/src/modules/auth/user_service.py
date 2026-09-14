@@ -19,14 +19,17 @@ v1.1 修复（保留）：
 """
 import re
 from typing import Any, Dict, List, Optional
+
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
 from src.core.exceptions import PlatformException
 from src.core.security import hash_password
 from src.modules.auth.models import Role, User, UserRole
 from src.modules.auth.service import log_auth_event, revoke_all_user_tokens
+
 # 用户名格式：3-20 位，字母 / 数字 / 下划线
 _USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_]{3,20}$")
 # 密码长度约束

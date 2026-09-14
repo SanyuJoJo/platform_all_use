@@ -1,15 +1,24 @@
-from sqlalchemy import Column, Integer, String, DateTime
+"""核心模型示例。
+
+包含：
+- SystemConfig：系统配置表，用于演示迁移机制。
+"""
+from sqlalchemy import Column, DateTime, Integer, String
 from sqlalchemy.sql import func
+
 from src.core.database import Base
+
+
 class SystemConfig(Base):
-    """
-    系统配置表（示例模型，用于演示迁移机制）
-    
+    """系统配置表（示例模型，用于演示迁移机制）。
+
     此模型仅作为开发示例，展示如何使用 SQLAlchemy ORM 定义表结构。
     开发者可以根据实际需求修改或删除此模型，但需确保在 migrations/env.py
     中正确导入所有模型，以便 Alembic 能够自动检测变更。
     """
+
     __tablename__ = "sys_config"
+
     id = Column(Integer, primary_key=True, index=True)
     key = Column(String(64), unique=True, index=True, nullable=False, comment="配置键")
     value = Column(String(512), nullable=False, comment="配置值")

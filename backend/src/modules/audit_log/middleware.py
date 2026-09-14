@@ -11,9 +11,11 @@ v1.1 变更：
 import asyncio
 import logging
 from typing import Optional, Set, Tuple
+
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
+
 from src.core.logging import request_id_var
 from src.core.security import decode_token
 from src.modules.audit_log.constants import (
@@ -23,6 +25,7 @@ from src.modules.audit_log.constants import (
     STATUS_ERROR_MAP,
 )
 from src.modules.audit_log.service import write_operation_log
+
 logger = logging.getLogger(__name__)
 # 模块级后台任务集合：保存 asyncio.Task 引用，防止被 GC 回收
 _pending_audit_tasks: Set[asyncio.Task] = set()

@@ -10,6 +10,7 @@ from src.modules.auth.dependencies import (
     get_current_user,
     require_permission,
 )
+
 # 兼容别名：历史上使用 OAuth2PasswordBearer；现统一使用 HTTPBearer
 oauth2_scheme = bearer_scheme
 __all__ = [

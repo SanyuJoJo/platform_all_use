@@ -10,7 +10,10 @@ v1.1 变更：
 """
 from datetime import datetime
 from typing import List, Optional
+
 from pydantic import BaseModel, Field
+
+
 class RoleBrief(BaseModel):
     """角色简要信息（用于用户对象内嵌）。"""
     id: int

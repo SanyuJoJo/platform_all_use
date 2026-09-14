@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
-from typing import List, Optional, Dict
+from typing import Dict, Optional
+
 from src.core.exceptions import PlatformException
+
 # 模拟数据
 MOCK_ROLES: Dict[int, dict] = {
     1: {

@@ -4,8 +4,10 @@
 权限点：auth:user:view / auth:user:create / auth:user:edit / auth:user:delete
 """
 from typing import Optional
+
 from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.core.database import get_db
 from src.core.response import success_response
 from src.modules.auth import user_service
@@ -19,6 +21,7 @@ from src.modules.auth.user_schemas import (
     UserStatusUpdate,
     UserUpdate,
 )
+
 router = APIRouter(prefix="/api/v1/auth/users", tags=["User"])
 @router.get("")
 async def list_users(

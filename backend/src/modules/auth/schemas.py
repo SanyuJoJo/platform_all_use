@@ -4,7 +4,10 @@
 （10003 / 10004 / 10007），而不是 Pydantic 的 422 通用校验错误。
 """
 from typing import List, Optional
+
 from pydantic import BaseModel, Field
+
+
 class LoginReq(BaseModel):
     """登录请求"""
     username: str = Field(..., min_length=1, max_length=50, description="用户名")

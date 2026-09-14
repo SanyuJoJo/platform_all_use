@@ -8,13 +8,16 @@ v1.1 变更：
 """
 from datetime import datetime
 from typing import Optional
+
 from fastapi import APIRouter, Depends, Path, Query
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.core.database import get_db
 from src.core.response import success_response
 from src.modules.audit_log import service
 from src.modules.audit_log.dependencies import CurrentUser, require_permission
+
 router = APIRouter(prefix="/api/v1/audit-logs", tags=["Audit Log"])
 @router.get("")
 async def list_audit_logs(

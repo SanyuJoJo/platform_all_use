@@ -1,5 +1,6 @@
 """日志审计模块 - ORM 模型。"""
 from datetime import datetime, timezone
+
 from sqlalchemy import (
     Column,
     DateTime,
@@ -9,7 +10,10 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy.sql import func
+
 from src.core.database import Base
+
+
 def _utcnow_naive() -> datetime:
     """UTC 当前时间（naive），与 SQLite DateTime 存储格式一致。"""
     return datetime.now(timezone.utc).replace(tzinfo=None)

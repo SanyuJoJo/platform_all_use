@@ -6,19 +6,23 @@ v1.2 变更（R-3）：
   不同 license_key 时产生多条 active 的边界问题。
 """
 from datetime import datetime, timezone
+
 from sqlalchemy import (
+    JSON,
     Column,
     DateTime,
     Index,
     Integer,
-    JSON,
     SmallInteger,
     String,
     text,
 )
 from sqlalchemy.sql import func
+
 from src.core.database import Base
 from src.modules.license.constants import ACTIVE_LICENSE_UNIQUE_INDEX
+
+
 def _utcnow_naive() -> datetime:
     """UTC 当前时间（naive），与 SQLite DateTime 存储格式一致。"""
     return datetime.now(timezone.utc).replace(tzinfo=None)

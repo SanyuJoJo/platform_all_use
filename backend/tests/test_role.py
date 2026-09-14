@@ -24,13 +24,17 @@ v1.1 变更：
     KEEP_TEST_DB=1 uv run pytest tests/test_role.py -v   # 调试时保留测试库
 """
 import uuid
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
+
 from src.core.database import AsyncSessionLocal
 from src.main import app
 from src.modules.auth.models import Role, UserRole
+
+
 @pytest.fixture
 async def client():
     transport = ASGITransport(app=app)

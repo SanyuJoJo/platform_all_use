@@ -14,13 +14,16 @@ v1.1 变更：
         并将 current_user 注入 Service 用于审计日志。
 """
 from typing import Optional
+
 from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.core.database import get_db
 from src.core.response import success_response
 from src.modules.auth import role_service
 from src.modules.auth.dependencies import CurrentUser, require_permission
 from src.modules.auth.role_schemas import RoleCreate, RoleUpdate
+
 router = APIRouter(prefix="/api/v1/auth/roles", tags=["Role"])
 @router.get("")
 async def list_roles(

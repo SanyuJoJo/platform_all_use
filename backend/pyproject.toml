@@ -32,8 +32,50 @@ dev = [
 line-length = 100
 target-version = "py312"
 
+# ============================================================================
+# Ruff lint 配置
+#
+# 设计原则：
+#   1. 保留真正能发现 Bug 的规则（F、E9 等）；
+#   2. 忽略 FastAPI 惯例写法（B008）与历史兼容写法（UP*）；
+#   3. 忽略代码复杂度硬性阈值（C901），交由代码审查人工把关；
+#   4. 行长度（E501）由 formatter 控制，不阻断构建。
+#
+# 关于 B008 的说明：
+#   FastAPI 的 Depends(...) / Query(...) / Path(...) / File(...) /
+#   Form(...) / Body(...) / Header(...) 需要在函数参数默认值中调用，
+#   这是 FastAPI 的官方推荐写法，不是缺陷。
+#   官方也建议对 FastAPI 项目忽略 B008。
+#
+# 关于 C901 的说明：
+#   部分调度/校验函数（如 _register_spa_fallback、install_module、
+#   upgrade_module、_validate_manifest、update_user、_persist_license、
+#   register_permissions、_validate_permission_item、load_active_modules、
+#   uninstall_module）因业务需要天然复杂，通过人工审查与测试覆盖质量，
+#   不做机械拆分。
+# ============================================================================
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "B", "C", "UP"]
+ignore = [
+    # FastAPI 惯例
+    "B008",
+    # 复杂度硬阈值
+    "C901",
+    # 行长度由 formatter 控制
+    "E501",
+    # 允许保留历史兼容写法（避免大规模机械重构引入回归）
+    "UP006",   # typing.Dict/List/Tuple → 内置 dict/list/tuple
+    "UP017",   # timezone.utc → datetime.UTC
+    "UP035",   # typing 模块已废弃别名
+    "UP041",   # asyncio.TimeoutError → 内置 TimeoutError
+    "UP045",   # Optional[X] → X | None
+    # except 块中允许 raise 不带 from（部分场景语义清晰）
+    "B904",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试文件中 fixture / 动态导入的未使用警告不影响生产代码
+"tests/**/*.py" = ["F401", "F841"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

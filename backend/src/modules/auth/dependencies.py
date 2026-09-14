@@ -3,15 +3,19 @@
 提供 get_current_user 与 require_permission。
 """
 from typing import List, Optional, TypedDict
+
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
 from src.core.database import get_db
 from src.core.exceptions import PlatformException
 from src.core.security import decode_token
 from src.modules.auth.models import Role, User
+
+
 class CurrentUser(TypedDict):
     """当前用户上下文（依赖注入返回值）"""
     id: int

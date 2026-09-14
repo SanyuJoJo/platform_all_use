@@ -19,7 +19,10 @@ v1.1 变更：
 """
 from datetime import datetime
 from typing import List, Optional
+
 from pydantic import BaseModel, ConfigDict, Field
+
+
 class RoleCreate(BaseModel):
     """创建角色请求。
     注意：

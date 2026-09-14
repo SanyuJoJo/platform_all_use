@@ -11,6 +11,7 @@ v1.2 引入：
     环境变量，因为 src.core.config.settings 在首次导入时即固化配置。
 """
 import os
+
 # ---- 必须在导入 src 之前设置 ----
 _TEST_DB_URL = os.environ.get(
     "TEST_DATABASE_URL",
@@ -23,8 +24,11 @@ _KEEP_TEST_DB = os.environ.get("KEEP_TEST_DB", "") == "1"
 _TEST_DB_PATH = _TEST_DB_URL.split("///")[-1] if "sqlite" in _TEST_DB_URL else ""
 # ---- 现在可以安全导入 src ----
 import pytest  # noqa: E402
+
 from src.core.database import AsyncSessionLocal, Base, engine  # noqa: E402
 from src.modules.auth.service import ensure_auth_seed_data  # noqa: E402
+
+
 @pytest.fixture(scope="session", autouse=True)
 async def setup_test_database():
     """

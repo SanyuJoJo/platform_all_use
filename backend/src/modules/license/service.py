@@ -23,10 +23,12 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+
 import httpx
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.core.config import settings
 from src.core.exceptions import PlatformException
 from src.modules.auth.models import User
@@ -45,6 +47,7 @@ from src.modules.license.validator import (
     parse_license_content,
     verify_signature,
 )
+
 logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # 内部工具

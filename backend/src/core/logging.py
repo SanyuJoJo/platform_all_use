@@ -1,7 +1,9 @@
 import logging
 import sys
 from contextvars import ContextVar
+
 from src.core.config import settings
+
 request_id_var: ContextVar[str] = ContextVar("request_id", default="unknown")
 class RequestIdFilter(logging.Filter):
     def filter(self, record):

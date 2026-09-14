@@ -12,8 +12,10 @@ import logging
 import platform
 import uuid
 from typing import Any, Dict
+
 from src.core.config import settings
 from src.core.exceptions import PlatformException
+
 logger = logging.getLogger(__name__)
 def _canonical_json(payload: Dict[str, Any]) -> str:
     """规范化 JSON，保证签名稳定性。"""

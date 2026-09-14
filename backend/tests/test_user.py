@@ -19,14 +19,18 @@ v1.0 引入：
 """
 import uuid
 from typing import Optional
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
+
 from src.core.database import AsyncSessionLocal
 from src.core.security import hash_password
 from src.main import app
 from src.modules.auth.models import Role, User, UserRole
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

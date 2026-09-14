@@ -15,10 +15,13 @@ v1.2 变更：
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, select
+
 from src.core.database import AsyncSessionLocal
 from src.core.exceptions import PlatformException
 from src.main import app
 from src.modules.auth.models import Permission
+
+
 @pytest.fixture
 async def client():
     transport = ASGITransport(app=app)

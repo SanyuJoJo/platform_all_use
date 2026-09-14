@@ -3,7 +3,10 @@
 """
 import pytest
 from sqlalchemy import inspect, text
+
 from src.core.database import engine
+
+
 @pytest.mark.asyncio
 async def test_tables_created():
     """检查核心表是否已创建（使用 run_sync 包装 inspect）"""

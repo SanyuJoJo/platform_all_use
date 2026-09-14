@@ -5,7 +5,10 @@ v1.1 变更：
 - 保留 PermissionOut 用于权限查询接口响应。
 """
 from datetime import datetime
+
 from pydantic import BaseModel
+
+
 class PermissionOut(BaseModel):
     """权限响应对象。"""
     id: int

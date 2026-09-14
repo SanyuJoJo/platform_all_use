@@ -1,8 +1,12 @@
-from fastapi import APIRouter, Depends, Query
 from typing import Optional
+
+from fastapi import APIRouter, Depends
+
 from src.core.dependencies import get_current_user, require_permission
 from src.core.response import success_response
-from .service import list_permissions, get_permissions_by_module
+
+from .service import get_permissions_by_module, list_permissions
+
 router = APIRouter(prefix="/api/v1/auth/permissions", tags=["Permission"])
 @router.get("/")
 async def get_permissions(

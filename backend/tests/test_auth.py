@@ -4,7 +4,10 @@
 """
 import pytest
 from httpx import ASGITransport, AsyncClient
+
 from src.main import app
+
+
 @pytest.fixture
 async def client():
     transport = ASGITransport(app=app)
@@ -329,6 +332,7 @@ async def test_seed_data_preserves_admin_permissions():
     """
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
+
     from src.core.database import AsyncSessionLocal
     from src.modules.auth.models import Permission, Role
     from src.modules.auth.service import ensure_auth_seed_data

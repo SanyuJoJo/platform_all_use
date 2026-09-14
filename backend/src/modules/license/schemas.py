@@ -7,7 +7,10 @@ v1.1 变更：
 """
 from datetime import datetime
 from typing import List, Optional
+
 from pydantic import BaseModel, Field
+
+
 class LicenseStatusOut(BaseModel):
     """
     License 状态响应（严格遵循《API接口文档》§ 8.1）。

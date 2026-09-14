@@ -13,9 +13,11 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, select
+
 from src.core.database import AsyncSessionLocal
 from src.main import app
 from src.modules.license.constants import CORE_MODULES_BYPASS
@@ -24,6 +26,8 @@ from src.modules.license.validator import (
     compute_signature,
     get_machine_code,
 )
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

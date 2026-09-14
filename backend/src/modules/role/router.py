@@ -1,10 +1,14 @@
-from fastapi import APIRouter, Depends, Query, Path
 from typing import Optional
+
+from fastapi import APIRouter, Depends, Path, Query
+
 from src.core.dependencies import get_current_user, require_permission
-from src.core.response import success_response
 from src.core.exceptions import PlatformException
+from src.core.response import success_response
+
 from .schemas import RoleCreate, RoleUpdate
-from .service import list_roles, create_role, get_role_by_id, update_role, delete_role
+from .service import create_role, delete_role, get_role_by_id, list_roles, update_role
+
 router = APIRouter(prefix="/api/v1/auth/roles", tags=["Role"])
 @router.get("/")
 async def get_roles(

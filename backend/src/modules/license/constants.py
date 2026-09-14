@@ -4,6 +4,7 @@ v1.1 变更：
         供 _persist_license 中的 license_key 长度校验使用。
 """
 from typing import Final
+
 # License 类型白名单（与数据库设计文档 § 6.1 一致）
 LICENSE_TYPES: Final = ("trial", "standard", "enterprise")
 # License 文件允许的扩展名
