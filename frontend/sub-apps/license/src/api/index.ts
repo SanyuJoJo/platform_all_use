@@ -1,10 +1,14 @@
-import axios from 'axios';
+import axios, { type AxiosRequestConfig } from 'axios';
+import type { ApiResponse } from '@/types';
+
 const baseURL = (import.meta.env.VITE_API_BASE_URL || '') + '/api/v1';
+
 const instance = axios.create({
   baseURL,
   timeout: 10000,
   withCredentials: true,
 });
+
 instance.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) {
@@ -12,6 +16,7 @@ instance.interceptors.request.use((config) => {
   }
   return config;
 });
+
 instance.interceptors.response.use(
   (res) => {
     const { code, message, data } = res.data;
@@ -37,4 +42,31 @@ instance.interceptors.response.use(
     return Promise.reject({ code: -1, message: '网络异常' });
   }
 );
-export default instance;
+
+interface ApiClient {
+  get<T = unknown>(
+    url: string,
+    config?: AxiosRequestConfig
+  ): Promise<ApiResponse<T>>;
+  post<T = unknown>(
+    url: string,
+    data?: unknown,
+    config?: AxiosRequestConfig
+  ): Promise<ApiResponse<T>>;
+  put<T = unknown>(
+    url: string,
+    data?: unknown,
+    config?: AxiosRequestConfig
+  ): Promise<ApiResponse<T>>;
+  patch<T = unknown>(
+    url: string,
+    data?: unknown,
+    config?: AxiosRequestConfig
+  ): Promise<ApiResponse<T>>;
+  delete<T = unknown>(
+    url: string,
+    config?: AxiosRequestConfig
+  ): Promise<ApiResponse<T>>;
+}
+
+export default instance as unknown as ApiClient;

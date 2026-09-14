@@ -1,0 +1,48 @@
+{
+  "generatedAt": "2026-09-14T05:16:43.544Z",
+  "mainApp": {
+    "dir": "main-app",
+    "base": "/",
+    "index": "/index.html"
+  },
+  "subApps": [
+    {
+      "dir": "audit-log",
+      "pkgName": "audit-log",
+      "moduleId": "audit_log",
+      "entry": "/sub-apps/audit-log/",
+      "activeRule": "/audit_log",
+      "staticBase": "/sub-apps/audit-log/"
+    },
+    {
+      "dir": "auth",
+      "pkgName": "module-auth",
+      "moduleId": "auth",
+      "entry": "/sub-apps/auth/",
+      "activeRule": "/auth",
+      "staticBase": "/sub-apps/auth/"
+    },
+    {
+      "dir": "license",
+      "pkgName": "module-license",
+      "moduleId": "license",
+      "entry": "/sub-apps/license/",
+      "activeRule": "/license",
+      "staticBase": "/sub-apps/license/"
+    },
+    {
+      "dir": "module-manager",
+      "pkgName": "module-manager",
+      "moduleId": "module_manager",
+      "entry": "/sub-apps/module-manager/",
+      "activeRule": "/module_manager",
+      "staticBase": "/sub-apps/module-manager/"
+    }
+  ],
+  "fastapi": {
+    "mainAppMount": "/",
+    "subAppsMount": "/sub-apps",
+    "apiPrefix": "/api/v1",
+    "spaFallback": true
+  }
+}

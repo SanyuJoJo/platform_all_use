@@ -1,30 +1,34 @@
 import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
-import qiankun from 'vite-plugin-qiankun';
 import { viteMockServe } from 'vite-plugin-mock';
 import path from 'path';
-
+/**
+ * 主应用 Vite 配置
+ *
+ * 说明：
+ * - 主应用为 qiankun 基座，不需要 vite-plugin-qiankun（该插件用于子应用导出生命周期）
+ * - 生产构建通过 `pnpm --filter main-app build` 调用，环境变量由 build-all.mjs 注入
+ */
 export default defineConfig(({ mode }) => {
   const envDir = path.resolve(__dirname, '..');
   const env = loadEnv(mode, envDir, '');
-  
   const useMock = env.VITE_USE_MOCK === 'true';
   const host = env.VITE_APP_HOST || '0.0.0.0';
   const port = parseInt(env.VITE_APP_PORT || '3000', 10);
-  // 从环境变量读取后端地址，若未设置则使用默认值
   const apiTarget = env.VITE_API_BASE_URL || 'http://localhost:8000';
-
-  console.log(`[Vite] Mock enabled: ${useMock}`);
-  console.log(`[Vite] API proxy target: ${apiTarget}`);
-
+  const base = env.VITE_BASE_PATH || '/';
+  console.log(`[Vite][main-app] mode=${mode}`);
+  console.log(`[Vite][main-app] base=${base}`);
+  console.log(`[Vite][main-app] Mock enabled: ${useMock}`);
+  console.log(`[Vite][main-app] API proxy target: ${apiTarget}`);
   return {
     envDir,
+    base,
     plugins: [
       vue(),
-      qiankun('main-app', { useDevMode: true }),
       viteMockServe({
         mockPath: path.resolve(__dirname, 'mock'),
-        enable: useMock,          // 仅在需要时启用 Mock
+        enable: useMock,
         logger: mode === 'development',
       }),
     ],
@@ -32,20 +36,17 @@ export default defineConfig(({ mode }) => {
       host,
       port,
       open: false,
-      // 始终配置代理，不依赖 useMock
       proxy: {
         '/api': {
           target: apiTarget,
           changeOrigin: true,
-          // 可选：若后端返回的路径不带 /api 前缀，可添加 rewrite
-          // rewrite: (path) => path.replace(/^\/api/, ''),
         },
       },
     },
     resolve: {
       alias: {
-        '@': '/src',
-        'shared': path.resolve(__dirname, '../shared'),
+        '@': path.resolve(__dirname, 'src'),
+        shared: path.resolve(__dirname, '../shared'),
       },
     },
     build: {

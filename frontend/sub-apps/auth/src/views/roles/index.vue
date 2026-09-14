@@ -34,7 +34,16 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, h } from 'vue';
-import { NDataTable, NSpace, NInput, NButton, useMessage, NTag, NPopconfirm } from 'naive-ui';
+import type { VNode } from 'vue';
+import {
+  NDataTable,
+  NSpace,
+  NInput,
+  NButton,
+  useMessage,
+  NTag,
+  NPopconfirm,
+} from 'naive-ui';
 import { roleApi } from '@/api/role';
 import RoleFormModal from './components/RoleFormModal.vue';
 import { useUserStore } from '@/store/user';
@@ -86,7 +95,9 @@ const columns = [
     render(row: Role) {
       const canEdit = userStore.hasPermission('auth:role:edit');
       const canDelete = userStore.hasPermission('auth:role:delete');
-      const buttons = [];
+      // 显式类型，避免隐式 any[]
+      const buttons: VNode[] = [];
+
       if (canEdit) {
         buttons.push(
           h(
@@ -111,7 +122,6 @@ const columns = [
                   {
                     size: 'small',
                     type: 'error',
-                    // ★ 修复：Number(1/0) → Boolean
                     disabled: Boolean(row.is_system),
                   },
                   { default: () => '删除' }
@@ -186,7 +196,6 @@ async function handleDelete(row: Role) {
     message.success('删除成功');
     fetchRoles();
   } catch (error: any) {
-    // 根据错误码给出更友好的提示
     if (error.code === 20003) {
       message.error('系统内置角色不可删除');
     } else if (error.code === 20005) {

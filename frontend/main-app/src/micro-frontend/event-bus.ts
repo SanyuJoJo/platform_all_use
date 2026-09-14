@@ -1,11 +1,25 @@
-// src/micro-frontend/event-bus.ts
 import mitt from 'mitt';
+import type { Module } from '@/types/module';
 
-console.log('[DEBUG] event-bus.ts: 创建事件总线');
+/**
+ * 平台事件总线。
+ *
+ * 通过为 mitt 声明 Events 泛型，保证 on/emit 的参数类型安全。
+ * 新增事件时在此处补充。
+ */
+export type EventBusEvents = {
+  'modules:changed': Module[];
+  'modules:refreshed': Module[];
+  'platform:auth-expired': void;
+  'platform:logout': void;
+};
 
-export const eventBus = mitt();
+export const eventBus = mitt<EventBusEvents>();
 
-// 添加事件监听日志（可选）
-eventBus.on('*', (type, payload) => {
-  console.log(`[DEBUG] eventBus: 事件触发 ${type}`, payload);
-});
+// 全局调试日志（可选，仅在开发模式输出）
+if (import.meta.env.DEV) {
+  eventBus.on('*', (type, payload) => {
+    // type 在 mitt 中为 keyof Events | '*'
+    console.log(`[DEBUG] eventBus: 事件触发 ${String(type)}`, payload);
+  });
+}

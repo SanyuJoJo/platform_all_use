@@ -1,0 +1,26 @@
+[
+  {
+    "module_id": "audit_log",
+    "entry_frontend": "/sub-apps/audit-log/",
+    "active_rule": "/audit_log",
+    "static_base": "/sub-apps/audit-log/"
+  },
+  {
+    "module_id": "auth",
+    "entry_frontend": "/sub-apps/auth/",
+    "active_rule": "/auth",
+    "static_base": "/sub-apps/auth/"
+  },
+  {
+    "module_id": "license",
+    "entry_frontend": "/sub-apps/license/",
+    "active_rule": "/license",
+    "static_base": "/sub-apps/license/"
+  },
+  {
+    "module_id": "module_manager",
+    "entry_frontend": "/sub-apps/module-manager/",
+    "active_rule": "/module_manager",
+    "static_base": "/sub-apps/module-manager/"
+  }
+]

@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia';
+
 export interface User {
   id: number;
   username: string;
@@ -9,37 +10,53 @@ export interface User {
   roles: string[];
   permissions: string[];
 }
+
 export const useUserStore = defineStore('user', {
   state: () => {
     const token = localStorage.getItem('token') || '';
+    const userStr = localStorage.getItem('user');
     let user: User | null = null;
     let permissions: string[] = [];
-    const userStr = localStorage.getItem('user');
+
     if (userStr) {
       try {
-        user = JSON.parse(userStr);
-        permissions = user.permissions || [];
+        const parsed = JSON.parse(userStr) as User | null;
+        if (parsed) {
+          user = parsed;
+          permissions = Array.isArray(parsed.permissions)
+            ? parsed.permissions
+            : [];
+        }
       } catch {
-        // 忽略
+        // 忽略解析失败
       }
     }
+
     return {
       token,
       user,
       permissions,
     };
   },
+
   actions: {
     setToken(newToken: string) {
       this.token = newToken;
       localStorage.setItem('token', newToken);
     },
+
     setUser(userInfo: User) {
       this.user = userInfo;
-      this.permissions = userInfo.permissions || [];
+      this.permissions = Array.isArray(userInfo.permissions)
+        ? userInfo.permissions
+        : [];
       localStorage.setItem('user', JSON.stringify(userInfo));
-      localStorage.setItem('permissions', JSON.stringify(userInfo.permissions || []));
+      localStorage.setItem(
+        'permissions',
+        JSON.stringify(this.permissions)
+      );
     },
+
     logout() {
       this.token = '';
       this.user = null;
@@ -49,6 +66,7 @@ export const useUserStore = defineStore('user', {
       localStorage.removeItem('permissions');
     },
   },
+
   getters: {
     isLoggedIn: (state) => !!state.token,
   },

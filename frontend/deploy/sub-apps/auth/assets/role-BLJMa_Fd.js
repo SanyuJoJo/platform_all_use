@@ -1,0 +1,1 @@
+import{i as t}from"./index-CKy-7jA-.js";const a={getList(e){return t.get("/auth/roles",{params:e})},create(e){return t.post("/auth/roles",e)},getDetail(e){return t.get(`/auth/roles/${e}`)},update(e,r){return t.put(`/auth/roles/${e}`,r)},delete(e){return t.delete(`/auth/roles/${e}`)}};export{a as r};

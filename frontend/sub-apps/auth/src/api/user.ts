@@ -1,5 +1,11 @@
 import request from './index';
-import type { User, UserCreate, UserUpdate, PaginatedResponse, ApiResponse } from '@/types';
+import type {
+  User,
+  UserCreate,
+  UserUpdate,
+  PaginatedResponse,
+} from '@/types';
+
 export const userApi = {
   getList(params: {
     page: number;
@@ -8,24 +14,25 @@ export const userApi = {
     status?: number;
     role_id?: number;
   }) {
-    return request.get<ApiResponse<PaginatedResponse<User>>>('/auth/users', { params });
+    // 泛型只到业务数据结构，不再嵌套 ApiResponse
+    return request.get<PaginatedResponse<User>>('/auth/users', { params });
   },
   create(data: UserCreate) {
-    return request.post<ApiResponse<User>>('/auth/users', data);
+    return request.post<User>('/auth/users', data);
   },
   getDetail(id: number) {
-    return request.get<ApiResponse<User>>(`/auth/users/${id}`);
+    return request.get<User>(`/auth/users/${id}`);
   },
   update(id: number, data: UserUpdate) {
-    return request.put<ApiResponse<User>>(`/auth/users/${id}`, data);
+    return request.put<User>(`/auth/users/${id}`, data);
   },
   delete(id: number) {
-    return request.delete<ApiResponse<null>>(`/auth/users/${id}`);
+    return request.delete<null>(`/auth/users/${id}`);
   },
   setStatus(id: number, status: number) {
-    return request.patch<ApiResponse<User>>(`/auth/users/${id}/status`, { status });
+    return request.patch<User>(`/auth/users/${id}/status`, { status });
   },
   resetPassword(id: number, new_password: string) {
-    return request.patch<ApiResponse<null>>(`/auth/users/${id}/password`, { new_password });
+    return request.patch<null>(`/auth/users/${id}/password`, { new_password });
   },
 };

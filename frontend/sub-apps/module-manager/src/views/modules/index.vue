@@ -2,7 +2,6 @@
   <div>
     <h1>模块管理</h1>
     <n-space vertical size="large">
-      <!-- 搜索栏 -->
       <n-space>
         <n-input
           v-model:value="searchKeyword"
@@ -25,7 +24,6 @@
         <n-button @click="resetSearch">重置</n-button>
       </n-space>
 
-      <!-- 表格 -->
       <n-data-table
         :columns="columns"
         :data="moduleList"
@@ -37,10 +35,8 @@
       />
     </n-space>
 
-    <!-- 安装弹窗 -->
     <InstallModal v-model:visible="showInstallModal" @success="fetchModules" />
 
-    <!-- 配置弹窗 -->
     <ConfigModal
       v-model:visible="showConfigModal"
       :module-id="configModuleId"
@@ -48,18 +44,36 @@
       @success="fetchModules"
     />
 
-    <!-- 卸载确认模态框 -->
-    <n-modal v-model:show="showUninstallModal" title="卸载模块" preset="dialog" @close="showUninstallModal = false">
+    <n-modal
+      v-model:show="showUninstallModal"
+      title="卸载模块"
+      preset="dialog"
+      @close="showUninstallModal = false"
+    >
       <div>
-        <p>确认卸载模块 <strong>{{ uninstallModule?.name }}</strong>（ID: {{ uninstallModule?.id }}）？</p>
-        <p v-if="uninstallModule?.dependencies?.length" style="color: #e67e22;">
-          注意：该模块被其他模块依赖（{{ uninstallModule.dependencies.join(', ') }}），强制卸载可能导致依赖方异常。
+        <p>
+          确认卸载模块
+          <strong>{{ uninstallModule?.name }}</strong>
+          （ID: {{ uninstallModule?.id }}）？
         </p>
-        <n-checkbox v-model:checked="forceUninstallChecked">强制卸载（忽略依赖检查）</n-checkbox>
+        <p
+          v-if="uninstallModule?.dependencies?.length"
+          style="color: #e67e22;"
+        >
+          注意：该模块被其他模块依赖（{{ uninstallModule.dependencies.join(', ') }}），
+          强制卸载可能导致依赖方异常。
+        </p>
+        <n-checkbox v-model:checked="forceUninstallChecked">
+          强制卸载（忽略依赖检查）
+        </n-checkbox>
       </div>
       <template #action>
         <n-button @click="showUninstallModal = false">取消</n-button>
-        <n-button type="error" :loading="uninstallLoading" @click="confirmUninstall">
+        <n-button
+          type="error"
+          :loading="uninstallLoading"
+          @click="confirmUninstall"
+        >
           确认卸载
         </n-button>
       </template>
@@ -69,6 +83,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, h, computed } from 'vue';
+import type { VNode } from 'vue';
 import {
   NDataTable,
   NSpace,
@@ -80,6 +95,7 @@ import {
   NModal,
   NCheckbox,
 } from 'naive-ui';
+import type { SelectOption } from 'naive-ui';
 import { moduleApi } from '@/api/modules';
 import InstallModal from './components/InstallModal.vue';
 import ConfigModal from './components/ConfigModal.vue';
@@ -89,9 +105,15 @@ import type { Module } from '@/types';
 const message = useMessage();
 const moduleStore = useModuleStore();
 
-const canCreate = computed(() => moduleStore.hasPermission('module_manager:module:create'));
-const canEdit = computed(() => moduleStore.hasPermission('module_manager:module:edit'));
-const canDelete = computed(() => moduleStore.hasPermission('module_manager:module:delete'));
+const canCreate = computed(() =>
+  moduleStore.hasPermission('module_manager:module:create')
+);
+const canEdit = computed(() =>
+  moduleStore.hasPermission('module_manager:module:edit')
+);
+const canDelete = computed(() =>
+  moduleStore.hasPermission('module_manager:module:delete')
+);
 
 const moduleList = ref<Module[]>([]);
 const loading = ref(false);
@@ -104,19 +126,18 @@ const pagination = reactive({
 const searchKeyword = ref('');
 const searchStatus = ref<string | null>(null);
 
-const statusOptions = [
-  { label: '全部', value: null },
+// Naive UI SelectOption.value 不接受 null，用 undefined 表示「全部」
+const statusOptions: SelectOption[] = [
+  { label: '全部', value: undefined as unknown as string },
   { label: '已启用', value: 'active' },
   { label: '已停用', value: 'inactive' },
 ];
 
-// 卸载弹窗状态
 const showUninstallModal = ref(false);
 const uninstallModule = ref<Module | null>(null);
 const forceUninstallChecked = ref(false);
 const uninstallLoading = ref(false);
 
-// 表格列定义
 const columns = [
   { title: 'ID', key: 'id', width: 150 },
   { title: '名称', key: 'name', width: 150 },
@@ -129,7 +150,7 @@ const columns = [
       return h(
         NTag,
         { type: row.status === 'active' ? 'success' : 'default' },
-        { default: () => row.status === 'active' ? '已启用' : '已停用' }
+        { default: () => (row.status === 'active' ? '已启用' : '已停用') }
       );
     },
   },
@@ -140,20 +161,28 @@ const columns = [
       if (!row.dependencies || row.dependencies.length === 0) {
         return h('span', '无');
       }
-      return h('div', { style: 'display:flex; flex-wrap:wrap; gap:4px;' },
-        row.dependencies.map(dep =>
+      return h(
+        'div',
+        { style: 'display:flex; flex-wrap:wrap; gap:4px;' },
+        row.dependencies.map((dep) =>
           h(NTag, { size: 'small' }, { default: () => dep })
         )
       );
     },
   },
-  { title: '安装时间', key: 'installed_at', render: (row: Module) => new Date(row.installed_at).toLocaleString() },
+  {
+    title: '安装时间',
+    key: 'installed_at',
+    render: (row: Module) =>
+      row.installed_at ? new Date(row.installed_at).toLocaleString() : '-',
+  },
   {
     title: '操作',
     key: 'actions',
     width: 320,
     render(row: Module) {
-      const buttons = [];
+      // 显式类型，避免隐式 any[]
+      const buttons: VNode[] = [];
 
       if (canEdit.value) {
         const action = row.status === 'active' ? '停用' : '启用';
@@ -174,7 +203,11 @@ const columns = [
         buttons.push(
           h(
             NButton,
-            { size: 'small', type: row.status === 'active' ? 'warning' : 'primary', onClick: handleToggle },
+            {
+              size: 'small',
+              type: row.status === 'active' ? 'warning' : 'primary',
+              onClick: handleToggle,
+            },
             { default: () => action }
           )
         );
@@ -191,7 +224,11 @@ const columns = [
         buttons.push(
           h(
             NButton,
-            { size: 'small', type: 'error', onClick: () => openUninstallDialog(row) },
+            {
+              size: 'small',
+              type: 'error',
+              onClick: () => openUninstallDialog(row),
+            },
             { default: () => '卸载' }
           )
         );
@@ -202,11 +239,10 @@ const columns = [
   },
 ];
 
-// 弹窗控制
 const showInstallModal = ref(false);
 const showConfigModal = ref(false);
 const configModuleId = ref('');
-const configData = ref<any>({});
+const configData = ref<Record<string, unknown>>({});
 
 function openUninstallDialog(row: Module) {
   uninstallModule.value = row;
@@ -218,7 +254,10 @@ async function confirmUninstall() {
   if (!uninstallModule.value) return;
   uninstallLoading.value = true;
   try {
-    await moduleApi.uninstall(uninstallModule.value.id, forceUninstallChecked.value);
+    await moduleApi.uninstall(
+      uninstallModule.value.id,
+      forceUninstallChecked.value
+    );
     message.success('卸载成功');
     showUninstallModal.value = false;
     fetchModules();
@@ -273,7 +312,7 @@ function onPageSizeChange(size: number) {
 async function handleConfig(row: Module) {
   try {
     const res = await moduleApi.getConfig(row.id);
-    configData.value = res.data;
+    configData.value = res.data as Record<string, unknown>;
     configModuleId.value = row.id;
     showConfigModal.value = true;
   } catch (err: any) {

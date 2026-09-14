@@ -1,17 +1,21 @@
-// src/store/module.ts
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { Module } from '@/types/module';
-import { getActiveModules, createModule, updateModule, deleteModule } from '@/api/module';
-import { message } from '@/utils/naive';
+import {
+  getActiveModules,
+  createModule,
+  updateModule,
+  deleteModule,
+} from '@/api/module';
 import { reRegister } from '@/micro-frontend/registry';
-import router from '@/router';
+import { eventBus } from '@/micro-frontend/event-bus';
 
 const STORAGE_KEY = 'module_list_cache';
 
 export const useModuleStore = defineStore('module', () => {
   const modules = ref<Module[]>([]);
   const loaded = ref(false);
+  const lastError = ref<string | null>(null);
 
   function loadCache(): Module[] {
     try {
@@ -23,76 +27,82 @@ export const useModuleStore = defineStore('module', () => {
   }
 
   function saveCache(data: Module[]) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (e) {
+      console.warn('[ModuleStore] 缓存模块列表失败', e);
+    }
   }
 
-  async function fetchModules(force = false) {
+  async function fetchModules(force = false): Promise<Module[]> {
     if (loaded.value && !force) {
       return modules.value;
     }
+
     try {
       const data = await getActiveModules();
       modules.value = data;
       loaded.value = true;
+      lastError.value = null;
       saveCache(data);
+      eventBus.emit('modules:changed', data);
       return data;
-    } catch (error) {
-      console.warn('[ModuleStore] 后端获取失败，使用缓存');
-      const cached = loadCache();
-      if (cached.length > 0) {
+    } catch (error: unknown) {
+      const code = (error as { code?: number })?.code;
+
+      if (code === 403 || code === 20051) {
+        console.warn(
+          '[ModuleStore] 无权访问 /modules 接口（403），已降级。' +
+            '建议后端提供已登录用户可访问的 /modules/active 接口。'
+        );
+        lastError.value = '无权访问模块列表接口';
+        const cached = loadCache();
         modules.value = cached;
         loaded.value = true;
         return cached;
       }
-      throw error;
+
+      console.warn('[ModuleStore] 获取模块列表失败，尝试使用缓存', error);
+      lastError.value =
+        (error as { message?: string })?.message || '获取模块列表失败';
+      const cached = loadCache();
+      modules.value = cached.length > 0 ? cached : [];
+      loaded.value = true;
+      return modules.value;
     }
   }
 
   async function addModule(moduleData: Partial<Module>) {
-    try {
-      const newModule = await createModule(moduleData);
-      await fetchModules(true);
-      reRegister(router);
-      return newModule;
-    } catch (error) {
-      console.error('[ModuleStore] 添加模块失败', error);
-      throw error;
-    }
+    const newModule = await createModule(moduleData);
+    await fetchModules(true);
+    reRegister();
+    return newModule;
   }
 
-  async function updateModule(id: string, data: Partial<Module>) {
-    try {
-      const updated = await updateModule(id, data);
-      await fetchModules(true);
-      reRegister(router);
-      return updated;
-    } catch (error) {
-      console.error('[ModuleStore] 更新模块失败', error);
-      throw error;
-    }
+  async function updateModuleById(id: string, data: Partial<Module>) {
+    const updated = await updateModule(id, data);
+    await fetchModules(true);
+    reRegister();
+    return updated;
   }
 
   async function removeModule(id: string) {
-    try {
-      await deleteModule(id);
-      await fetchModules(true);
-      reRegister(router);
-    } catch (error) {
-      console.error('[ModuleStore] 删除模块失败', error);
-      throw error;
-    }
+    await deleteModule(id);
+    await fetchModules(true);
+    reRegister();
   }
 
   function getActiveModuleIds(): string[] {
-    return modules.value.filter(m => m.status === 'active').map(m => m.id);
+    return modules.value.filter((m) => m.status === 'active').map((m) => m.id);
   }
 
   return {
     modules,
     loaded,
+    lastError,
     fetchModules,
     addModule,
-    updateModule,
+    updateModuleById,
     removeModule,
     getActiveModuleIds,
   };

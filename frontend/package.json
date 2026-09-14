@@ -4,14 +4,17 @@
   "version": "1.0.0",
   "scripts": {
     "dev:main": "pnpm --filter main-app dev",
-    "dev:subapp": "pnpm --filter \"./sub-apps/*\" --filter \"!./sub-apps/_template\" dev",
+    "dev:subapp": "pnpm --filter './sub-apps/*' --filter '!./sub-apps/_template' dev",
     "dev:all": "concurrently \"pnpm dev:main\" \"pnpm dev:subapp\"",
     "build:main": "pnpm --filter main-app build",
-    "build:all": "concurrently \"pnpm --filter main-app build\" \"pnpm --filter \"./sub-apps/*\" --filter \"!./sub-apps/_template\" build\"",
+    "build:all": "concurrently \"pnpm --filter main-app build\" \"pnpm --filter './sub-apps/*' --filter '!./sub-apps/_template' build\"",
+    "build:prod": "node scripts/build-all.mjs",
+    "verify:deploy": "node scripts/verify-deploy.mjs",
+    "clean:deploy": "node -e \"require('fs').rmSync('deploy',{recursive:true,force:true})\"",
     "lint": "eslint . --ext .vue,.ts,.tsx --fix",
     "format": "prettier --write .",
     "test": "pnpm --filter main-app test",
-    "prepare": "cd .. && husky install frontend/.husky"
+    "prepare": "cd .. && husky install frontend/.husky || true"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

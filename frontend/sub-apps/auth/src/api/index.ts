@@ -1,4 +1,5 @@
-import axios from 'axios';
+import axios, { type AxiosRequestConfig } from 'axios';
+import type { ApiResponse } from '@/types';
 
 const baseURL = (import.meta.env.VITE_API_BASE_URL || '') + '/api/v1';
 
@@ -8,7 +9,6 @@ const instance = axios.create({
   withCredentials: true,
 });
 
-// 请求拦截器：注入 token
 instance.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) {
@@ -17,14 +17,13 @@ instance.interceptors.request.use((config) => {
   return config;
 });
 
-// 响应拦截器：统一处理错误码和 401
 instance.interceptors.response.use(
   (res) => {
     const { code, message, data } = res.data;
     if (code !== 0) {
       return Promise.reject({ code, message, data });
     }
-    // ★ 修复：返回原始 res.data，由调用方通过泛型断言类型
+    // 拦截器拆包：直接返回业务响应体
     return res.data;
   },
   (err) => {
@@ -33,16 +32,14 @@ instance.interceptors.response.use(
       const { status, data } = response;
 
       if (status === 401) {
-        // 清理本地存储
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         localStorage.removeItem('permissions');
 
-        // ★ 修复：微前端下不直接跳转，通过事件通知主应用
-        if ((window as any).__POWERED_BY_QIANKUN__) {
+        if (window.__POWERED_BY_QIANKUN__) {
           window.dispatchEvent(new CustomEvent('platform:auth-expired'));
         } else {
-          const loginUrl = (import.meta.env.VITE_LOGIN_URL as string) || '/login';
+          const loginUrl = import.meta.env.VITE_LOGIN_URL || '/login';
           window.location.href = loginUrl;
         }
 
@@ -56,4 +53,34 @@ instance.interceptors.response.use(
   }
 );
 
-export default instance;
+/**
+ * 拦截器已把 AxiosResponse<T> 拆成 ApiResponse<T>，
+ * 覆盖默认类型让调用方直接得到 Promise<ApiResponse<T>>。
+ */
+interface ApiClient {
+  get<T = unknown>(
+    url: string,
+    config?: AxiosRequestConfig
+  ): Promise<ApiResponse<T>>;
+  post<T = unknown>(
+    url: string,
+    data?: unknown,
+    config?: AxiosRequestConfig
+  ): Promise<ApiResponse<T>>;
+  put<T = unknown>(
+    url: string,
+    data?: unknown,
+    config?: AxiosRequestConfig
+  ): Promise<ApiResponse<T>>;
+  patch<T = unknown>(
+    url: string,
+    data?: unknown,
+    config?: AxiosRequestConfig
+  ): Promise<ApiResponse<T>>;
+  delete<T = unknown>(
+    url: string,
+    config?: AxiosRequestConfig
+  ): Promise<ApiResponse<T>>;
+}
+
+export default instance as unknown as ApiClient;

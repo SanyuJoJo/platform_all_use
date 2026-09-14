@@ -1,0 +1,1 @@
+import{_ as r}from"./_plugin-vue_export-helper-DlAUqK2U.js";import{e as o,f as n,a as t}from"./vue-S81meYBf.js";const s={};function a(l,e){return t(),o("div",null,[...e[0]||(e[0]=[n("h1",null,"仪表盘",-1),n("p",null,"欢迎使用多功能管理平台",-1)])])}const _=r(s,[["render",a]]);export{_ as default};

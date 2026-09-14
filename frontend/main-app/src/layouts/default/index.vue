@@ -1,8 +1,12 @@
 <template>
   <div id="app">
-    <!-- 主布局 -->
+    <div
+      id="subapp-container"
+      v-show="showSubAppContainer"
+      style="position: absolute; top: 64px; left: 240px; right: 0; bottom: 0; padding: 20px; overflow: auto; background: #fff; z-index: 10;"
+    ></div>
+
     <n-layout style="height: 100vh;">
-      <!-- 顶部栏 -->
       <n-layout-header
         class="main-header"
         bordered
@@ -18,7 +22,6 @@
       </n-layout-header>
 
       <n-layout has-sider>
-        <!-- 左侧菜单 -->
         <n-layout-sider
           class="main-sider"
           bordered
@@ -33,19 +36,8 @@
           />
         </n-layout-sider>
 
-        <!-- 内容区域 -->
         <n-layout-content style="padding:20px; position: relative;">
-          <!-- 内容容器：子应用和主应用路由共用同一位置 -->
-          <div style="position: relative; height: 100%;">
-            <!-- 子应用容器 -->
-            <div
-              id="subapp-container"
-              v-show="isSubAppRoute"
-              style="height:100%; min-height:300px; background:#fff; z-index:10;"
-            ></div>
-            <!-- 主应用路由视图 -->
-            <router-view v-show="!isSubAppRoute" />
-          </div>
+          <router-view v-if="!isSubAppRoute" />
         </n-layout-content>
       </n-layout>
     </n-layout>
@@ -63,6 +55,7 @@ import {
   NMenu,
   NButton,
 } from 'naive-ui';
+import type { MenuOption } from 'naive-ui';
 import { useUserStore } from '@/store/user';
 import { useMenuStore } from '@/store/menu';
 import { useModuleStore } from '@/store/module';
@@ -74,20 +67,26 @@ const userStore = useUserStore();
 const menuStore = useMenuStore();
 const moduleStore = useModuleStore();
 
-const activeMenuKey = computed(() => route.name || '');
+// n-menu 的 value 期望 Key（string | number），
+// route.name 类型为 string | symbol | null | undefined，显式转换。
+const activeMenuKey = computed<string>(() => {
+  const name = route.name;
+  return typeof name === 'string' ? name : '';
+});
+
 const menuTreeKey = ref(0);
 
-// 判断当前路由是否为子应用路由
 const isSubAppRoute = computed(() => {
   const modules = moduleStore.modules;
-  return modules.some(m => route.path.startsWith(`/${m.id}`));
+  return modules.some((m) => route.path.startsWith(`/${m.id}`));
 });
+
+const showSubAppContainer = computed(() => isSubAppRoute.value);
 
 watch(
   () => menuStore.menuTree.length,
   () => {
     menuTreeKey.value += 1;
-    console.log('[Layout] 菜单树更新，新 key:', menuTreeKey.value);
   },
   { immediate: true }
 );
@@ -103,10 +102,10 @@ function fixMainAppStyles() {
     sider.style.setProperty('background', '#fff', 'important');
     sider.style.setProperty('color', '#000', 'important');
   }
-  document.querySelectorAll('.n-menu-item-content').forEach(el => {
+  document.querySelectorAll('.n-menu-item-content').forEach((el) => {
     (el as HTMLElement).style.setProperty('color', '#000', 'important');
   });
-  document.querySelectorAll('.main-header .n-button').forEach(el => {
+  document.querySelectorAll('.main-header .n-button').forEach((el) => {
     (el as HTMLElement).style.setProperty('color', '#000', 'important');
   });
 }
@@ -121,13 +120,13 @@ function startStyleWatcher() {
     }
   });
   observer.observe(document.head, { childList: true, subtree: true });
-  observer.observe(document.body, { attributes: true, attributeFilter: ['style', 'class'] });
+  observer.observe(document.body, {
+    attributes: true,
+    attributeFilter: ['style', 'class'],
+  });
 }
 
 onMounted(() => {
-  console.log('[Layout] 布局组件挂载，当前路由:', route.path);
-  const container = document.getElementById('subapp-container');
-  console.log('[Layout] subapp-container 是否存在:', !!container);
   fixMainAppStyles();
   startStyleWatcher();
 });
@@ -150,15 +149,24 @@ watch(
   { immediate: true }
 );
 
-function handleMenuSelect(key: string, item: any) {
-  if (item.path) {
-    console.log(`[Layout] 点击菜单 ${key}，跳转到 ${item.path}`);
-    router.push(item.path);
+/**
+ * Naive UI n-menu 的 onUpdate:value 签名：
+ *   (value: Key, item: MenuOption) => void
+ *
+ * 我们在 menuStore 中给每个 MenuOption 附加了 path 字段，
+ * 因此用交叉类型安全读取。
+ */
+function handleMenuSelect(
+  _key: string | number,
+  item: MenuOption
+): void {
+  const path = (item as MenuOption & { path?: string }).path;
+  if (path) {
+    router.push(path);
   }
 }
 
 async function handleLogout() {
-  console.log('[Layout] 用户登出');
   userStore.logout();
   message.success('已退出');
   router.push('/login');
