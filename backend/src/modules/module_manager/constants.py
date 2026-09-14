@@ -1,4 +1,10 @@
-"""模块管理模块常量与核心模块种子数据。"""
+"""模块管理模块常量与核心模块种子数据。
+
+v1.1 修复：
+- 生产环境 entry_frontend 统一使用同域静态路径 /sub-apps/{dir}/，
+  不再指向 3001~3004 等 Vite 开发端口。
+- platform 为主应用虚拟模块，无独立子应用产物，entry_frontend 保持 None。
+"""
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
@@ -12,9 +18,6 @@ CORE_MODULE_PROTECTED_ACTIONS = {"enable", "disable", "uninstall", "upgrade"}
 DEFAULT_ZIP_MAX_SIZE = 50 * 1024 * 1024
 DEFAULT_ZIP_MAX_TOTAL = 200 * 1024 * 1024
 DEFAULT_ZIP_MAX_FILES = 2000
-
-# 当前环境的前端 Host（部署到哪就改成哪）
-_FRONTEND_HOST = "http://192.168.56.14"
 
 # 复制源码时忽略的模式
 COPY_IGNORE_PATTERNS = (
@@ -48,6 +51,8 @@ CORE_MODULES: List[Dict[str, Any]] = [
         "homepage": None,
         "status": "active",
         "entry_backend": "router:router",
+        # platform 是主应用虚拟模块，没有独立子应用产物。
+        # 前端注册 qiankun 子应用时应跳过该模块。
         "entry_frontend": None,
         "manifest": {
             "id": "platform",
@@ -80,7 +85,8 @@ CORE_MODULES: List[Dict[str, Any]] = [
         "homepage": None,
         "status": "active",
         "entry_backend": "router:router",
-        "entry_frontend": f"{_FRONTEND_HOST}:3001/",
+        # 生产环境同域静态入口，由 FastAPI 挂载 /sub-apps
+        "entry_frontend": "/sub-apps/auth/",
         "manifest": {
             "id": "auth",
             "name": "认证授权",
@@ -142,7 +148,8 @@ CORE_MODULES: List[Dict[str, Any]] = [
         "homepage": None,
         "status": "active",
         "entry_backend": "router:router",
-        "entry_frontend": f"{_FRONTEND_HOST}:3002/",
+        # 部署目录名为 module-manager（短横线），模块 ID 为 module_manager（下划线）
+        "entry_frontend": "/sub-apps/module-manager/",
         "manifest": {
             "id": "module_manager",
             "name": "模块管理",
@@ -174,7 +181,8 @@ CORE_MODULES: List[Dict[str, Any]] = [
         "homepage": None,
         "status": "active",
         "entry_backend": "router:router",
-        "entry_frontend": f"{_FRONTEND_HOST}:3003/",
+        # 部署目录名为 audit-log（短横线），模块 ID 为 audit_log（下划线）
+        "entry_frontend": "/sub-apps/audit-log/",
         "manifest": {
             "id": "audit_log",
             "name": "日志审计",
@@ -206,7 +214,8 @@ CORE_MODULES: List[Dict[str, Any]] = [
         "homepage": None,
         "status": "active",
         "entry_backend": "router:router",
-        "entry_frontend": f"{_FRONTEND_HOST}:3004/",
+        # 生产环境同域静态入口
+        "entry_frontend": "/sub-apps/license/",
         "manifest": {
             "id": "license",
             "name": "License 管理",
