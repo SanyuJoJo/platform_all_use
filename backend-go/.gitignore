@@ -1,0 +1,9 @@
+bin/
+data/
+logs/
+.env
+*.db
+*.sqlite
+*.log
+.air.toml
+coverage.out
