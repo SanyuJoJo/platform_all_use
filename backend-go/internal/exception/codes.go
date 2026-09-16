@@ -1,7 +1,7 @@
 package exception
 // 统一错误码常量。
 //
-// P1/P3 阶段补充用户/角色/权限/模块管理相关错误码。
+// P0/P1/P3/P4 阶段补充用户/角色/权限/模块管理/日志审计相关错误码。
 const (
 	// ---- 通用成功 ----
 	CodeSuccess = 0
@@ -44,10 +44,15 @@ const (
 	CodeModuleDependencyConflict = 30006 // 模块被 active 模块依赖
 	CodeModuleConfigInvalid      = 30007 // 配置校验失败
 	CodeModuleEntryNotFound      = 30008 // 模块入口格式错误
-	CodeModuleLoadFailed         = 30009 // 模块热加载失败（P6 阶段使用）
+	CodeModuleLoadFailed         = 30009 // 模块热加载失败
 	CodeModuleIDInvalid          = 30010 // 模块 ID 格式无效
 	CodeModuleInUse              = 30011 // 模块正在运行
 	CodeModuleZipInvalid         = 30012 // ZIP 安全校验失败
 	CodeModuleCoreProtected      = 30013 // 核心模块保护
 	CodeModuleVersionInvalid     = 30015 // 版本必须递增
+	// ---- 日志审计相关 ----
+	CodeAuditLogInvalidTimeRange = 40001 // 日志查询时间范围无效
+	CodeAuditLogNotFound         = 40002 // 日志不存在
+	CodeAuditLogExportFormat     = 40004 // 导出格式不支持
+	CodeAuditLogExportFailed     = 40005 // 日志导出失败
 )

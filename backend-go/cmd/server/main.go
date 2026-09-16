@@ -17,6 +17,7 @@ import (
 	"backend-go/internal/logger"
 	"backend-go/internal/middleware"
 	"backend-go/internal/models"
+	"backend-go/internal/modules/audit_log"
 	"backend-go/internal/modules/auth"
 	"backend-go/internal/modules/module_manager"
 )
@@ -50,6 +51,9 @@ func main() {
 		if err := models.EnsureModuleTables(db); err != nil {
 			log.Fatal().Err(err).Msg("模块管理表迁移失败")
 		}
+		if err := models.EnsureAuditLogTable(db); err != nil {
+			log.Fatal().Err(err).Msg("日志审计表迁移失败")
+		}
 	} else {
 		log.Info().Msg("生产环境跳过 AutoMigrate，请使用 make migrate-up 执行 goose 迁移")
 	}
@@ -64,8 +68,7 @@ func main() {
 	// 清理模块残留
 	moduleSvc := module_manager.NewService(db, cfg)
 	moduleSvc.CleanupResidue()
-	// v1.3（P2-NEW-08）：创建 Loader 并注入 Service；
-	// LoadActiveModules 内部统一使用 s.loader。
+	// 加载 Loader 并注入 Service
 	moduleLoader := module_manager.NewLoader()
 	moduleSvc.SetLoader(moduleLoader)
 	if order, err := moduleSvc.LoadActiveModules(db); err != nil {
@@ -73,6 +76,8 @@ func main() {
 	} else {
 		log.Info().Strs("loaded", order).Msg("已加载 active 模块（P3 阶段仅记录顺序）")
 	}
+	// 日志审计服务
+	auditLogSvc := audit_log.NewService(db, cfg)
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	} else {
@@ -80,10 +85,22 @@ func main() {
 	}
 	r := gin.New()
 	r.HandleMethodNotAllowed = true
+	// ---------------------------------------------------------------------
+	// 中间件注册顺序（v1.1 P0-1 修复）：
+	//
+	//   RequestID → AccessLog → CORS → AuditLog → Recovery → 路由
+	//
+	// 关键点：
+	//   - AuditLogMiddleware 必须位于 Recovery 外层，确保路由 panic 时
+	//     AuditLogMiddleware 的 defer 逻辑能读取最终响应状态码与 X-Error-Code；
+	//   - Recovery 位于最内层，直接捕获路由 panic 并写入错误响应；
+	//   - 结合 AuditLogMiddleware 内部的 defer 兜底（P1-1），任何路径都能记录。
+	// ---------------------------------------------------------------------
 	r.Use(middleware.RequestID())
 	r.Use(middleware.AccessLog())
-	r.Use(exception.Recovery())
 	r.Use(middleware.SetupCORS(cfg.CORSOrigins))
+	r.Use(audit_log.AuditLogMiddleware(auditLogSvc))
+	r.Use(exception.Recovery())
 	r.NoRoute(exception.NoRoute)
 	r.NoMethod(exception.NoMethod)
 	r.GET("/health", health.Handler)
@@ -100,6 +117,9 @@ func main() {
 	// 模块管理路由
 	moduleHandler := module_manager.NewHandler(moduleSvc)
 	moduleHandler.RegisterRoutes(protected)
+	// 日志审计路由
+	auditLogHandler := audit_log.NewHandler(auditLogSvc)
+	auditLogHandler.RegisterRoutes(protected)
 	srv := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.ServerHost, cfg.ServerPort),
 		Handler:      r,
@@ -121,6 +141,8 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Error().Err(err).Msg("HTTP 服务关闭失败")
 	}
+	// 等待审计日志异步写入完成
+	auditLogSvc.Wait()
 	if err := database.Close(); err != nil {
 		log.Error().Err(err).Msg("数据库关闭失败")
 	}
