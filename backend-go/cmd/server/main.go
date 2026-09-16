@@ -19,6 +19,7 @@ import (
 	"backend-go/internal/models"
 	"backend-go/internal/modules/audit_log"
 	"backend-go/internal/modules/auth"
+	"backend-go/internal/modules/license"
 	"backend-go/internal/modules/module_manager"
 )
 func main() {
@@ -54,6 +55,9 @@ func main() {
 		if err := models.EnsureAuditLogTable(db); err != nil {
 			log.Fatal().Err(err).Msg("日志审计表迁移失败")
 		}
+		if err := models.EnsureLicenseTable(db); err != nil {
+			log.Fatal().Err(err).Msg("License 表迁移失败")
+		}
 	} else {
 		log.Info().Msg("生产环境跳过 AutoMigrate，请使用 make migrate-up 执行 goose 迁移")
 	}
@@ -68,16 +72,18 @@ func main() {
 	// 清理模块残留
 	moduleSvc := module_manager.NewService(db, cfg)
 	moduleSvc.CleanupResidue()
-	// 加载 Loader 并注入 Service
+	// Loader 注入
 	moduleLoader := module_manager.NewLoader()
 	moduleSvc.SetLoader(moduleLoader)
 	if order, err := moduleSvc.LoadActiveModules(db); err != nil {
 		log.Warn().Err(err).Msg("加载 active 模块失败")
 	} else {
-		log.Info().Strs("loaded", order).Msg("已加载 active 模块（P3 阶段仅记录顺序）")
+		log.Info().Strs("loaded", order).Msg("已加载 active 模块")
 	}
 	// 日志审计服务
 	auditLogSvc := audit_log.NewService(db, cfg)
+	// License 管理服务
+	licenseSvc := license.NewService(db, cfg)
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	} else {
@@ -85,17 +91,6 @@ func main() {
 	}
 	r := gin.New()
 	r.HandleMethodNotAllowed = true
-	// ---------------------------------------------------------------------
-	// 中间件注册顺序（v1.1 P0-1 修复）：
-	//
-	//   RequestID → AccessLog → CORS → AuditLog → Recovery → 路由
-	//
-	// 关键点：
-	//   - AuditLogMiddleware 必须位于 Recovery 外层，确保路由 panic 时
-	//     AuditLogMiddleware 的 defer 逻辑能读取最终响应状态码与 X-Error-Code；
-	//   - Recovery 位于最内层，直接捕获路由 panic 并写入错误响应；
-	//   - 结合 AuditLogMiddleware 内部的 defer 兜底（P1-1），任何路径都能记录。
-	// ---------------------------------------------------------------------
 	r.Use(middleware.RequestID())
 	r.Use(middleware.AccessLog())
 	r.Use(middleware.SetupCORS(cfg.CORSOrigins))
@@ -120,6 +115,14 @@ func main() {
 	// 日志审计路由
 	auditLogHandler := audit_log.NewHandler(auditLogSvc)
 	auditLogHandler.RegisterRoutes(protected)
+	// License 管理路由
+	licenseHandler := license.NewHandler(licenseSvc)
+	licenseHandler.RegisterRoutes(protected)
+	// License 启动校验（不阻断启动）
+	startupResult := licenseSvc.VerifyLicenseOnStartup()
+	if ok, _ := startupResult["ok"].(bool); !ok {
+		log.Warn().Interface("result", startupResult).Msg("License 启动校验未通过（不影响服务启动）")
+	}
 	srv := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.ServerHost, cfg.ServerPort),
 		Handler:      r,
