@@ -28,44 +28,31 @@ func NewService(db *gorm.DB, cfg *config.Config) *Service {
 }
 // errRefreshConflict 刷新 Token 并发冲突哨兵错误。
 var errRefreshConflict = errors.New("refresh token concurrent conflict")
-// hashToken 计算 Token 的 SHA-256 摘要。
 func hashToken(token string) string {
 	h := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(h[:])
 }
-// utcNowNaive 返回 UTC naive 时间。
 func utcNowNaive() time.Time {
 	return time.Now().UTC()
 }
-// strPtrOrNil 空字符串转 nil；非空字符串转指针。
-//
-// v1.1（P2-04）：与 Python 存 NULL 的语义对齐，避免空字符串落库。
 func strPtrOrNil(s string) *string {
 	if s == "" {
 		return nil
 	}
 	return &s
 }
-// ptrToString 指针字符串转字符串；nil 转空串。
-//
-// v1.2（建议-5）：`RefreshAccessToken` 成功日志复用 record 的 IP/UA 时使用。
 func ptrToString(p *string) string {
 	if p == nil {
 		return ""
 	}
 	return *p
 }
-// truncate 截断字符串到指定长度。
 func truncate(s string, max int) string {
 	if len(s) <= max {
 		return s
 	}
 	return s[:max]
 }
-// logAuthEvent 记录认证事件（结构化日志）。
-//
-// v1.1（P2-05）：扩展签名，新增 ip / userAgent 字段。
-// v1.2（P2-NEW-02）：调用方传真实 IP/UA，不再传空串。
 func logAuthEvent(action string, userID *uint, username, status string, errorCode *int, ip, userAgent, detail string) {
 	evt := log.Info()
 	if status == "fail" {
@@ -83,7 +70,6 @@ func logAuthEvent(action string, userID *uint, username, status string, errorCod
 		Str("detail", detail).
 		Msg("auth_event")
 }
-// loadUserWithRBAC 按 ID 加载用户并预加载角色与权限。
 func (s *Service) loadUserWithRBAC(userID uint) (*models.User, error) {
 	var user models.User
 	err := s.db.
@@ -94,7 +80,6 @@ func (s *Service) loadUserWithRBAC(userID uint) (*models.User, error) {
 	}
 	return &user, nil
 }
-// loadUserByUsername 按用户名加载用户。
 func (s *Service) loadUserByUsername(username string) (*models.User, error) {
 	var user models.User
 	err := s.db.
@@ -106,10 +91,6 @@ func (s *Service) loadUserByUsername(username string) (*models.User, error) {
 	}
 	return &user, nil
 }
-// serializeUser 将 User 序列化为 UserInfo。
-//
-// v1.1（P2-08 / P2-09）：角色与权限列表使用 sort.Strings 排序，
-//   保证响应字段顺序稳定；替代手写冒泡排序。
 func serializeUser(user *models.User) *UserInfo {
 	roles := make([]string, 0, len(user.Roles))
 	permSet := make(map[string]struct{})
@@ -137,9 +118,6 @@ func serializeUser(user *models.User) *UserInfo {
 	}
 }
 // AuthenticateUser 校验用户名密码，更新最后登录信息，返回用户信息。
-//
-// v1.1（P2-03）：使用显式 Update 更新 last_login_*，替代 db.Save(user)，
-//   避免因 Save 保存所有字段而误写关联。
 func (s *Service) AuthenticateUser(username, password, ip, userAgent string) (*UserInfo, error) {
 	user, err := s.loadUserByUsername(username)
 	if err != nil || !security.VerifyPassword(password, user.PasswordHash) {
@@ -152,7 +130,6 @@ func (s *Service) AuthenticateUser(username, password, ip, userAgent string) (*U
 			intPtr(exception.CodeAuthForbidden), ip, userAgent, "用户已被禁用")
 		return nil, exception.New(exception.CodeAuthForbidden, "用户已被禁用", 403, nil)
 	}
-	// 仅更新最后登录字段，避免 Save 误保存关联
 	now := utcNowNaive()
 	updates := map[string]interface{}{
 		"last_login_at": now,
@@ -162,7 +139,6 @@ func (s *Service) AuthenticateUser(username, password, ip, userAgent string) (*U
 		Updates(updates).Error; err != nil {
 		return nil, exception.New(exception.CodeInternalError, "更新登录信息失败", 500, nil)
 	}
-	// 重新加载以获取完整 RBAC
 	user, err = s.loadUserWithRBAC(user.ID)
 	if err != nil {
 		return nil, exception.New(exception.CodeInternalError, "加载用户信息失败", 500, nil)
@@ -172,8 +148,6 @@ func (s *Service) AuthenticateUser(username, password, ip, userAgent string) (*U
 	return serializeUser(user), nil
 }
 // CreateTokensForUser 为用户签发 access_token 与 refresh_token，并持久化 Refresh Token。
-//
-// v1.1（P2-04）：空字符串 IP / User-Agent 转 NULL。
 func (s *Service) CreateTokensForUser(userInfo *UserInfo, ip, userAgent string) (*TokenResp, error) {
 	accessToken, err := security.GenerateToken(
 		s.cfg.SecretKey,
@@ -219,12 +193,7 @@ func (s *Service) CreateTokensForUser(userInfo *UserInfo, ip, userAgent string) 
 	}, nil
 }
 // RefreshAccessToken 使用 refresh_token 换取新的 access_token。
-//
-// v1.1（P0-02）：撤销旧 Token 与创建新 Token 使用同一事务，保证原子性；
-//   冲突时通过 errRefreshConflict 哨兵错误返回 10001。
-// v1.2（建议-5）：成功日志复用 record.IP / record.UserAgent，保持审计完整。
 func (s *Service) RefreshAccessToken(refreshToken string) (*RefreshResp, error) {
-	// ---- 1. 解码（只读，事务外） ----
 	claims, err := security.ParseToken(s.cfg.SecretKey, refreshToken)
 	if err != nil {
 		logAuthEvent("refresh", nil, "", "fail",
@@ -241,7 +210,6 @@ func (s *Service) RefreshAccessToken(refreshToken string) (*RefreshResp, error) 
 		return nil, exception.New(exception.CodeAuthUnauthorized, "无效的refresh token", 401, nil)
 	}
 	tokenHash := hashToken(refreshToken)
-	// ---- 2. 只读预检查（事务外，减少事务持有时间） ----
 	var record models.RefreshToken
 	if err := s.db.Where("token_hash = ?", tokenHash).First(&record).Error; err != nil {
 		logAuthEvent("refresh", nil, "", "fail",
@@ -263,7 +231,6 @@ func (s *Service) RefreshAccessToken(refreshToken string) (*RefreshResp, error) 
 			intPtr(exception.CodeAuthUnauthorized), ptrToString(record.IP), ptrToString(record.UserAgent), "Refresh Token 已过期")
 		return nil, exception.New(exception.CodeAuthUnauthorized, "Refresh token 已过期", 401, nil)
 	}
-	// ---- 3. 加载用户（事务外） ----
 	user, err := s.loadUserWithRBAC(uid)
 	if err != nil {
 		return nil, exception.New(exception.CodeAuthUserNotFound, "用户不存在", 404, nil)
@@ -272,7 +239,6 @@ func (s *Service) RefreshAccessToken(refreshToken string) (*RefreshResp, error) 
 		return nil, exception.New(exception.CodeAuthForbidden, "用户已被禁用", 403, nil)
 	}
 	userInfo := serializeUser(user)
-	// ---- 4. 预生成新 Token（纯计算，事务外） ----
 	accessToken, err := security.GenerateToken(
 		s.cfg.SecretKey,
 		fmt.Sprintf("%d", userInfo.ID),
@@ -298,7 +264,6 @@ func (s *Service) RefreshAccessToken(refreshToken string) (*RefreshResp, error) 
 	if err != nil {
 		return nil, exception.New(exception.CodeInternalError, "签发 Refresh Token 失败", 500, nil)
 	}
-	// ---- 5. 事务：撤销旧 Token + 创建新 Token（原子） ----
 	txErr := s.db.Transaction(func(tx *gorm.DB) error {
 		now := utcNowNaive()
 		result := tx.Model(&models.RefreshToken{}).
@@ -334,7 +299,6 @@ func (s *Service) RefreshAccessToken(refreshToken string) (*RefreshResp, error) 
 		}
 		return nil, txErr
 	}
-	// v1.2（建议-5）：成功日志复用 record 的 IP/UA
 	logAuthEvent("refresh", &userInfo.ID, userInfo.Username, "success", nil,
 		ptrToString(record.IP), ptrToString(record.UserAgent), "")
 	return &RefreshResp{
@@ -349,6 +313,16 @@ func (s *Service) RevokeRefreshToken(refreshToken string) error {
 	now := utcNowNaive()
 	return s.db.Model(&models.RefreshToken{}).
 		Where("token_hash = ? AND revoked = 0", tokenHash).
+		Updates(map[string]interface{}{
+			"revoked":    1,
+			"revoked_at": now,
+		}).Error
+}
+// revokeAllUserTokensTx 在同一事务内撤销某用户的全部 Refresh Token。
+func revokeAllUserTokensTx(tx *gorm.DB, userID uint) error {
+	now := utcNowNaive()
+	return tx.Model(&models.RefreshToken{}).
+		Where("user_id = ? AND revoked = 0", userID).
 		Updates(map[string]interface{}{
 			"revoked":    1,
 			"revoked_at": now,
@@ -374,10 +348,6 @@ func (s *Service) GetUserInfo(userID uint) (*UserInfo, error) {
 	return serializeUser(user), nil
 }
 // ChangePassword 修改当前用户密码。成功后批量撤销该用户全部 Refresh Token。
-//
-// v1.1：更新密码与撤销 Refresh Token 在同一事务中完成，保证原子性。
-// v1.2（P2-NEW-02）：签名扩展为接收 ip, userAgent，供审计日志使用；
-//   所有 logAuthEvent 调用点传真实 IP/UA。
 func (s *Service) ChangePassword(
 	userID uint,
 	oldPassword, newPassword, confirmPassword string,
@@ -406,22 +376,12 @@ func (s *Service) ChangePassword(
 	if err != nil {
 		return exception.New(exception.CodeInternalError, "密码哈希失败", 500, nil)
 	}
-	// 事务：更新密码 + 撤销全部 Refresh Token
 	txErr := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.User{}).Where("id = ?", userID).
 			Update("password_hash", hashed).Error; err != nil {
 			return exception.New(exception.CodeInternalError, "更新密码失败", 500, nil)
 		}
-		now := utcNowNaive()
-		if err := tx.Model(&models.RefreshToken{}).
-			Where("user_id = ? AND revoked = 0", userID).
-			Updates(map[string]interface{}{
-				"revoked":    1,
-				"revoked_at": now,
-			}).Error; err != nil {
-			return exception.New(exception.CodeInternalError, "撤销 Refresh Token 失败", 500, nil)
-		}
-		return nil
+		return revokeAllUserTokensTx(tx, userID)
 	})
 	if txErr != nil {
 		return txErr
@@ -429,10 +389,6 @@ func (s *Service) ChangePassword(
 	logAuthEvent("change_password", &userID, user.Username, "success", nil,
 		ip, userAgent, "")
 	return nil
-}
-// intPtr 返回 int 指针。
-func intPtr(v int) *int {
-	return &v
 }
 // IsNotFound 判断错误是否为 gorm.ErrRecordNotFound。
 func IsNotFound(err error) bool {

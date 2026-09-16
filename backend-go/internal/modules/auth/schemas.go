@@ -1,4 +1,5 @@
 package auth
+import "time"
 // LoginReq 登录请求。
 type LoginReq struct {
 	Username string `json:"username" binding:"required,min=1,max=50"`
@@ -9,13 +10,6 @@ type RefreshReq struct {
 	RefreshToken string `json:"refresh_token"`
 }
 // ChangePasswordReq 修改密码请求。
-//
-// v1.1（P2-01）：使用指针类型精确对齐 Python Pydantic 语义：
-//   - Python `Field(..., min_length=0)` 语义为"字段必填但允许空字符串"；
-//   - Go 通过 `*string` + `binding:"required"` 实现：
-//       · 字段缺失   → 指针为 nil → binding 触发 → 422 / 90004
-//       · 字段存在但空 → 指针非 nil，值为 "" → binding 通过 → 进入 Service
-//     （旧密码为空 → 10003，与 Python 一致）
 type ChangePasswordReq struct {
 	OldPassword     *string `json:"old_password" binding:"required"`
 	NewPassword     *string `json:"new_password" binding:"required"`
@@ -45,4 +39,19 @@ type RefreshResp struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 	ExpiresIn    int    `json:"expires_in"`
+}
+// formatDateTime 将时间格式化为 Python datetime.isoformat() 兼容的字符串。
+func formatDateTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	t = t.UTC()
+	if t.Nanosecond()/1000 == 0 {
+		return t.Format("2006-01-02T15:04:05")
+	}
+	return t.Format("2006-01-02T15:04:05.000000")
+}
+// intPtr 返回 int 指针。
+func intPtr(v int) *int {
+	return &v
 }
