@@ -1,4 +1,5 @@
 package auth
+
 import (
 	"crypto/sha256"
 	"encoding/hex"
@@ -6,54 +7,69 @@ import (
 	"fmt"
 	"sort"
 	"time"
+
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
+
 	"backend-go/internal/config"
 	"backend-go/internal/exception"
 	"backend-go/internal/models"
 	"backend-go/internal/security"
 )
+
 const (
 	AccessTokenExpireMinutes = 1440
 	RefreshTokenExpireDays   = 7
 )
+
 // Service 认证服务。
 type Service struct {
 	db  *gorm.DB
 	cfg *config.Config
 }
+
 // NewService 创建认证服务。
 func NewService(db *gorm.DB, cfg *config.Config) *Service {
 	return &Service{db: db, cfg: cfg}
 }
+
 // errRefreshConflict 刷新 Token 并发冲突哨兵错误。
 var errRefreshConflict = errors.New("refresh token concurrent conflict")
+
 func hashToken(token string) string {
 	h := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(h[:])
 }
+
 func utcNowNaive() time.Time {
 	return time.Now().UTC()
 }
+
 func strPtrOrNil(s string) *string {
 	if s == "" {
 		return nil
 	}
 	return &s
 }
+
 func ptrToString(p *string) string {
 	if p == nil {
 		return ""
 	}
 	return *p
 }
+
 func truncate(s string, max int) string {
 	if len(s) <= max {
 		return s
 	}
 	return s[:max]
 }
-func logAuthEvent(action string, userID *uint, username, status string, errorCode *int, ip, userAgent, detail string) {
+
+// LogAuthEvent 记录认证事件（导出包装）。
+//
+// v1.1（P0-03）：将原 logAuthEvent 改为导出 LogAuthEvent，供其他模块复用。
+func LogAuthEvent(action string, userID *uint, username, status string, errorCode *int, ip, userAgent, detail string) {
 	evt := log.Info()
 	if status == "fail" {
 		evt = log.Warn()
@@ -70,6 +86,12 @@ func logAuthEvent(action string, userID *uint, username, status string, errorCod
 		Str("detail", detail).
 		Msg("auth_event")
 }
+
+// logAuthEvent 保留小写函数名作为别名，兼容 auth 包内部现有调用。
+func logAuthEvent(action string, userID *uint, username, status string, errorCode *int, ip, userAgent, detail string) {
+	LogAuthEvent(action, userID, username, status, errorCode, ip, userAgent, detail)
+}
+
 func (s *Service) loadUserWithRBAC(userID uint) (*models.User, error) {
 	var user models.User
 	err := s.db.
@@ -80,6 +102,7 @@ func (s *Service) loadUserWithRBAC(userID uint) (*models.User, error) {
 	}
 	return &user, nil
 }
+
 func (s *Service) loadUserByUsername(username string) (*models.User, error) {
 	var user models.User
 	err := s.db.
@@ -91,6 +114,7 @@ func (s *Service) loadUserByUsername(username string) (*models.User, error) {
 	}
 	return &user, nil
 }
+
 func serializeUser(user *models.User) *UserInfo {
 	roles := make([]string, 0, len(user.Roles))
 	permSet := make(map[string]struct{})
@@ -117,6 +141,7 @@ func serializeUser(user *models.User) *UserInfo {
 		Permissions: permissions,
 	}
 }
+
 // AuthenticateUser 校验用户名密码，更新最后登录信息，返回用户信息。
 func (s *Service) AuthenticateUser(username, password, ip, userAgent string) (*UserInfo, error) {
 	user, err := s.loadUserByUsername(username)
@@ -147,6 +172,7 @@ func (s *Service) AuthenticateUser(username, password, ip, userAgent string) (*U
 		ip, userAgent, "登录成功")
 	return serializeUser(user), nil
 }
+
 // CreateTokensForUser 为用户签发 access_token 与 refresh_token，并持久化 Refresh Token。
 func (s *Service) CreateTokensForUser(userInfo *UserInfo, ip, userAgent string) (*TokenResp, error) {
 	accessToken, err := security.GenerateToken(
@@ -192,6 +218,7 @@ func (s *Service) CreateTokensForUser(userInfo *UserInfo, ip, userAgent string) 
 		User:         userInfo,
 	}, nil
 }
+
 // RefreshAccessToken 使用 refresh_token 换取新的 access_token。
 func (s *Service) RefreshAccessToken(refreshToken string) (*RefreshResp, error) {
 	claims, err := security.ParseToken(s.cfg.SecretKey, refreshToken)
@@ -307,6 +334,7 @@ func (s *Service) RefreshAccessToken(refreshToken string) (*RefreshResp, error) 
 		ExpiresIn:    AccessTokenExpireMinutes,
 	}, nil
 }
+
 // RevokeRefreshToken 撤销指定的 Refresh Token（幂等）。
 func (s *Service) RevokeRefreshToken(refreshToken string) error {
 	tokenHash := hashToken(refreshToken)
@@ -318,6 +346,7 @@ func (s *Service) RevokeRefreshToken(refreshToken string) error {
 			"revoked_at": now,
 		}).Error
 }
+
 // revokeAllUserTokensTx 在同一事务内撤销某用户的全部 Refresh Token。
 func revokeAllUserTokensTx(tx *gorm.DB, userID uint) error {
 	now := utcNowNaive()
@@ -328,6 +357,7 @@ func revokeAllUserTokensTx(tx *gorm.DB, userID uint) error {
 			"revoked_at": now,
 		}).Error
 }
+
 // RevokeAllUserTokens 撤销某用户的全部 Refresh Token，返回撤销数量。
 func (s *Service) RevokeAllUserTokens(userID uint) (int64, error) {
 	now := utcNowNaive()
@@ -339,6 +369,7 @@ func (s *Service) RevokeAllUserTokens(userID uint) (int64, error) {
 		})
 	return result.RowsAffected, result.Error
 }
+
 // GetUserInfo 获取用户完整信息。
 func (s *Service) GetUserInfo(userID uint) (*UserInfo, error) {
 	user, err := s.loadUserWithRBAC(userID)
@@ -347,6 +378,7 @@ func (s *Service) GetUserInfo(userID uint) (*UserInfo, error) {
 	}
 	return serializeUser(user), nil
 }
+
 // ChangePassword 修改当前用户密码。成功后批量撤销该用户全部 Refresh Token。
 func (s *Service) ChangePassword(
 	userID uint,
@@ -390,7 +422,13 @@ func (s *Service) ChangePassword(
 		ip, userAgent, "")
 	return nil
 }
+
 // IsNotFound 判断错误是否为 gorm.ErrRecordNotFound。
 func IsNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
 }
+
+// BUG-02 修复：删除本文件末尾的 intPtr 定义。
+// 该函数在 schemas.go 中已定义（同包可见），本包内所有调用
+// （如 intPtr(exception.CodeAuthUnauthorized)）将自动解析到
+// schemas.go 中的唯一实现。

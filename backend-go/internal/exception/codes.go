@@ -1,7 +1,7 @@
 package exception
 // 统一错误码常量。
 //
-// P1 阶段补充用户/角色/权限管理相关错误码。
+// P1/P3 阶段补充用户/角色/权限/模块管理相关错误码。
 const (
 	// ---- 通用成功 ----
 	CodeSuccess = 0
@@ -36,4 +36,18 @@ const (
 	CodeAuthPermissionCodeFormat     = 20054 // 权限编码格式无效
 	// ---- 权限相关 ----
 	CodePermissionDenied = 20051 // 无权限
+	// ---- 模块管理相关 ----
+	CodeModuleDependencyMissing  = 30001 // 依赖模块缺失/未启用
+	CodeModuleExists             = 30002 // 模块已存在（ID 冲突）
+	CodeModuleNotFound           = 30003 // 模块不存在
+	CodeModuleManifestInvalid    = 30004 // 模块清单校验失败
+	CodeModuleDependencyConflict = 30006 // 模块被 active 模块依赖
+	CodeModuleConfigInvalid      = 30007 // 配置校验失败
+	CodeModuleEntryNotFound      = 30008 // 模块入口格式错误
+	CodeModuleLoadFailed         = 30009 // 模块热加载失败（P6 阶段使用）
+	CodeModuleIDInvalid          = 30010 // 模块 ID 格式无效
+	CodeModuleInUse              = 30011 // 模块正在运行
+	CodeModuleZipInvalid         = 30012 // ZIP 安全校验失败
+	CodeModuleCoreProtected      = 30013 // 核心模块保护
+	CodeModuleVersionInvalid     = 30015 // 版本必须递增
 )

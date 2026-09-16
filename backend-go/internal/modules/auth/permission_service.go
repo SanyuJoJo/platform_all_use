@@ -9,6 +9,7 @@ import (
 	"backend-go/internal/models"
 )
 var moduleIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+var permissionCodePattern = regexp.MustCompile(`^[a-z0-9_]+:[a-z0-9_]+:[a-z0-9_]+$`)
 func serializePermissionOut(p *models.Permission) *PermissionOut {
 	return &PermissionOut{
 		ID:        p.ID,
@@ -162,12 +163,12 @@ func (s *Service) RegisterPermissions(moduleID string, items []PermissionRegiste
 		if errors.As(err, &pe) {
 			errCode = pe.Code
 		}
-		logAuthEvent("permission_register", nil, "", "fail",
+		LogAuthEvent("permission_register", nil, "", "fail",
 			intPtr(errCode), "", "",
 			fmt.Sprintf("注册权限失败：module_id=%s err=%v", moduleID, err))
 		return nil, err
 	}
-	logAuthEvent("permission_register", nil, "", "success", nil, "", "",
+	LogAuthEvent("permission_register", nil, "", "success", nil, "", "",
 		fmt.Sprintf("注册权限 module_id=%s created=%d updated=%d", moduleID, created, updated))
 	return map[string]int{"created": created, "updated": updated, "total": created + updated}, nil
 }
@@ -200,7 +201,79 @@ func (s *Service) UnregisterPermissions(moduleID string) (int, error) {
 	if err != nil {
 		return 0, exception.New(exception.CodeInternalError, "清理权限失败", 500, nil)
 	}
-	logAuthEvent("permission_unregister", nil, "", "success", nil, "", "",
+	LogAuthEvent("permission_unregister", nil, "", "success", nil, "", "",
 		fmt.Sprintf("清理权限 module_id=%s deleted=%d", moduleID, deleted))
 	return deleted, nil
+}
+// ---------------------------------------------------------------------------
+// v1.1 新增：供模块管理复用的导出函数
+// ---------------------------------------------------------------------------
+// RegisterPermissionsTx 事务内权限注册（供模块管理使用）。
+//
+// 与 RegisterPermissions 的区别：
+//   - 复用调用方传入的事务，不自行开启/提交事务；
+//   - 不做日志记录（由调用方记录）；
+//   - 校验逻辑与 RegisterPermissions 完全一致。
+func RegisterPermissionsTx(tx *gorm.DB, moduleID string, items []PermissionRegisterItem) error {
+	if err := validateModuleID(moduleID); err != nil {
+		return err
+	}
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		if err := validatePermissionItem(moduleID, item); err != nil {
+			return err
+		}
+		if _, ok := seen[item.Code]; ok {
+			return exception.New(exception.CodeParamInvalid,
+				fmt.Sprintf("权限编码重复：%s", item.Code), 400, nil)
+		}
+		seen[item.Code] = struct{}{}
+	}
+	for _, item := range items {
+		var existing models.Permission
+		err := tx.Where("code = ?", item.Code).First(&existing).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			perm := models.Permission{
+				Code:     item.Code,
+				Name:     item.Name,
+				ModuleID: moduleID,
+				Resource: item.Resource,
+				Action:   item.Action,
+			}
+			if err := tx.Create(&perm).Error; err != nil {
+				return err
+			}
+			continue
+		} else if err != nil {
+			return err
+		}
+		if existing.ModuleID != moduleID {
+			return exception.New(exception.CodeAuthPermissionModuleConflict,
+				fmt.Sprintf("权限编码已被模块 %s 占用：%s", existing.ModuleID, item.Code), 409, nil)
+		}
+		if err := tx.Model(&existing).Update("name", item.Name).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+// UnregisterPermissionsTx 事务内权限清理（供模块管理使用）。
+func UnregisterPermissionsTx(tx *gorm.DB, moduleID string) error {
+	if err := validateModuleID(moduleID); err != nil {
+		return err
+	}
+	var permIDs []uint
+	if err := tx.Model(&models.Permission{}).
+		Where("module_id = ?", moduleID).
+		Pluck("id", &permIDs).Error; err != nil {
+		return err
+	}
+	if len(permIDs) == 0 {
+		return nil
+	}
+	if err := tx.Where("permission_id IN ?", permIDs).
+		Delete(&models.RolePermission{}).Error; err != nil {
+		return err
+	}
+	return tx.Where("id IN ?", permIDs).Delete(&models.Permission{}).Error
 }

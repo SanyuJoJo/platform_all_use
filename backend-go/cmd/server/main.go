@@ -18,6 +18,7 @@ import (
 	"backend-go/internal/middleware"
 	"backend-go/internal/models"
 	"backend-go/internal/modules/auth"
+	"backend-go/internal/modules/module_manager"
 )
 func main() {
 	cfg, warnings, err := config.Load()
@@ -41,15 +42,36 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("数据库初始化失败")
 	}
+	// AutoMigrate：仅非生产环境执行。
 	if cfg.AppEnv != "production" {
 		if err := models.AutoMigrate(db); err != nil {
-			log.Fatal().Err(err).Msg("AutoMigrate 失败，开发环境无法继续启动（请检查数据库权限/驱动）")
+			log.Fatal().Err(err).Msg("AutoMigrate 失败，开发环境无法继续启动")
+		}
+		if err := models.EnsureModuleTables(db); err != nil {
+			log.Fatal().Err(err).Msg("模块管理表迁移失败")
 		}
 	} else {
 		log.Info().Msg("生产环境跳过 AutoMigrate，请使用 make migrate-up 执行 goose 迁移")
 	}
+	// 认证种子数据
 	if err := auth.EnsureAuthSeedData(db); err != nil {
 		log.Error().Err(err).Msg("认证种子数据初始化失败")
+	}
+	// 模块管理种子数据
+	if err := module_manager.EnsureModuleSeedData(db); err != nil {
+		log.Error().Err(err).Msg("模块管理种子数据初始化失败")
+	}
+	// 清理模块残留
+	moduleSvc := module_manager.NewService(db, cfg)
+	moduleSvc.CleanupResidue()
+	// v1.3（P2-NEW-08）：创建 Loader 并注入 Service；
+	// LoadActiveModules 内部统一使用 s.loader。
+	moduleLoader := module_manager.NewLoader()
+	moduleSvc.SetLoader(moduleLoader)
+	if order, err := moduleSvc.LoadActiveModules(db); err != nil {
+		log.Warn().Err(err).Msg("加载 active 模块失败")
+	} else {
+		log.Info().Strs("loaded", order).Msg("已加载 active 模块（P3 阶段仅记录顺序）")
 	}
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -75,6 +97,9 @@ func main() {
 	authHandler.RegisterUserRoutes(protected)
 	authHandler.RegisterRoleRoutes(protected)
 	authHandler.RegisterPermissionRoutes(protected)
+	// 模块管理路由
+	moduleHandler := module_manager.NewHandler(moduleSvc)
+	moduleHandler.RegisterRoutes(protected)
 	srv := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.ServerHost, cfg.ServerPort),
 		Handler:      r,

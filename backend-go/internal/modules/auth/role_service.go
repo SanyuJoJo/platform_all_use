@@ -1,23 +1,29 @@
 package auth
+
 import (
 	"errors"
 	"fmt"
 	"regexp"
 	"sort"
 	"strings"
+
 	"gorm.io/gorm"
+
 	"backend-go/internal/exception"
 	"backend-go/internal/models"
 )
-var (
-	roleCodePattern       = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
-	permissionCodePattern = regexp.MustCompile(`^[a-z0-9_]+:[a-z0-9_]+:[a-z0-9_]+$`)
-)
+
+// BUG-01 修复：删除 permissionCodePattern 的重复声明。
+// 该正则在 permission_service.go 中已定义（同包可见）。
+// 保留 roleCodePattern（仅在 role_service.go 中使用）。
+var roleCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
 const (
 	roleNameMaxLen    = 50
 	roleCodeMaxLen    = 50
 	descriptionMaxLen = 255
 )
+
 func serializeRoleOut(role *models.Role) *RoleOut {
 	codes := make([]string, 0, len(role.Permissions))
 	for _, p := range role.Permissions {
@@ -35,6 +41,7 @@ func serializeRoleOut(role *models.Role) *RoleOut {
 		UpdatedAt:       formatDateTime(role.UpdatedAt),
 	}
 }
+
 func validateRoleName(name string) error {
 	if len(name) < 1 || len(name) > roleNameMaxLen {
 		return exception.New(exception.CodeParamInvalid,
@@ -42,6 +49,7 @@ func validateRoleName(name string) error {
 	}
 	return nil
 }
+
 func validateRoleCode(code string) error {
 	if len(code) < 1 || len(code) > roleCodeMaxLen {
 		return exception.New(exception.CodeParamInvalid,
@@ -53,6 +61,7 @@ func validateRoleCode(code string) error {
 	}
 	return nil
 }
+
 func validateRoleDescription(desc *string) error {
 	if desc == nil {
 		return nil
@@ -63,6 +72,7 @@ func validateRoleDescription(desc *string) error {
 	}
 	return nil
 }
+
 func normalizePermissionCodes(codes []string) []string {
 	if len(codes) == 0 {
 		return []string{}
@@ -77,6 +87,9 @@ func normalizePermissionCodes(codes []string) []string {
 	}
 	return result
 }
+
+// validatePermissionCodeFormat 使用同包 permission_service.go 中定义的
+// permissionCodePattern，不重复声明。
 func validatePermissionCodeFormat(codes []string) error {
 	for _, c := range codes {
 		if !permissionCodePattern.MatchString(c) {
@@ -86,6 +99,7 @@ func validatePermissionCodeFormat(codes []string) error {
 	}
 	return nil
 }
+
 func loadRoleWithPermissions(db *gorm.DB, roleID uint) (*models.Role, error) {
 	var role models.Role
 	if err := db.Preload("Permissions").First(&role, roleID).Error; err != nil {
@@ -93,6 +107,7 @@ func loadRoleWithPermissions(db *gorm.DB, roleID uint) (*models.Role, error) {
 	}
 	return &role, nil
 }
+
 func mapRoleIntegrityError(err error) error {
 	if err == nil {
 		return nil
@@ -106,6 +121,7 @@ func mapRoleIntegrityError(err error) error {
 	}
 	return exception.New(exception.CodeDataConflict, "数据冲突", 409, nil)
 }
+
 func (s *Service) ListRoles(query RoleListQuery) (map[string]interface{}, error) {
 	var conditions []string
 	var args []interface{}
@@ -149,6 +165,7 @@ func (s *Service) ListRoles(query RoleListQuery) (map[string]interface{}, error)
 		"pages":     pages,
 	}, nil
 }
+
 func (s *Service) GetRoleDetail(roleID uint) (*RoleOut, error) {
 	role, err := loadRoleWithPermissions(s.db, roleID)
 	if err != nil {
@@ -159,6 +176,7 @@ func (s *Service) GetRoleDetail(roleID uint) (*RoleOut, error) {
 	}
 	return serializeRoleOut(role), nil
 }
+
 func (s *Service) CreateRole(req RoleCreate, operatorID uint, operatorName string) (*RoleOut, error) {
 	if err := validateRoleName(req.Name); err != nil {
 		return nil, err
@@ -239,6 +257,7 @@ func (s *Service) CreateRole(req RoleCreate, operatorID uint, operatorName strin
 		"", "", fmt.Sprintf("创建角色 %s（id=%d, code=%s）", req.Name, createdID, req.Code))
 	return serializeRoleOut(full), nil
 }
+
 func (s *Service) UpdateRole(roleID uint, req RoleUpdate, operatorID uint, operatorName string) (*RoleOut, error) {
 	if req.Name != nil {
 		if err := validateRoleName(*req.Name); err != nil {
@@ -329,6 +348,7 @@ func (s *Service) UpdateRole(roleID uint, req RoleUpdate, operatorID uint, opera
 		"", "", fmt.Sprintf("更新角色 id=%d（code=%s）", roleID, roleCode))
 	return serializeRoleOut(full), nil
 }
+
 func (s *Service) DeleteRole(roleID uint, operatorID uint, operatorName string) error {
 	var roleCode, roleName string
 	txErr := s.db.Transaction(func(tx *gorm.DB) error {
