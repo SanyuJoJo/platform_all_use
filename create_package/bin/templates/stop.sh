@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# 停止脚本（v1.1，v1.2/v1.3 未变更）
 set -euo pipefail
 INSTALL_DIR="@INSTALL_DIR@"
 PID_FILE="$INSTALL_DIR/run/backend.pid"
@@ -27,8 +26,8 @@ if [ -z "$PID" ] || ! kill -0 "$PID" 2>/dev/null; then
 fi
 if command -v ps >/dev/null 2>&1; then
   CMD="$(ps -p "$PID" -o command= 2>/dev/null || true)"
-  if [ -n "$CMD" ] && ! echo "$CMD" | grep -q "uvicorn"; then
-    echo "PID $PID 不是 uvicorn 进程，跳过 kill：$CMD"
+  if [ -n "$CMD" ] && ! echo "$CMD" | grep -q "bin/server"; then
+    echo "PID $PID 不是后端进程，跳过 kill：$CMD"
     rm -f "$PID_FILE"
     exit 0
   fi

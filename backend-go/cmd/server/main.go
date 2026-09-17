@@ -13,6 +13,7 @@ import (
 	"backend-go/internal/config"
 	"backend-go/internal/database"
 	"backend-go/internal/exception"
+	"backend-go/internal/frontend"
 	"backend-go/internal/health"
 	"backend-go/internal/logger"
 	"backend-go/internal/middleware"
@@ -91,15 +92,31 @@ func main() {
 	}
 	r := gin.New()
 	r.HandleMethodNotAllowed = true
+	// 中间件顺序：
+	// RequestID → AccessLog → CORS → AuditLog → Recovery → 路由
 	r.Use(middleware.RequestID())
 	r.Use(middleware.AccessLog())
 	r.Use(middleware.SetupCORS(cfg.CORSOrigins))
 	r.Use(audit_log.AuditLogMiddleware(auditLogSvc))
 	r.Use(exception.Recovery())
-	r.NoRoute(exception.NoRoute)
+	// ---------------------------------------------------------------------
+	// v1.1（P0-1）修复：NoMethod 必须始终注册。
+	//
+	// 原因：
+	//   - r.HandleMethodNotAllowed = true 时，对已注册路径使用错误方法，
+	//     Gin 会调用 NoMethod 处理器；
+	//   - 若不注册，返回默认空响应，审计中间件拿不到 X-Error-Code；
+	//   - 前端托管启用/未启用均需保持统一 JSON 405。
+	//
+	// NoRoute 的处理分两种情况：
+	//   - 未启用前端托管：r.NoRoute(exception.NoRoute) 保持 JSON 404；
+	//   - 启用前端托管：frontendHandler.Register(r) 内部覆盖 NoRoute，
+	//     实现 SPA fallback + 子应用入口 + API 优先。
+	// ---------------------------------------------------------------------
 	r.NoMethod(exception.NoMethod)
 	r.GET("/health", health.Handler)
 	api := r.Group("/api/v1")
+	// 认证模块
 	authSvc := auth.NewService(db, cfg)
 	authHandler := auth.NewHandler(authSvc)
 	authHandler.RegisterPublicRoutes(api)
@@ -118,6 +135,18 @@ func main() {
 	// License 管理路由
 	licenseHandler := license.NewHandler(licenseSvc)
 	licenseHandler.RegisterRoutes(protected)
+	// ============================================================
+	// 前端静态资源自托管（必须在所有 API 路由之后注册）
+	//
+	// 若未配置 FRONTEND_DEPLOY_DIR 或 main-app/index.html 不存在，
+	// 保持后端默认 JSON 404 行为。
+	// ============================================================
+	frontendHandler := frontend.NewHandler(cfg)
+	if frontendHandler.Enabled() {
+		frontendHandler.Register(r)
+	} else {
+		r.NoRoute(exception.NoRoute)
+	}
 	// License 启动校验（不阻断启动）
 	startupResult := licenseSvc.VerifyLicenseOnStartup()
 	if ok, _ := startupResult["ok"].(bool); !ok {

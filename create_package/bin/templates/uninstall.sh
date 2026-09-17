@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# 卸载脚本（v1.2，v1.3 未变更）
 set -euo pipefail
 INSTALL_DIR="@INSTALL_DIR@"
-BACKEND_DIR="@BACKEND_DIR@"
 PURGE=0
 SERVICE_NAME="platform-backend"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"

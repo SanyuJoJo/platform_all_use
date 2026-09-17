@@ -1,9 +1,27 @@
 #!/usr/bin/env bash
-# 状态查询脚本（v1.1，v1.2/v1.3 未变更）
+# 状态查询脚本模板（Go 版 v1.2）
+# v1.2 修复：
+#   - N-01：从 @ENV_FILE@ 提取端口，兼容 SERVER_PORT / PORT 别名
+#   - N-04：仅提取端口变量，避免 set -a 全量导出
 set -euo pipefail
 INSTALL_DIR="@INSTALL_DIR@"
+ENV_FILE="@ENV_FILE@"
 PID_FILE="$INSTALL_DIR/run/backend.pid"
-PORT="@PORT@"
+# ★ v1.2（N-01 / N-04）：从 .env 提取端口
+# 优先级：SERVER_PORT > PORT > @PORT@（install.sh 参数值）
+_resolve_port() {
+  local f="$1"
+  [ -f "$f" ] || { echo "@PORT@"; return; }
+  local p
+  p="$(grep -E '^SERVER_PORT=' "$f" | head -1 \
+       | sed -E "s/^SERVER_PORT=[\"']?//; s/[\"']$//" || true)"
+  if [ -z "$p" ]; then
+    p="$(grep -E '^PORT=' "$f" | head -1 \
+         | sed -E "s/^PORT=[\"']?//; s/[\"']$//" || true)"
+  fi
+  echo "${p:-@PORT@}"
+}
+PORT="$(_resolve_port "$ENV_FILE")"
 echo "安装目录：$INSTALL_DIR"
 echo "监听端口：$PORT"
 PORT_LINE=""
