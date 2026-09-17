@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # ============================================================
-# 产品安装脚本（Go 版 v1.1）
+# 产品安装脚本（Go 版 v1.3）
 #
 # v1.1 变更：
 #   - P2-03：SQLite 路径解析兼容单引号 / 双引号 / 无引号
+# v1.3 变更：
+#   - P1-FE-02：INSTALL_DIR 强制转为绝对路径
+#   - P1-FE-03：前端载荷校验增强（main-app/assets + 每个子应用）
+#   - P2-FE-09：安装摘要增加前端信息
 # ============================================================
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,10 +53,17 @@ while [ $# -gt 0 ]; do
     *) fail "未知参数：$1" ;;
   esac
 done
+# ---------- 非 root 回退 ----------
 if [ "$(id -u)" != "0" ] && [ "$INSTALL_DIR" = "/opt/platform" ]; then
   INSTALL_DIR="$HOME/platform"
   log "非 root 用户，安装目录回退为：$INSTALL_DIR"
 fi
+# ---------- v1.3 P1-FE-02：强制绝对路径 ----------
+mkdir -p "$INSTALL_DIR"
+if ! INSTALL_DIR="$(cd "$INSTALL_DIR" && pwd)"; then
+  fail "无法解析 INSTALL_DIR 绝对路径：$INSTALL_DIR"
+fi
+log "安装目录（绝对路径）：$INSTALL_DIR"
 BACKEND_DIR="$INSTALL_DIR/backend"
 FRONTEND_DIR="$INSTALL_DIR/frontend"
 FRONTEND_DEPLOY_DIR="$FRONTEND_DIR/deploy"
@@ -62,7 +73,6 @@ UPLOAD_DIR="$INSTALL_DIR/uploads"
 RUN_DIR="$INSTALL_DIR/run"
 BIN_DIR="$INSTALL_DIR/bin"
 ENV_FILE="$BACKEND_DIR/.env"
-log "安装目录：$INSTALL_DIR"
 log "后端目录：$BACKEND_DIR"
 log "后端端口：$SERVER_PORT"
 # ---------- 依赖检查 ----------
@@ -88,7 +98,7 @@ tar -xzf "$PAYLOAD_DIR/backend.tar.gz" -C "$BACKEND_DIR"
 [ -x "$BACKEND_DIR/bin/server" ] || fail "后端包缺少可执行文件 bin/server"
 [ -d "$BACKEND_DIR/migrations" ] || fail "后端包缺少 migrations/"
 [ -f "$BACKEND_DIR/.env.production.example" ] || fail "后端包缺少 .env.production.example"
-# ---------- 解压前端 + 结构校验 ----------
+# ---------- 解压前端 + 结构校验（v1.3 P1-FE-03 增强） ----------
 log "解压前端..."
 rm -rf "$FRONTEND_DEPLOY_DIR"
 mkdir -p "$FRONTEND_DEPLOY_DIR"
@@ -97,10 +107,37 @@ if command -v unzip >/dev/null 2>&1 && unzip -tq "$PAYLOAD_DIR/dist.war" >/dev/n
 else
   tar -xzf "$PAYLOAD_DIR/dist.war" -C "$FRONTEND_DEPLOY_DIR"
 fi
-[ -f "$FRONTEND_DEPLOY_DIR/main-app/index.html" ] \
-  || fail "前端包缺少 main-app/index.html"
-[ -d "$FRONTEND_DEPLOY_DIR/sub-apps" ] \
-  || fail "前端包缺少 sub-apps/ 目录"
+# validate_frontend_deploy: 校验前端产物完整性
+validate_frontend_deploy() {
+  local root="$1"
+  [ -f "$root/main-app/index.html" ] \
+    || fail "前端包缺少 main-app/index.html"
+  [ -d "$root/main-app/assets" ] \
+    || fail "前端包缺少 main-app/assets/"
+  [ -d "$root/sub-apps" ] \
+    || fail "前端包缺少 sub-apps/ 目录"
+  local found=0
+  local d
+  for d in "$root"/sub-apps/*/; do
+    [ -d "$d" ] || continue
+    found=1
+    local name
+    name="$(basename "$d")"
+    [ -f "${d}index.html" ] \
+      || fail "前端包子应用缺少 index.html: sub-apps/${name}/index.html"
+    [ -d "${d}assets" ] \
+      || fail "前端包子应用缺少 assets/: sub-apps/${name}/assets/"
+    log "  ✅ sub-apps/${name}/（index.html + assets/）"
+  done
+  [ "$found" -eq 1 ] \
+    || fail "前端包 sub-apps/ 下没有任何子应用"
+  if [ -f "$root/deploy-manifest.json" ]; then
+    log "  ✅ deploy-manifest.json"
+  fi
+}
+validate_frontend_deploy "$FRONTEND_DEPLOY_DIR"
+SUB_APP_COUNT="$(find "$FRONTEND_DEPLOY_DIR/sub-apps" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+log "前端子应用数量：$SUB_APP_COUNT"
 # ---------- 密钥生成 ----------
 gen_secret() {
   if command -v openssl >/dev/null 2>&1; then
@@ -232,7 +269,11 @@ INSTALLED_VERSION="unknown"
 if [ -f "$VERSION_FILE" ]; then
   INSTALLED_VERSION="$(cat "$VERSION_FILE" | tr -d '[:space:]')"
 fi
-# ---------- 安装摘要 ----------
+# ---------- 安装摘要（v1.3 P2-FE-09 增强） ----------
+FRONTEND_MAIN_STATUS="❌ 缺失"
+if [ -f "$FRONTEND_DEPLOY_DIR/main-app/index.html" ]; then
+  FRONTEND_MAIN_STATUS="✅ 存在"
+fi
 cat <<EOF
 ============================================================
 ✅ 安装完成
@@ -241,6 +282,8 @@ cat <<EOF
 安装目录：        $INSTALL_DIR
 后端目录：        $BACKEND_DIR
 前端目录：        $FRONTEND_DEPLOY_DIR
+前端主应用：      $FRONTEND_MAIN_STATUS
+前端子应用数：    $SUB_APP_COUNT
 配置文件：        $ENV_FILE
 数据目录：        $DATA_DIR
 日志文件：        $LOG_DIR/backend.log

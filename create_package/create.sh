@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# 产品安装包创建脚本（Go 版 v1.1）
+# 产品安装包创建脚本（Go 版 v1.3）
 # 位置：create_package/create.sh
 # 用法：./create.sh   或   bash /abs/path/create.sh
 #
@@ -8,6 +8,9 @@
 #   - P1-01：增加 bin/goose、DEPLOY.txt 缺失警告（不阻断）。
 #   - P2-02：bin/server 改用 -x（可执行）校验，缺失立即 fail。
 #   - P2-05：若 file 命令可用，打印 bin/server 架构信息（仅提示）。
+# v1.3 修复：
+#   - P1-FE-03：dist.war 校验增强（main-app/assets + 每个子应用 index.html/assets）。
+#   - P3-FE-11：file bin/server 输出提示（静态链接、无 CGO 依赖）。
 #
 # 校验 backend.tar.gz 内部结构（Go 版）：
 #   - bin/server（必须可执行）
@@ -15,6 +18,12 @@
 #   - .env.production.example
 #   - bin/goose（推荐，缺失时警告）
 #   - DEPLOY.txt（推荐，缺失时警告）
+# 校验 dist.war 内部结构（v1.3 增强）：
+#   - main-app/index.html
+#   - main-app/assets/
+#   - sub-apps/（至少一个子应用）
+#   - 每个子应用 index.html + assets/
+#   - deploy-manifest.json（可选，缺失不阻断）
 # ============================================================
 set -euo pipefail
 _SELF="${BASH_SOURCE[0]}"
@@ -104,17 +113,58 @@ if [ ! -f "$TMP_BACKEND/DEPLOY.txt" ]; then
 else
   log "✅ 已包含 DEPLOY.txt"
 fi
-# --- 平台架构提示（P2-05，仅提示不阻断）---
+# --- 平台架构提示（P2-05 + P3-FE-11，仅提示不阻断）---
 if command -v file >/dev/null 2>&1; then
   FILE_OUT="$(file "$TMP_BACKEND/bin/server" 2>/dev/null || true)"
   if [ -n "$FILE_OUT" ]; then
     log "后端二进制：$FILE_OUT"
     log "  → 请确认目标机与二进制架构一致（例如 Linux x86_64）"
+    if echo "$FILE_OUT" | grep -qi "statically linked"; then
+      log "  → ✅ 静态链接（前端托管不引入 CGO 依赖）"
+    else
+      log "  → ⚠️  未标注 statically linked；Go CGO_ENABLED=0 编译时通常可静态链接"
+    fi
   fi
 fi
 # ============================================================================
-# 前端载荷结构校验
+# 前端载荷结构校验（v1.3 增强 P1-FE-03）
 # ============================================================================
+# validate_frontend_war: 解压目录中校验前端产物完整性。
+#   - main-app/index.html 必须存在
+#   - main-app/assets/ 必须存在
+#   - sub-apps/ 至少包含一个子应用
+#   - 每个子应用必须有 index.html 与 assets/
+#   - deploy-manifest.json 可选
+validate_frontend_war() {
+  local root="$1"
+  [ -f "$root/main-app/index.html" ] \
+    || fail "dist.war 缺少 main-app/index.html"
+  [ -d "$root/main-app/assets" ] \
+    || fail "dist.war 缺少 main-app/assets/"
+  [ -d "$root/sub-apps" ] \
+    || fail "dist.war 缺少 sub-apps/ 目录"
+  local found=0
+  local d
+  for d in "$root"/sub-apps/*/; do
+    [ -d "$d" ] || continue
+    found=1
+    local name
+    name="$(basename "$d")"
+    [ -f "${d}index.html" ] \
+      || fail "dist.war 子应用缺少 index.html: sub-apps/${name}/index.html"
+    [ -d "${d}assets" ] \
+      || fail "dist.war 子应用缺少 assets/: sub-apps/${name}/assets/"
+    log "  ✅ sub-apps/${name}/（index.html + assets/）"
+  done
+  [ "$found" -eq 1 ] \
+    || fail "dist.war sub-apps/ 下没有任何子应用"
+  # deploy-manifest.json 可选
+  if [ -f "$root/deploy-manifest.json" ]; then
+    log "  ✅ deploy-manifest.json"
+  else
+    warn "dist.war 未包含 deploy-manifest.json（可选，后端不依赖该文件）"
+  fi
+}
 log "校验 dist.war 内部结构..."
 if command -v unzip >/dev/null 2>&1 && unzip -tq "$PAYLOAD_DIR/dist.war" >/dev/null 2>&1; then
   unzip -q "$PAYLOAD_DIR/dist.war" -d "$TMP_FRONTEND" 2>/dev/null \
@@ -126,10 +176,7 @@ elif tar -tzf "$PAYLOAD_DIR/dist.war" >/dev/null 2>&1; then
 else
   fail "dist.war 既不是合法 zip 也不是合法 tar.gz"
 fi
-[ -f "$TMP_FRONTEND/main-app/index.html" ] \
-  || fail "dist.war 缺少 main-app/index.html"
-[ -d "$TMP_FRONTEND/sub-apps" ] \
-  || fail "dist.war 缺少 sub-apps/ 目录"
+validate_frontend_war "$TMP_FRONTEND"
 # ============================================================================
 # 复制到 staging
 # ============================================================================
