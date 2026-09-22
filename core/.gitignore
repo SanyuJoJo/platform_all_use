@@ -1,0 +1,126 @@
+# ============================================================
+# core 基础与铜锁编译分册 .gitignore
+# 仓库根假设为 core/
+# ============================================================
+
+# ---------- 绝对禁止入库：密钥与审计 ----------
+/core/data/keys/*
+!/data/keys/.gitkeep
+/core/logs/*
+!/logs/.gitkeep
+*.key
+*.pem
+*.p12
+*.pfx
+master.key
+audit.jsonl
+
+# ---------- 编译产物：铜锁 ----------
+/core/libs/bin/tongsuo/
+/core/libs/build/
+/core/libs/dist/
+
+# ---------- 编译产物：C 工具 ----------
+/core/src/tool/bin/
+/core/src/tool/obj/
+*.o
+*.lo
+*.a
+*.so
+*.so.*
+*.d
+*.d.tmp
+*.ld
+*.gcda
+*.gcno
+*.gcov
+
+# ---------- 铜锁源码树内的原地构建产物 ----------
+# 铜锁用 Configure 生成 Makefile，源码本身没有 Makefile，可安全忽略
+/core/libs/src/tongsuo/Makefile
+/core/libs/src/tongsuo/configdata.pm
+/core/libs/src/tongsuo/config.log
+/core/libs/src/tongsuo/config.status
+/core/libs/src/tongsuo/**/Makefile
+/core/libs/src/tongsuo/**/*.o
+/core/libs/src/tongsuo/**/*.d
+/core/libs/src/tongsuo/**/*.a
+/core/libs/src/tongsuo/**/*.so
+/core/libs/src/tongsuo/**/*.so.*
+/core/libs/src/tongsuo/**/*.lo
+/core/libs/src/tongsuo/**/*.ld
+/core/libs/src/tongsuo/apps/openssl
+/core/libs/src/tongsuo/apps/progs.h
+/core/libs/src/tongsuo/apps/progs.c
+/core/libs/src/tongsuo/test/*.ss
+/core/libs/src/tongsuo/test/*.log
+/core/libs/src/tongsuo/test/recipes/**/*.log
+/core/libs/src/tongsuo/fuzz/corpora/
+/core/libs/src/tongsuo/.git
+/core/libs/src/tongsuo/.gitignore
+
+# ---------- 临时目录 ----------
+/core/tmp/*
+!/tmp/.gitkeep
+
+# ---------- 编辑器与 IDE ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+*~
+.#*
+\#*\#
+.cproject
+.project
+.settings/
+
+# ---------- 操作系统 ----------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# ---------- 日志与临时 ----------
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+core.*
+*.pid
+*.lock
+*.swp
+
+# ---------- Python（脚本工具可能用到） ----------
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# ---------- 构建/测试临时 ----------
+/core/coverage/
+/core/coverage.xml
+/core/.coverage
+/core/.tox/
+/core/build/
+/core/dist/
+/core/tests/.tmp/
+/core/tests/out/
+
+# ---------- 环境与本地覆盖 ----------
+.env
+.env.local
+.env.*.local
+*.local
+!.gitkeep
