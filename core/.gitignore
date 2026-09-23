@@ -4,9 +4,9 @@
 # ============================================================
 
 # ---------- 绝对禁止入库：密钥与审计 ----------
-/core/data/keys/*
+/data/keys/*
 !/data/keys/.gitkeep
-/core/logs/*
+/logs/*
 !/logs/.gitkeep
 *.key
 *.pem
@@ -37,30 +37,30 @@ audit.jsonl
 
 # ---------- 铜锁源码树内的原地构建产物 ----------
 # 铜锁用 Configure 生成 Makefile，源码本身没有 Makefile，可安全忽略
-/core/libs/src/tongsuo/Makefile
-/core/libs/src/tongsuo/configdata.pm
-/core/libs/src/tongsuo/config.log
-/core/libs/src/tongsuo/config.status
-/core/libs/src/tongsuo/**/Makefile
-/core/libs/src/tongsuo/**/*.o
-/core/libs/src/tongsuo/**/*.d
-/core/libs/src/tongsuo/**/*.a
-/core/libs/src/tongsuo/**/*.so
-/core/libs/src/tongsuo/**/*.so.*
-/core/libs/src/tongsuo/**/*.lo
-/core/libs/src/tongsuo/**/*.ld
-/core/libs/src/tongsuo/apps/openssl
-/core/libs/src/tongsuo/apps/progs.h
-/core/libs/src/tongsuo/apps/progs.c
-/core/libs/src/tongsuo/test/*.ss
-/core/libs/src/tongsuo/test/*.log
-/core/libs/src/tongsuo/test/recipes/**/*.log
-/core/libs/src/tongsuo/fuzz/corpora/
-/core/libs/src/tongsuo/.git
-/core/libs/src/tongsuo/.gitignore
+/libs/src/tongsuo/Makefile
+/libs/src/tongsuo/configdata.pm
+/libs/src/tongsuo/config.log
+/libs/src/tongsuo/config.status
+/libs/src/tongsuo/**/Makefile
+/libs/src/tongsuo/**/*.o
+/libs/src/tongsuo/**/*.d
+/libs/src/tongsuo/**/*.a
+/libs/src/tongsuo/**/*.so
+/libs/src/tongsuo/**/*.so.*
+/libs/src/tongsuo/**/*.lo
+/libs/src/tongsuo/**/*.ld
+/libs/src/tongsuo/apps/openssl
+/libs/src/tongsuo/apps/progs.h
+/libs/src/tongsuo/apps/progs.c
+/libs/src/tongsuo/test/*.ss
+/libs/src/tongsuo/test/*.log
+/libs/src/tongsuo/test/recipes/**/*.log
+/libs/src/tongsuo/fuzz/corpora/
+/libs/src/tongsuo/.git
+/libs/src/tongsuo/.gitignore
 
 # ---------- 临时目录 ----------
-/core/tmp/*
+/tmp/*
 !/tmp/.gitkeep
 
 # ---------- 编辑器与 IDE ----------
@@ -109,14 +109,14 @@ venv/
 env/
 
 # ---------- 构建/测试临时 ----------
-/core/coverage/
-/core/coverage.xml
-/core/.coverage
-/core/.tox/
-/core/build/
-/core/dist/
-/core/tests/.tmp/
-/core/tests/out/
+/coverage/
+/coverage.xml
+/.coverage
+/.tox/
+/build/
+/dist/
+/tests/.tmp/
+/tests/out/
 
 # ---------- 环境与本地覆盖 ----------
 .env
