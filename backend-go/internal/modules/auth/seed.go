@@ -1,10 +1,13 @@
 package auth
+
 import (
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
+
 	"backend-go/internal/models"
 	"backend-go/internal/security"
 )
+
 // DefaultPermission 默认权限种子。
 type DefaultPermission struct {
 	Code     string
@@ -13,9 +16,22 @@ type DefaultPermission struct {
 	Resource string
 	Action   string
 }
-// DefaultPermissions 核心权限列表，与 Python 版 DEFAULT_PERMISSIONS 完全一致。
+
+// DefaultPermissions 核心权限列表。
+//
+// 包含：
+//   - platform 平台基础
+//   - auth     认证授权
+//   - module_manager 模块管理
+//   - audit_log 日志审计
+//   - license   License 管理
+//   - crypto_console 证书管理控制台（前端菜单）
+//   - crypto    密码操作 API（后端）
 var DefaultPermissions = []DefaultPermission{
+	// ---- platform ----
 	{"platform:dashboard:view", "查看仪表盘", "platform", "dashboard", "view"},
+
+	// ---- auth ----
 	{"auth:user:view", "查看用户", "auth", "user", "view"},
 	{"auth:user:create", "创建用户", "auth", "user", "create"},
 	{"auth:user:edit", "编辑用户", "auth", "user", "edit"},
@@ -25,21 +41,52 @@ var DefaultPermissions = []DefaultPermission{
 	{"auth:role:edit", "编辑角色", "auth", "role", "edit"},
 	{"auth:role:delete", "删除角色", "auth", "role", "delete"},
 	{"auth:permission:view", "查看权限", "auth", "permission", "view"},
+
+	// ---- module_manager ----
 	{"module_manager:module:view", "查看模块", "module_manager", "module", "view"},
 	{"module_manager:module:create", "安装模块", "module_manager", "module", "create"},
 	{"module_manager:module:edit", "编辑模块", "module_manager", "module", "edit"},
 	{"module_manager:module:delete", "卸载模块", "module_manager", "module", "delete"},
+
+	// ---- audit_log ----
 	{"audit_log:log:view", "查看日志", "audit_log", "log", "view"},
 	{"audit_log:log:export", "导出日志", "audit_log", "log", "export"},
+
+	// ---- license ----
 	{"license:license:view", "查看License", "license", "license", "view"},
 	{"license:license:create", "管理License", "license", "license", "create"},
+
+	// ---- crypto_console（证书管理控制台前端菜单） ----
+	{"crypto_console:ca:view", "查看 CA", "crypto_console", "ca", "view"},
+	{"crypto_console:ca:create", "创建 CA", "crypto_console", "ca", "create"},
+	{"crypto_console:ca:import", "导入 CA", "crypto_console", "ca", "import"},
+	{"crypto_console:ca:export", "导出 CA", "crypto_console", "ca", "export"},
+	{"crypto_console:ca:delete", "删除 CA", "crypto_console", "ca", "delete"},
+	{"crypto_console:cert:view", "查看证书", "crypto_console", "cert", "view"},
+	{"crypto_console:cert:sign", "签发证书", "crypto_console", "cert", "sign"},
+	{"crypto_console:csr:view", "查看 CSR", "crypto_console", "csr", "view"},
+	{"crypto_console:csr:create", "创建 CSR", "crypto_console", "csr", "create"},
+	{"crypto_console:crl:view", "查看 CRL", "crypto_console", "crl", "view"},
+	{"crypto_console:crl:create", "创建 CRL", "crypto_console", "crl", "create"},
+	{"crypto_console:key:view", "查看密钥元数据", "crypto_console", "key", "view"},
+	{"crypto_console:key:manage", "管理密钥", "crypto_console", "key", "manage"},
+	{"crypto_console:task:view", "查看任务", "crypto_console", "task", "view"},
+	{"crypto_console:task:cancel", "取消任务", "crypto_console", "task", "cancel"},
+	{"crypto_console:audit:view", "查看审计", "crypto_console", "audit", "view"},
+
+	// ---- crypto（后端密码操作 API） ----
+	{"crypto:operation:execute", "执行密码操作", "crypto", "operation", "execute"},
+	{"crypto:task:view", "查看密码任务", "crypto", "task", "view"},
+	{"crypto:task:cancel", "取消密码任务", "crypto", "task", "cancel"},
 }
+
 // guest 角色确定性初始权限集合。
 var guestPermissionCodes = map[string]struct{}{
 	"platform:dashboard:view":    {},
 	"auth:user:view":             {},
 	"module_manager:module:view": {},
 }
+
 // EnsureAuthSeedData 初始化认证模块种子数据（幂等、增量）。
 func EnsureAuthSeedData(db *gorm.DB) error {
 	// 1. Upsert 核心权限
@@ -63,6 +110,7 @@ func EnsureAuthSeedData(db *gorm.DB) error {
 		}
 		permissionsByCode[item.Code] = &perm
 	}
+
 	// 2. Upsert 系统角色
 	adminRole, err := upsertRole(
 		db, "admin", "管理员", "系统内置管理员，拥有全部权限",
@@ -71,6 +119,7 @@ func EnsureAuthSeedData(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
+
 	guestPerms := filterPermissions(permissionsByCode, guestPermissionCodes)
 	guestRole, err := upsertRole(
 		db, "guest", "访客", "系统内置访客，只读权限",
@@ -79,6 +128,7 @@ func EnsureAuthSeedData(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
+
 	// 3. Upsert 默认用户
 	adminUser, err := upsertUser(db, "admin", "管理员", "admin@example.com")
 	if err != nil {
@@ -88,6 +138,7 @@ func EnsureAuthSeedData(db *gorm.DB) error {
 	if err != nil {
 		return err
 	}
+
 	// 4. 追加用户-角色关联（幂等）
 	if err := ensureUserRole(db, adminUser.ID, adminRole.ID); err != nil {
 		return err
@@ -95,9 +146,13 @@ func EnsureAuthSeedData(db *gorm.DB) error {
 	if err := ensureUserRole(db, guestUser.ID, guestRole.ID); err != nil {
 		return err
 	}
-	log.Info().Msg("认证种子数据初始化完成（幂等、增量）")
+
+	log.Info().
+		Int("total_permissions", len(DefaultPermissions)).
+		Msg("认证种子数据初始化完成（幂等、增量）")
 	return nil
 }
+
 // upsertRole 幂等创建或增量补充角色权限。
 func upsertRole(
 	db *gorm.DB, code, name, description string,
@@ -124,6 +179,7 @@ func upsertRole(
 	} else if err != nil {
 		return nil, err
 	}
+
 	// 已存在：仅追加缺失的权限
 	existing := make(map[string]struct{})
 	for _, p := range role.Permissions {
@@ -139,9 +195,14 @@ func upsertRole(
 		if err := db.Model(&role).Association("Permissions").Append(toAdd); err != nil {
 			return nil, err
 		}
+		log.Info().
+			Str("role", code).
+			Int("added", len(toAdd)).
+			Msg("角色补充新权限")
 	}
 	return &role, nil
 }
+
 // upsertUser 幂等创建用户。
 func upsertUser(db *gorm.DB, username, nickname, email string) (*models.User, error) {
 	var user models.User
@@ -167,6 +228,7 @@ func upsertUser(db *gorm.DB, username, nickname, email string) (*models.User, er
 	}
 	return &user, nil
 }
+
 // ensureUserRole 幂等建立用户-角色关联。
 func ensureUserRole(db *gorm.DB, userID, roleID uint) error {
 	var count int64
@@ -178,6 +240,7 @@ func ensureUserRole(db *gorm.DB, userID, roleID uint) error {
 	}
 	return nil
 }
+
 // allPermissions 返回所有权限。
 func allPermissions(m map[string]*models.Permission) []*models.Permission {
 	result := make([]*models.Permission, 0, len(m))
@@ -186,6 +249,7 @@ func allPermissions(m map[string]*models.Permission) []*models.Permission {
 	}
 	return result
 }
+
 // filterPermissions 按 code 集合过滤。
 func filterPermissions(m map[string]*models.Permission, codes map[string]struct{}) []*models.Permission {
 	result := make([]*models.Permission, 0)
@@ -196,6 +260,7 @@ func filterPermissions(m map[string]*models.Permission, codes map[string]struct{
 	}
 	return result
 }
+
 // boolToInt8 bool → int8。
 func boolToInt8(b bool) int8 {
 	if b {

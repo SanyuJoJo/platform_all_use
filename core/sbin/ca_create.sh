@@ -32,7 +32,7 @@ if ! pki_check_algorithm "ca.create" "$ALG"; then
   pki_fail "$OUT" "ALGORITHM_NOT_ALLOWED" "algorithm not allowed" "$DETAIL" 3
 fi
 
-pki_require_param "$IN" '.params.subject.CN' 'subject.CN' "$OUT" 2
+# 注意：不再强制 subject.CN，允许仅输入 C=CN 等字段
 pki_require_param "$IN" '.params.validity_days' 'validity_days' "$OUT" 2
 
 CA_ID="$(pki_new_id ca)"
