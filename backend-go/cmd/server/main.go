@@ -68,8 +68,8 @@ func main() {
 	// AutoMigrate：仅非生产环境执行。
 	//
 	// 生产环境跳过 AutoMigrate，必须通过 make migrate-up（goose）执行迁移。
-	// 非生产环境 AutoMigrate 失败视为致命错误（建议-6），避免表结构缺失时
-	// 服务继续启动导致后续业务请求全部失败。
+	// 非生产环境 AutoMigrate 失败视为致命错误，避免表结构缺失时服务继续
+	// 启动导致后续业务请求全部失败。
 	// ------------------------------------------------------------------------
 	if cfg.AppEnv != "production" {
 		if err := models.AutoMigrate(db); err != nil {
@@ -129,8 +129,16 @@ func main() {
 	// License 管理服务
 	licenseSvc := license.NewService(db, cfg)
 
-	// 密码操作服务（依赖 auditLogSvc 写审计）
-	cryptoSvc := crypto.NewService(cfg, auditLogSvc,db)
+	// 密码操作服务（依赖 auditLogSvc 写审计，依赖 db 落库元数据）
+	cryptoSvc := crypto.NewService(cfg, auditLogSvc, db)
+
+	// 密码元数据注册中心（CA / 证书 / CSR / CRL / 密钥）
+	// 说明：
+	//   - 内部装配 CoreCaller / FileStore / PathGuard / CertParser / KeyCrypto
+	//     五项共享基础设施，各领域 Service 复用；
+	//   - 新增领域（如证书导入/导出/下载）只需在 Registry 内加字段与注册行；
+	//   - main.go 无需感知具体领域 Service。
+	metaRegistry := crypto.NewMetaRegistry(db, cfg)
 
 	// 认证服务
 	authSvc := auth.NewService(db, cfg)
@@ -151,12 +159,12 @@ func main() {
 
 	r := gin.New()
 
-	// ★ 修复 405：默认 Gin 会把"已注册路径 + 错误方法"也当作 404，
-	//   开启此选项后才会走 NoMethod（405）。
+	// 默认 Gin 会把"已注册路径 + 错误方法"也当作 404，
+	// 开启此选项后才会走 NoMethod（405）。
 	r.HandleMethodNotAllowed = true
 
 	// ------------------------------------------------------------------------
-	// 中间件注册顺序（日志审计 v1.2 P0-1 修复）：
+	// 中间件注册顺序：
 	//
 	//   RequestID → AccessLog → CORS → AuditLog → Recovery → 路由
 	//
@@ -173,7 +181,7 @@ func main() {
 	r.Use(exception.Recovery())
 
 	// ------------------------------------------------------------------------
-	// NoMethod 始终注册（开发与维护指南 v1.1 P0-1 修复）：
+	// NoMethod 始终注册：
 	//
 	//   - r.HandleMethodNotAllowed = true 时，对已注册路径使用错误方法，
 	//     Gin 会调用 NoMethod 处理器；
@@ -233,19 +241,37 @@ func main() {
 	licenseHandler := license.NewHandler(licenseSvc)
 	licenseHandler.RegisterRoutes(protected)
 
-	// 密码操作路由（/crypto/operations/:operation_id、/tasks/:task_id）
+	// ------------------------------------------------------------------------
+	// 密码操作路由（统一入口 + 任务查询/取消）
+	//
+	//   POST /api/v1/crypto/operations/:operation_id   执行密码操作
+	//   GET  /api/v1/tasks/:task_id                     查询任务状态
+	//   POST /api/v1/tasks/:task_id/cancel              取消任务
+	// ------------------------------------------------------------------------
 	cryptoHandler := crypto.NewHandler(cryptoSvc)
 	cryptoHandler.RegisterRoutes(protected)
-	metaSvc := crypto.NewMetaService(db,cfg)
-	metaHandler := crypto.NewMetaHandler(metaSvc)
-	metaHandler.RegisterRoutes(protected)
+
+	// ------------------------------------------------------------------------
+	// 密码元数据路由（CA / 证书 / CSR / CRL / 密钥）
+	//
+	// 由 MetaRegistry 集中注册，各领域 Handler 独立：
+	//   /cas        CA 列表、详情、导入、导出、下载、删除
+	//   /certs      证书列表、详情（导入/导出/下载预留）
+	//   /csrs       CSR 列表
+	//   /crls       CRL 列表
+	//   /keys       密钥元数据列表
+	//
+	// 新增领域或新增子路由时，只需在对应领域 Handler 内添加，
+	// main.go 无需改动。
+	// ------------------------------------------------------------------------
+	metaRegistry.Register(protected)
 
 	// ------------------------------------------------------------------------
 	// 9.3 后续业务路由扩展点（示例）
 	//
-	// 例如 CA/证书/CSR/CRL/密钥的列表查询接口：
-	//   caHandler := crypto.NewCAHandler(...)
-	//   caHandler.RegisterRoutes(protected)
+	// 例如独立的能力查询接口：
+	//   capabilityHandler := crypto.NewCapabilityHandler(...)
+	//   capabilityHandler.RegisterRoutes(protected)
 	// ------------------------------------------------------------------------
 
 	// ========================================================================

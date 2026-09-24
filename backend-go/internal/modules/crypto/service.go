@@ -22,15 +22,13 @@ type Service struct {
 	adapter    *CoreAdapter
 	cfg        *config.Config
 	auditSvc   *audit_log.Service
-	db         *gorm.DB // ← 新增：用于元数据落库
+	db         *gorm.DB
 	sem        chan struct{}
 	taskMu     sync.Mutex
 	taskCancel map[string]context.CancelFunc
 }
 
 // NewService 创建密码操作服务。
-//
-// 变更：新增 db 参数，用于把 core 返回的元数据写入平台表。
 func NewService(cfg *config.Config, auditSvc *audit_log.Service, db *gorm.DB) *Service {
 	adapter := NewCoreAdapter(
 		cfg.CoreDispatchPath,
@@ -71,7 +69,38 @@ func (s *Service) Execute(
 	// 2. 生成 request_id
 	requestID := uuid.NewString()
 
-	// 3. 构造 core 请求
+	// 3. 【新增】参数预校验：subject 字段
+	//
+	// 目的：提前拦截非法 DN（如 C 字段长度不为 2、包含全角逗号未拆分的
+	// "C=CN，CN=TEST" 被误当成 C 的值），避免传给 core 后触发
+	// OpenSSL "ASN1_mbstring_ncopy:string too long" 之类的底层错误。
+	//
+	// 非法参数统一返回 400 + CRYPTO_INVALID_PARAM，并写审计。
+	if err := ValidateSubjectForOperation(op, req.Params); err != nil {
+		msg := err.Error()
+		platformCode := PlatformCryptoInvalidParam
+
+		// 从 exception.PlatformError 提取可读消息
+		if pe, ok := err.(*exception.PlatformError); ok {
+			msg = pe.Message
+		}
+
+		s.writeAudit(requestID, op, "FAILED", 0, platformCode, nil)
+
+		return &OperationResponse{
+			Code:        platformCode,
+			Message:     msg,
+			RequestID:   requestID,
+			OperationID: op,
+			Error: &PlatformErrorDetail{
+				Code:      platformCode,
+				Message:   msg,
+				Retryable: false,
+			},
+		}, 400, nil
+	}
+
+	// 4. 构造 core 请求
 	coreReq := &CoreRequest{
 		SchemaVersion: "1.0",
 		OperationID:   op,
@@ -89,7 +118,7 @@ func (s *Service) Execute(
 		}
 	}
 
-	// 4. 并发信号量
+	// 5. 并发信号量
 	select {
 	case s.sem <- struct{}{}:
 		defer func() { <-s.sem }()
@@ -101,12 +130,12 @@ func (s *Service) Execute(
 		)
 	}
 
-	// 5. 调用 CoreAdapter
+	// 6. 调用 CoreAdapter
 	start := time.Now()
 	coreResp, exitCode, err := s.adapter.Call(ctx, op, coreReq)
 	durationMs := int(time.Since(start).Milliseconds())
 
-	// 6. 处理调用错误
+	// 7. 处理调用错误
 	if err != nil {
 		platformCode := PlatformCryptoCoreFailed
 		httpStatus := 500
@@ -128,10 +157,10 @@ func (s *Service) Execute(
 		}, httpStatus, nil
 	}
 
-	// 7. 映射错误码
+	// 8. 映射错误码
 	mapping := MapCoreError(coreResp.Code)
 
-	// 8. 构造平台响应
+	// 9. 构造平台响应
 	platformResp := &OperationResponse{
 		Code:        mapping.PlatformCode,
 		Message:     coreResp.Message,
@@ -166,11 +195,11 @@ func (s *Service) Execute(
 		}
 		s.writeAudit(requestID, op, "SUCCESS", durationMs, "", nil)
 
-		// ★★★ 关键新增：core 成功后，把元数据落库 ★★★
+		// core 成功后，把元数据落库
 		s.persistMetadata(op, req.Params, coreResp.Data)
 	}
 
-	// 9. 调试日志
+	// 10. 调试日志
 	log.Debug().
 		Str("operation_id", op).
 		Str("request_id", requestID).
