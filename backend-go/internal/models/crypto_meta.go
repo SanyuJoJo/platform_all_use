@@ -28,21 +28,33 @@ type CA struct {
 func (CA) TableName() string { return "platform_ca" }
 
 // Certificate 终端证书元数据表。
+//
+// 本次扩展新增字段：
+//   - Subject / Issuer：完整 DN，便于列表与详情展示
+//   - Fingerprint：SHA-256 摘要值
+//   - PublicKeyAlgorithm / SignatureAlgorithm：算法标识
+//   - KeyRef：关联密钥引用（生成 CSR 时由 core 返回）
 type Certificate struct {
-	ID         uint      `gorm:"primaryKey;autoIncrement" json:"-"`
-	CertID     string    `gorm:"size:64;not null;uniqueIndex" json:"cert_id"`
-	CertType   string    `gorm:"size:32;not null" json:"cert_type"`
-	Serial     string    `gorm:"size:128;not null;index" json:"serial"`
-	SubjectCN  string    `gorm:"size:255;not null" json:"subject_cn"`
-	IssuerCN   string    `gorm:"size:255" json:"issuer_cn"`
-	CAID       string    `gorm:"size:64;not null;index" json:"ca_id"`
-	Algorithm  string    `gorm:"size:32;not null" json:"algorithm"`
-	NotBefore  time.Time `gorm:"not null" json:"not_before"`
-	NotAfter   time.Time `gorm:"not null;index" json:"not_after"`
-	CertPath   string    `gorm:"size:255;not null" json:"cert_path"`
-	ChainPath  *string   `gorm:"size:255" json:"chain_path,omitempty"`
-	Status     string    `gorm:"size:16;not null;default:VALID;index" json:"status"`
-	CreatedAt  time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
+	ID                 uint      `gorm:"primaryKey;autoIncrement" json:"-"`
+	CertID             string    `gorm:"size:64;not null;uniqueIndex" json:"cert_id"`
+	CertType           string    `gorm:"size:32;not null;index" json:"cert_type"`
+	Serial             string    `gorm:"size:128;not null;index" json:"serial"`
+	Subject            string    `gorm:"size:512" json:"subject"`
+	SubjectCN          string    `gorm:"size:255;not null" json:"subject_cn"`
+	Issuer             string    `gorm:"size:512" json:"issuer"`
+	IssuerCN           string    `gorm:"size:255" json:"issuer_cn"`
+	CAID               string    `gorm:"size:64;not null;index" json:"ca_id"`
+	Algorithm          string    `gorm:"size:32;not null" json:"algorithm"`
+	Fingerprint        string    `gorm:"size:128" json:"fingerprint"`
+	PublicKeyAlgorithm string    `gorm:"size:64" json:"public_key_algorithm"`
+	SignatureAlgorithm string    `gorm:"size:64" json:"signature_algorithm"`
+	NotBefore          time.Time `gorm:"not null" json:"not_before"`
+	NotAfter           time.Time `gorm:"not null;index" json:"not_after"`
+	CertPath           string    `gorm:"size:255;not null" json:"cert_path"`
+	ChainPath          *string   `gorm:"size:255" json:"chain_path,omitempty"`
+	KeyRef             *string   `gorm:"size:64" json:"key_ref,omitempty"`
+	Status             string    `gorm:"size:16;not null;default:VALID;index" json:"status"`
+	CreatedAt          time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
 }
 
 func (Certificate) TableName() string { return "platform_certificate" }
@@ -63,15 +75,15 @@ func (CSR) TableName() string { return "platform_csr" }
 
 // CRL CRL 元数据表。
 type CRL struct {
-	ID             uint      `gorm:"primaryKey;autoIncrement" json:"-"`
-	CRLID          string    `gorm:"size:64;not null;uniqueIndex" json:"crl_id"`
-	CAID           string    `gorm:"size:64;not null;index" json:"ca_id"`
-	CRLPath        string    `gorm:"size:255;not null" json:"crl_path"`
-	RevokedCount   int       `gorm:"not null;default:0" json:"revoked_count"`
-	DigestAlgo     string    `gorm:"size:16;not null" json:"digest_algorithm"`
-	NextUpdate     *time.Time `json:"next_update,omitempty"`
-	Status         string    `gorm:"size:16;not null;default:ACTIVE;index" json:"status"`
-	CreatedAt      time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
+	ID           uint       `gorm:"primaryKey;autoIncrement" json:"-"`
+	CRLID        string     `gorm:"size:64;not null;uniqueIndex" json:"crl_id"`
+	CAID         string     `gorm:"size:64;not null;index" json:"ca_id"`
+	CRLPath      string     `gorm:"size:255;not null" json:"crl_path"`
+	RevokedCount int        `gorm:"not null;default:0" json:"revoked_count"`
+	DigestAlgo   string     `gorm:"size:16;not null" json:"digest_algorithm"`
+	NextUpdate   *time.Time `json:"next_update,omitempty"`
+	Status       string     `gorm:"size:16;not null;default:ACTIVE;index" json:"status"`
+	CreatedAt    time.Time  `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
 }
 
 func (CRL) TableName() string { return "platform_crl" }

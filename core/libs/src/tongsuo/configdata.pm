@@ -35,7 +35,7 @@ our %config = (
     "HASHBANGPERL" => "/usr/bin/env perl",
     "LDFLAGS" => [
         "-Wl,-rpath,/code/platform_all_use/core/libs/bin/tongsuo/libs",
-        "-Wl,-rpath,/tmp/core-stage1-test.qrUsQH/deploy/libs/tongsuo"
+        "-Wl,-rpath,/opt/core/libs/tongsuo"
     ],
     "LDLIBS" => [],
     "OBJCOPY" => "objcopy",
@@ -275,7 +275,7 @@ our %config = (
     ],
     "openssl_sys_defines" => [],
     "openssldir" => "/code/platform_all_use/core/libs/bin/tongsuo/ssl",
-    "options" => "--prefix=/code/platform_all_use/core/libs/bin/tongsuo --openssldir=/code/platform_all_use/core/libs/bin/tongsuo/ssl --libdir=libs -Wl,-rpath,/code/platform_all_use/core/libs/bin/tongsuo/libs -Wl,-rpath,/tmp/core-stage1-test.qrUsQH/deploy/libs/tongsuo enable-shared no-acvp-tests no-argon2 no-aria no-asan no-atf_slibce no-bf no-blake2 no-bn-method no-brotli no-brotli-dynamic no-buildtest-c++ no-bulletproofs no-camellia no-cast no-crypto-mdebug no-crypto-mdebug-backtrace no-crypto-mdebug-count no-delegated-credential no-demos no-devcryptoeng no-ec_elgamal no-ec_nistp_64_gcc_128 no-ec_sm2p_64_gcc_128 no-egd no-evp-cipher-api-compat no-external-tests no-fips no-fips-jitter no-fips-post no-fips-securitychecks no-fuzz-afl no-fuzz-libfuzzer no-gost no-h3demo no-hqinterop no-idea no-jitter no-ktls no-md2 no-md4 no-mdc2 no-msan no-nizk no-ntls no-optimize-chacha-choose no-paillier no-pie no-rc2 no-rc5 no-ripemd no-rmd160 no-sctp no-sdf-lib no-sdf-lib-dynamic no-seed no-sm2_threshold no-smtc no-smtc-debug no-ssl3 no-ssl3-method no-sslkeylog no-status no-tfo no-trace no-twisted_ec_elgamal no-ubsan no-unit-test no-uplink no-wbsm4-baiwu no-wbsm4-wsise no-wbsm4-xiaolai no-weak-ssl-ciphers no-whirlpool no-winstore no-zkp-gadget no-zkp-transcript no-zlib no-zlib-dynamic no-zstd no-zstd-dynamic",
+    "options" => "--prefix=/code/platform_all_use/core/libs/bin/tongsuo --openssldir=/code/platform_all_use/core/libs/bin/tongsuo/ssl --libdir=libs -Wl,-rpath,/code/platform_all_use/core/libs/bin/tongsuo/libs -Wl,-rpath,/opt/core/libs/tongsuo enable-shared no-acvp-tests no-argon2 no-aria no-asan no-atf_slibce no-bf no-blake2 no-bn-method no-brotli no-brotli-dynamic no-buildtest-c++ no-bulletproofs no-camellia no-cast no-crypto-mdebug no-crypto-mdebug-backtrace no-crypto-mdebug-count no-delegated-credential no-demos no-devcryptoeng no-ec_elgamal no-ec_nistp_64_gcc_128 no-ec_sm2p_64_gcc_128 no-egd no-evp-cipher-api-compat no-external-tests no-fips no-fips-jitter no-fips-post no-fips-securitychecks no-fuzz-afl no-fuzz-libfuzzer no-gost no-h3demo no-hqinterop no-idea no-jitter no-ktls no-md2 no-md4 no-mdc2 no-msan no-nizk no-ntls no-optimize-chacha-choose no-paillier no-pie no-rc2 no-rc5 no-ripemd no-rmd160 no-sctp no-sdf-lib no-sdf-lib-dynamic no-seed no-sm2_threshold no-smtc no-smtc-debug no-ssl3 no-ssl3-method no-sslkeylog no-status no-tfo no-trace no-twisted_ec_elgamal no-ubsan no-unit-test no-uplink no-wbsm4-baiwu no-wbsm4-wsise no-wbsm4-xiaolai no-weak-ssl-ciphers no-whirlpool no-winstore no-zkp-gadget no-zkp-transcript no-zlib no-zlib-dynamic no-zstd no-zstd-dynamic",
     "patch" => "4",
     "perl_archname" => "x86_64-linux-gnu-thread-multi",
     "perl_cmd" => "/usr/bin/perl",
@@ -285,7 +285,7 @@ our %config = (
         "--openssldir=/code/platform_all_use/core/libs/bin/tongsuo/ssl",
         "--libdir=libs",
         "-Wl,-rpath,/code/platform_all_use/core/libs/bin/tongsuo/libs",
-        "-Wl,-rpath,/tmp/core-stage1-test.qrUsQH/deploy/libs/tongsuo",
+        "-Wl,-rpath,/opt/core/libs/tongsuo",
         "shared"
     ],
     "perlenv" => {

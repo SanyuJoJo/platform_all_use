@@ -1,0 +1,9 @@
+prefix=/code/platform_all_use/core/libs/bin/tongsuo
+exec_prefix=${prefix}
+libdir=${exec_prefix}/libs
+includedir=${prefix}/include 
+
+Name: OpenSSL
+Description: Secure Sockets Layer and cryptography libraries and tools
+Version: 3.5.4
+Requires: libssl libcrypto

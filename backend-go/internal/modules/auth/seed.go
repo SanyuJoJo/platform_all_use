@@ -18,15 +18,6 @@ type DefaultPermission struct {
 }
 
 // DefaultPermissions 核心权限列表。
-//
-// 包含：
-//   - platform 平台基础
-//   - auth     认证授权
-//   - module_manager 模块管理
-//   - audit_log 日志审计
-//   - license   License 管理
-//   - crypto_console 证书管理控制台（前端菜单）
-//   - crypto    密码操作 API（后端）
 var DefaultPermissions = []DefaultPermission{
 	// ---- platform ----
 	{"platform:dashboard:view", "查看仪表盘", "platform", "dashboard", "view"},
@@ -62,8 +53,13 @@ var DefaultPermissions = []DefaultPermission{
 	{"crypto_console:ca:import", "导入 CA", "crypto_console", "ca", "import"},
 	{"crypto_console:ca:export", "导出 CA", "crypto_console", "ca", "export"},
 	{"crypto_console:ca:delete", "删除 CA", "crypto_console", "ca", "delete"},
+
 	{"crypto_console:cert:view", "查看证书", "crypto_console", "cert", "view"},
 	{"crypto_console:cert:sign", "签发证书", "crypto_console", "cert", "sign"},
+	{"crypto_console:cert:import", "导入证书", "crypto_console", "cert", "import"},
+	{"crypto_console:cert:export", "导出证书", "crypto_console", "cert", "export"},
+	{"crypto_console:cert:delete", "删除证书", "crypto_console", "cert", "delete"},
+
 	{"crypto_console:csr:view", "查看 CSR", "crypto_console", "csr", "view"},
 	{"crypto_console:csr:create", "创建 CSR", "crypto_console", "csr", "create"},
 	{"crypto_console:crl:view", "查看 CRL", "crypto_console", "crl", "view"},
@@ -89,7 +85,6 @@ var guestPermissionCodes = map[string]struct{}{
 
 // EnsureAuthSeedData 初始化认证模块种子数据（幂等、增量）。
 func EnsureAuthSeedData(db *gorm.DB) error {
-	// 1. Upsert 核心权限
 	permissionsByCode := make(map[string]*models.Permission)
 	for _, item := range DefaultPermissions {
 		var perm models.Permission
@@ -111,7 +106,6 @@ func EnsureAuthSeedData(db *gorm.DB) error {
 		permissionsByCode[item.Code] = &perm
 	}
 
-	// 2. Upsert 系统角色
 	adminRole, err := upsertRole(
 		db, "admin", "管理员", "系统内置管理员，拥有全部权限",
 		true, allPermissions(permissionsByCode),
@@ -129,7 +123,6 @@ func EnsureAuthSeedData(db *gorm.DB) error {
 		return err
 	}
 
-	// 3. Upsert 默认用户
 	adminUser, err := upsertUser(db, "admin", "管理员", "admin@example.com")
 	if err != nil {
 		return err
@@ -139,7 +132,6 @@ func EnsureAuthSeedData(db *gorm.DB) error {
 		return err
 	}
 
-	// 4. 追加用户-角色关联（幂等）
 	if err := ensureUserRole(db, adminUser.ID, adminRole.ID); err != nil {
 		return err
 	}
@@ -153,7 +145,6 @@ func EnsureAuthSeedData(db *gorm.DB) error {
 	return nil
 }
 
-// upsertRole 幂等创建或增量补充角色权限。
 func upsertRole(
 	db *gorm.DB, code, name, description string,
 	isSystem bool, perms []*models.Permission,
@@ -180,7 +171,6 @@ func upsertRole(
 		return nil, err
 	}
 
-	// 已存在：仅追加缺失的权限
 	existing := make(map[string]struct{})
 	for _, p := range role.Permissions {
 		existing[p.Code] = struct{}{}
@@ -203,7 +193,6 @@ func upsertRole(
 	return &role, nil
 }
 
-// upsertUser 幂等创建用户。
 func upsertUser(db *gorm.DB, username, nickname, email string) (*models.User, error) {
 	var user models.User
 	err := db.Where("username = ?", username).First(&user).Error
@@ -229,7 +218,6 @@ func upsertUser(db *gorm.DB, username, nickname, email string) (*models.User, er
 	return &user, nil
 }
 
-// ensureUserRole 幂等建立用户-角色关联。
 func ensureUserRole(db *gorm.DB, userID, roleID uint) error {
 	var count int64
 	db.Model(&models.UserRole{}).
@@ -241,7 +229,6 @@ func ensureUserRole(db *gorm.DB, userID, roleID uint) error {
 	return nil
 }
 
-// allPermissions 返回所有权限。
 func allPermissions(m map[string]*models.Permission) []*models.Permission {
 	result := make([]*models.Permission, 0, len(m))
 	for _, p := range m {
@@ -250,7 +237,6 @@ func allPermissions(m map[string]*models.Permission) []*models.Permission {
 	return result
 }
 
-// filterPermissions 按 code 集合过滤。
 func filterPermissions(m map[string]*models.Permission, codes map[string]struct{}) []*models.Permission {
 	result := make([]*models.Permission, 0)
 	for code := range codes {
@@ -261,7 +247,6 @@ func filterPermissions(m map[string]*models.Permission, codes map[string]struct{
 	return result
 }
 
-// boolToInt8 bool → int8。
 func boolToInt8(b bool) int8 {
 	if b {
 		return 1

@@ -7,8 +7,8 @@
 ## via Makefile.in
 
 PLATFORM=linux-x86_64
-OPTIONS=--prefix=/code/platform_all_use/core/libs/bin/tongsuo --openssldir=/code/platform_all_use/core/libs/bin/tongsuo/ssl --libdir=libs -Wl,-rpath,/code/platform_all_use/core/libs/bin/tongsuo/libs -Wl,-rpath,/tmp/core-stage1-test.qrUsQH/deploy/libs/tongsuo enable-shared no-acvp-tests no-argon2 no-aria no-asan no-atf_slibce no-bf no-blake2 no-bn-method no-brotli no-brotli-dynamic no-buildtest-c++ no-bulletproofs no-camellia no-cast no-crypto-mdebug no-crypto-mdebug-backtrace no-crypto-mdebug-count no-delegated-credential no-demos no-devcryptoeng no-ec_elgamal no-ec_nistp_64_gcc_128 no-ec_sm2p_64_gcc_128 no-egd no-evp-cipher-api-compat no-external-tests no-fips no-fips-jitter no-fips-post no-fips-securitychecks no-fuzz-afl no-fuzz-libfuzzer no-gost no-h3demo no-hqinterop no-idea no-jitter no-ktls no-md2 no-md4 no-mdc2 no-msan no-nizk no-ntls no-optimize-chacha-choose no-paillier no-pie no-rc2 no-rc5 no-ripemd no-rmd160 no-sctp no-sdf-lib no-sdf-lib-dynamic no-seed no-sm2_threshold no-smtc no-smtc-debug no-ssl3 no-ssl3-method no-sslkeylog no-status no-tfo no-trace no-twisted_ec_elgamal no-ubsan no-unit-test no-uplink no-wbsm4-baiwu no-wbsm4-wsise no-wbsm4-xiaolai no-weak-ssl-ciphers no-whirlpool no-winstore no-zkp-gadget no-zkp-transcript no-zlib no-zlib-dynamic no-zstd no-zstd-dynamic
-CONFIGURE_ARGS=("--prefix=/code/platform_all_use/core/libs/bin/tongsuo", "--openssldir=/code/platform_all_use/core/libs/bin/tongsuo/ssl", "--libdir=libs", "-Wl,-rpath,/code/platform_all_use/core/libs/bin/tongsuo/libs", "-Wl,-rpath,/tmp/core-stage1-test.qrUsQH/deploy/libs/tongsuo", "shared")
+OPTIONS=--prefix=/code/platform_all_use/core/libs/bin/tongsuo --openssldir=/code/platform_all_use/core/libs/bin/tongsuo/ssl --libdir=libs -Wl,-rpath,/code/platform_all_use/core/libs/bin/tongsuo/libs -Wl,-rpath,/opt/core/libs/tongsuo enable-shared no-acvp-tests no-argon2 no-aria no-asan no-atf_slibce no-bf no-blake2 no-bn-method no-brotli no-brotli-dynamic no-buildtest-c++ no-bulletproofs no-camellia no-cast no-crypto-mdebug no-crypto-mdebug-backtrace no-crypto-mdebug-count no-delegated-credential no-demos no-devcryptoeng no-ec_elgamal no-ec_nistp_64_gcc_128 no-ec_sm2p_64_gcc_128 no-egd no-evp-cipher-api-compat no-external-tests no-fips no-fips-jitter no-fips-post no-fips-securitychecks no-fuzz-afl no-fuzz-libfuzzer no-gost no-h3demo no-hqinterop no-idea no-jitter no-ktls no-md2 no-md4 no-mdc2 no-msan no-nizk no-ntls no-optimize-chacha-choose no-paillier no-pie no-rc2 no-rc5 no-ripemd no-rmd160 no-sctp no-sdf-lib no-sdf-lib-dynamic no-seed no-sm2_threshold no-smtc no-smtc-debug no-ssl3 no-ssl3-method no-sslkeylog no-status no-tfo no-trace no-twisted_ec_elgamal no-ubsan no-unit-test no-uplink no-wbsm4-baiwu no-wbsm4-wsise no-wbsm4-xiaolai no-weak-ssl-ciphers no-whirlpool no-winstore no-zkp-gadget no-zkp-transcript no-zlib no-zlib-dynamic no-zstd no-zstd-dynamic
+CONFIGURE_ARGS=("--prefix=/code/platform_all_use/core/libs/bin/tongsuo", "--openssldir=/code/platform_all_use/core/libs/bin/tongsuo/ssl", "--libdir=libs", "-Wl,-rpath,/code/platform_all_use/core/libs/bin/tongsuo/libs", "-Wl,-rpath,/opt/core/libs/tongsuo", "shared")
 SRCDIR=.
 BLDDIR=.
 FIPSKEY=f4556650ac31d35461610bac4ed81b1a181b2d8a43ea2854cbae22ca74560813
@@ -159,2022 +159,2017 @@ PROGRAMS=apps/openssl fuzz/acert-test fuzz/asn1-test fuzz/asn1parse-test \
          test/zuc_internal_test
 SCRIPTS=apps/CA.pl apps/tsget.pl util/shlib_wrap.sh util/wrap.pl
 
-DEPS=test/helpers/ssl_test-bin-ssl_test_ctx.d \
-     crypto/pkcs7/libcrypto-lib-pk7_lib.d \
-     test/ecpmeth_test-bin-ecpmeth_test.d \
-     test/evp_pkey_dparams_test-bin-evp_pkey_dparams_test.d \
-     ssl/quic/libssl-shlib-quic_record_shared.d \
-     crypto/rsa/libcrypto-shlib-rsa_meth.d \
-     providers/implementations/rands/libdefault-lib-drbg_hmac.d \
-     crypto/asn1/libcrypto-shlib-x_pkey.d \
-     test/buildtest_c_cryptoerr_legacy-bin-buildtest_cryptoerr_legacy.d \
-     test/bioprinttest-bin-bioprinttest.d \
-     crypto/x509/libcrypto-lib-x509_ext.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_zuc_eea3.d \
-     crypto/asn1/libcrypto-shlib-tasn_scn.d \
-     crypto/ocsp/libcrypto-lib-ocsp_http.d \
-     crypto/asn1/libcrypto-lib-t_bitst.d crypto/cmp/libcrypto-lib-cmp_util.d \
-     ssl/quic/libssl-shlib-quic_record_tx.d \
-     crypto/pkcs7/libcrypto-shlib-pkcs7err.d \
-     ssl/quic/libssl-lib-quic_record_rx.d \
-     crypto/rand/libcrypto-shlib-rand_pool.d \
-     crypto/asn1/libcrypto-lib-p8_pkey.d apps/openssl-bin-pkeyutl.d \
-     crypto/slh_dsa/libcrypto-shlib-slh_hypertree.d \
-     test/moduleloadtest-bin-moduleloadtest.d \
-     crypto/libcrypto-lib-threads_none.d \
-     crypto/evp/libcrypto-lib-e_aes_cbc_hmac_sha256.d \
-     ssl/record/methods/libssl-lib-tlsany_meth.d \
-     crypto/pem/libcrypto-lib-pem_all.d crypto/packettest-bin-quic_vlint.d \
-     crypto/evp/libcrypto-lib-p_lib.d crypto/ec/libcrypto-shlib-ec2_smpl.d \
-     crypto/sm4/libcrypto-shlib-sm4.d \
-     crypto/ts/libcrypto-lib-ts_rsp_verify.d \
-     crypto/pkcs12/libcrypto-lib-p12_p8e.d \
-     crypto/ec/libcrypto-shlib-ec_err.d \
-     test/evp_extra_test-bin-fake_pipelineprov.d \
-     crypto/asn1/libcrypto-shlib-ameth_lib.d \
-     crypto/thread/arch/libssl-shlib-thread_none.d \
-     crypto/ts/libcrypto-lib-ts_conf.d crypto/libcrypto-shlib-packet.d \
-     crypto/txt_db/libcrypto-shlib-txt_db.d \
-     crypto/evp/libcrypto-lib-bio_ok.d crypto/pem/libcrypto-shlib-pem_err.d \
-     providers/implementations/exchange/libdefault-lib-dh_exch.d \
-     crypto/modes/libcrypto-shlib-ccm128.d \
-     crypto/asn1/libcrypto-lib-p5_pbe.d \
-     providers/implementations/keymgmt/libdefault-lib-slh_dsa_kmgmt.d \
-     crypto/bio/libcrypto-lib-bss_dgram.d \
-     crypto/err/libcrypto-lib-err_mark.d \
-     crypto/evp/libcrypto-shlib-p5_crpt.d \
-     crypto/bio/libcrypto-shlib-bio_dump.d \
-     providers/common/libdefault-lib-digest_to_nid.d \
-     crypto/modes/libcrypto-lib-cts128.d \
-     crypto/modes/libcrypto-shlib-cbc128.d \
-     crypto/conf/libcrypto-shlib-conf_def.d crypto/libcrypto-lib-time.d \
-     crypto/bio/libcrypto-lib-bss_conn.d ssl/quic/libssl-lib-quic_txpim.d \
-     crypto/lhash/libcrypto-lib-lh_stats.d \
-     test/buildtest_c_fips_names-bin-buildtest_fips_names.d \
-     ssl/record/methods/libssl-shlib-tls13_meth.d \
-     crypto/evp/libcrypto-shlib-bio_enc.d crypto/asn1/libcrypto-lib-x_long.d \
-     ssl/quic/libssl-shlib-quic_tls_api.d crypto/evp/libcrypto-shlib-p_lib.d \
-     crypto/des/libcrypto-lib-cfb64enc.d crypto/err/libcrypto-lib-err_prn.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_gcm_siv.d \
-     ssl/statem/libssl-shlib-statem_dtls.d \
-     providers/implementations/signature/libdefault-lib-eddsa_sig.d \
-     crypto/des/libcrypto-lib-des_enc.d \
-     crypto/x509/libcrypto-shlib-x509_err.d \
-     crypto/evp/libcrypto-shlib-encode.d crypto/libcrypto-shlib-ex_data.d \
-     crypto/ec/libcrypto-lib-ec_err.d crypto/conf/libcrypto-lib-conf_mod.d \
-     test/testutil/libtestutil-lib-driver.d \
-     crypto/ocsp/libcrypto-shlib-ocsp_ext.d \
-     crypto/dso/libcrypto-shlib-dso_dl.d \
-     providers/implementations/asymciphers/libdefault-lib-rsa_enc.d \
-     crypto/evp/libcrypto-shlib-p_dec.d crypto/x509/libcrypto-lib-v3_pmaps.d \
-     providers/implementations/encode_decode/libdefault-lib-ml_kem_codecs.d \
-     crypto/x509/libcrypto-shlib-v3_ac_tgt.d apps/openssl-bin-ts.d \
-     crypto/bio/libcrypto-shlib-bss_dgram_pair.d \
-     crypto/libcrypto-shlib-info.d test/destest-bin-destest.d \
-     crypto/ec/libcrypto-lib-ec_lib.d crypto/pkcs12/libcrypto-lib-p12_crpt.d \
-     crypto/bn/libcrypto-shlib-bn_mod.d \
-     providers/implementations/kdfs/liblegacy-lib-pvkkdf.d \
-     crypto/pkcs12/libcrypto-shlib-pk12err.d \
-     crypto/async/libcrypto-lib-async_err.d \
-     crypto/x509/libcrypto-lib-x509_cmp.d \
-     crypto/store/libcrypto-lib-store_err.d \
-     ssl/quic/libssl-lib-quic_reactor_wait_ctx.d \
-     test/param_build_test-bin-param_build_test.d \
-     crypto/asn1/libcrypto-lib-tasn_scn.d crypto/evp/libcrypto-lib-p5_crpt.d \
-     crypto/x509/libcrypto-lib-v3_pcia.d \
-     crypto/x509/libcrypto-shlib-v3_lib.d ssl/quic/libssl-shlib-quic_fifd.d \
-     test/bio_tfo_test-bin-bio_tfo_test.d crypto/bn/libcrypto-shlib-bn_sm2.d \
-     crypto/dh/libcrypto-lib-dh_lib.d \
-     crypto/ffc/libcrypto-shlib-ffc_key_validate.d \
-     crypto/rand/libcrypto-lib-rand_meth.d \
-     ssl/statem/libssl-shlib-statem_srvr.d \
-     providers/implementations/kdfs/liblegacy-lib-pbkdf1.d \
-     crypto/rsa/libcrypto-lib-rsa_gen.d \
-     crypto/dsa/libcrypto-shlib-dsa_ossl.d \
-     crypto/property/libcrypto-lib-defn_cache.d \
-     crypto/cms/libcrypto-shlib-cms_err.d \
-     crypto/rand/libcrypto-shlib-rand_lib.d \
-     crypto/x509/libcrypto-lib-v3_tlsf.d \
-     crypto/ct/libcrypto-shlib-ct_x509v3.d \
-     providers/implementations/macs/libdefault-lib-hmac_prov.d \
-     test/x509_check_cert_pkey_test-bin-x509_check_cert_pkey_test.d \
-     test/buildtest_c_symhacks-bin-buildtest_symhacks.d \
-     crypto/dh/libcrypto-lib-dh_backend.d \
-     crypto/x509/libcrypto-shlib-x_attrib.d \
-     test/evp_byname_test-bin-evp_byname_test.d \
-     crypto/libcrypto-shlib-threads_pthread.d \
-     crypto/cmp/libcrypto-lib-cmp_genm.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_null.d \
-     crypto/evp/libcrypto-shlib-legacy_md5_sha1.d \
-     test/upcallstest-bin-upcallstest.d \
-     crypto/asn1/libcrypto-shlib-x_int64.d \
-     crypto/x509/libcrypto-lib-pcy_map.d crypto/x509/libcrypto-lib-v3_utl.d \
-     crypto/x509/libcrypto-shlib-v3_bitst.d \
-     crypto/pkcs7/libcrypto-shlib-pk7_doit.d \
-     test/packettest-bin-packettest.d \
-     crypto/hashtable/libcrypto-lib-hashtable.d \
-     crypto/engine/libcrypto-lib-eng_lib.d \
-     crypto/ec/libcrypto-shlib-ecp_meth.d \
-     providers/implementations/kem/libdefault-lib-ml_kem_kem.d \
-     crypto/srp/libcrypto-lib-srp_vfy.d crypto/asn1/libcrypto-lib-f_string.d \
-     crypto/ts/libcrypto-lib-ts_verify_ctx.d ssl/quic/libssl-lib-quic_srtm.d \
-     crypto/pkcs12/libcrypto-shlib-p12_kiss.d crypto/libcrypto-lib-info.d \
-     test/verify_extra_test-bin-verify_extra_test.d \
-     ssl/quic/libssl-shlib-quic_tls_api_method.d \
-     test/dtlsv1listentest-bin-dtlsv1listentest.d \
-     providers/implementations/skeymgmt/libdefault-lib-generic.d \
-     crypto/libcrypto-shlib-initthread.d crypto/asn1/libcrypto-lib-a_int.d \
-     ssl/statem/libssl-lib-extensions_srvr.d \
-     ssl/statem/libssl-shlib-extensions.d \
-     crypto/x509/libcrypto-lib-v3_addr.d fuzz/bndiv-test-bin-bndiv.d \
-     ssl/libssl-lib-ssl_lib.d crypto/evp/libcrypto-lib-evp_cnf.d \
-     crypto/thread/arch/libcrypto-lib-thread_none.d \
-     apps/lib/libapps-lib-apps.d crypto/engine/libcrypto-lib-tb_cipher.d \
-     crypto/libcrypto-lib-provider_child.d \
-     crypto/x509/libcrypto-shlib-x_x509.d \
-     crypto/ec/libcrypto-lib-ec_deprecated.d crypto/libcrypto-lib-bsearch.d \
-     crypto/cmp/libcrypto-lib-cmp_ctx.d \
-     crypto/asn1/libcrypto-shlib-asn1_gen.d \
-     crypto/cms/libcrypto-lib-cms_rsa.d \
-     test/provider_pkey_test-bin-fake_rsaprov.d \
-     crypto/aes/libcrypto-shlib-aes_ige.d crypto/evp/libcrypto-lib-evp_key.d \
-     crypto/ess/libcrypto-lib-ess_lib.d \
-     test/quic_tserver_test-bin-quic_tserver_test.d \
-     crypto/comp/libcrypto-lib-c_brotli.d \
-     crypto/asn1/libcrypto-shlib-tasn_new.d \
-     ssl/quic/libssl-shlib-quic_reactor_wait_ctx.d \
-     ssl/quic/libssl-lib-cc_newreno.d \
-     test/trace_api_test-bin-trace_api_test.d \
-     crypto/encode_decode/libcrypto-shlib-decoder_meth.d \
-     crypto/dsa/libcrypto-lib-dsa_key.d crypto/asn1/libcrypto-lib-n_pkey.d \
-     crypto/bio/libcrypto-lib-bss_core.d ssl/quic/libssl-shlib-quic_trace.d \
-     ssl/quic/libssl-shlib-quic_txpim.d crypto/libcrypto-lib-threads_lib.d \
-     ssl/libssl-shlib-ssl_rsa.d apps/openssl-bin-ocsp.d \
-     fuzz/server-test-bin-server.d test/buildtest_c_sha-bin-buildtest_sha.d \
-     test/evp_extra_test2-bin-evp_extra_test2.d \
-     test/testutil/libtestutil-lib-format_output.d \
-     crypto/cms/libcrypto-lib-cms_smime.d \
-     crypto/libcrypto-shlib-self_test_core.d \
-     crypto/bio/libcrypto-shlib-bss_fd.d \
-     crypto/http/libcrypto-shlib-http_lib.d \
-     providers/implementations/ciphers/liblegacy-lib-cipher_tdes_common.d \
-     crypto/comp/libcrypto-shlib-comp_lib.d \
-     crypto/x509/libcrypto-shlib-v3_int.d crypto/libcrypto-lib-mem.d \
-     crypto/cmp/libcrypto-lib-cmp_asn.d \
-     fuzz/quic-server-test-bin-test-corpus.d \
-     crypto/async/arch/libcrypto-shlib-async_win.d \
-     crypto/libcrypto-lib-context.d \
-     providers/implementations/keymgmt/libdefault-lib-dsa_kmgmt.d \
-     crypto/x509/libcrypto-shlib-v3_sda.d \
-     ssl/record/methods/libssl-shlib-ssl3_meth.d \
-     crypto/x509/libcrypto-lib-x509_txt.d crypto/ec/libcrypto-lib-ec_curve.d \
-     crypto/dh/libcrypto-lib-dh_pmeth.d crypto/sha/libcrypto-lib-sha3.d \
-     crypto/x509/libcrypto-lib-v3_sxnet.d crypto/evp/libcrypto-lib-evp_pbe.d \
-     crypto/evp/libcrypto-lib-mac_meth.d crypto/bn/libcrypto-lib-bn_ctx.d \
-     crypto/ec/libcrypto-shlib-ec_cvt.d \
-     crypto/bio/libcrypto-shlib-bss_acpt.d \
-     providers/common/libdefault-lib-securitycheck.d \
-     crypto/legacy-dso-cpuid.d test/quic_txp_test-bin-quic_txp_test.d \
-     crypto/txt_db/libcrypto-lib-txt_db.d apps/lib/libapps-lib-app_rand.d \
-     ssl/statem/libssl-shlib-statem_clnt.d crypto/libcrypto-shlib-cpt_err.d \
-     crypto/bn/libcrypto-lib-bn_srp.d crypto/asn1/libcrypto-lib-a_strnid.d \
-     crypto/asn1/libcrypto-lib-d2i_pu.d fuzz/x509-test-bin-test-corpus.d \
-     crypto/cmp/libcrypto-shlib-cmp_http.d \
-     providers/implementations/exchange/libdefault-lib-kdf_exch.d \
-     crypto/asn1/libcrypto-shlib-a_utf8.d \
-     test/quic_cc_test-bin-quic_cc_test.d \
-     crypto/pkcs7/libcrypto-shlib-pk7_smime.d \
-     crypto/libcrypto-lib-core_fetch.d \
-     providers/implementations/kem/libdefault-lib-ec_kem.d \
-     test/provfetchtest-bin-provfetchtest.d \
-     crypto/modes/libcrypto-lib-xts128.d \
-     crypto/conf/libcrypto-shlib-conf_ssl.d \
-     crypto/modes/libcrypto-shlib-wrap128.d crypto/libcrypto-lib-getenv.d \
-     ssl/libssl-lib-ssl_conf.d crypto/engine/libcrypto-lib-eng_rdrand.d \
-     crypto/engine/libcrypto-shlib-tb_eckey.d \
-     crypto/ec/libcrypto-lib-ecp_oct.d test/testutil/libtestutil-lib-load.d \
-     crypto/store/libcrypto-lib-store_register.d \
-     fuzz/ml-dsa-test-bin-fuzz_rand.d ssl/statem/libssl-lib-extensions.d \
-     ssl/rio/libssl-lib-rio_notifier.d crypto/pem/libcrypto-shlib-pem_all.d \
-     test/tls13groupselection_test-bin-tls13groupselection_test.d \
-     crypto/bn/libcrypto-lib-bn_div.d crypto/libcrypto-shlib-comp_methods.d \
-     apps/openssl-bin-info.d crypto/modes/libcrypto-lib-ocb128.d \
-     test/rsa_sp800_56b_test-bin-rsa_sp800_56b_test.d \
-     crypto/x509/libcrypto-shlib-v3_utl.d crypto/sdf/libcrypto-lib-sdf_lib.d \
-     crypto/asn1/libcrypto-shlib-a_bitstr.d \
-     crypto/cms/libcrypto-shlib-cms_cd.d crypto/sm2/libcrypto-lib-sm2_sign.d \
-     apps/openssl-bin-x509.d crypto/bn/libcrypto-shlib-bn_conv.d \
-     test/helpers/ssl_test-bin-handshake.d \
-     crypto/dh/libcrypto-shlib-dh_meth.d \
-     crypto/engine/libcrypto-lib-eng_pkey.d ssl/libssl-shlib-s3_lib.d \
-     crypto/asn1_time_test-bin-ctype.d \
-     crypto/property/libcrypto-shlib-property_string.d \
-     crypto/cms/libcrypto-lib-cms_kari.d \
-     fuzz/hashtable-test-bin-test-corpus.d \
-     ssl/quic/libssl-lib-quic_tserver.d crypto/bio/libcrypto-lib-bf_lbuf.d \
-     crypto/bn/libcrypto-shlib-bn_ctx.d ssl/rio/libssl-lib-poll_immediate.d \
-     apps/openssl-bin-srp.d crypto/ocsp/libcrypto-shlib-ocsp_err.d \
-     test/helpers/quic_srt_gen_test-bin-quictestlib.d \
-     crypto/evp/libcrypto-lib-e_old.d \
-     test/asn1_stable_parse_test-bin-asn1_stable_parse_test.d \
-     ssl/quic/libssl-shlib-quic_method.d \
-     crypto/engine/libcrypto-lib-tb_pkmeth.d \
-     crypto/x509/libcrypto-shlib-x509_vfy.d \
-     crypto/x509/libcrypto-lib-v3_ac_tgt.d \
-     test/shlibloadtest-bin-simpledynamic.d \
-     crypto/poly1305/libcrypto-lib-poly1305.d \
-     test/asn1_string_table_test-bin-asn1_string_table_test.d \
-     crypto/libcrypto-shlib-punycode.d \
-     test/quic_srtm_test-bin-quic_srtm_test.d \
-     crypto/ui/libcrypto-lib-ui_err.d crypto/buffer/libcrypto-lib-buffer.d \
-     crypto/property/libcrypto-lib-property_parse.d \
-     crypto/tls13secretstest-bin-packet.d \
-     crypto/ocsp/libcrypto-shlib-v3_ocsp.d crypto/ec/libcrypto-lib-ec_asn1.d \
-     crypto/libcrypto-shlib-o_dir.d crypto/objects/libcrypto-shlib-obj_err.d \
-     crypto/encode_decode/libcrypto-shlib-encoder_meth.d \
-     crypto/ml_kem/libcrypto-shlib-ml_kem.d \
-     crypto/cmp/libcrypto-shlib-cmp_vfy.d ssl/quic/libssl-lib-quic_engine.d \
-     crypto/pkcs12/libcrypto-lib-p12_crt.d \
-     crypto/modes/libcrypto-shlib-ctr128.d \
-     ssl/record/libssl-shlib-rec_layer_s3.d test/danetest-bin-danetest.d \
-     crypto/libssl-shlib-ctype.d crypto/ec/libcrypto-lib-ec2_smpl.d \
-     test/quic_fifd_test-bin-quic_fifd_test.d \
-     crypto/dh/libcrypto-shlib-dh_gen.d test/d2i_test-bin-d2i_test.d \
-     test/babasslapitest-bin-babasslapitest.d \
-     crypto/engine/libcrypto-lib-tb_rand.d \
-     providers/implementations/rands/seeding/libdefault-lib-rand_win.d \
-     crypto/ml_dsa/libcrypto-lib-ml_dsa_sample.d \
-     fuzz/client-test-bin-fuzz_rand.d test/rsa_test-bin-rsa_test.d \
-     crypto/pkcs12/libcrypto-shlib-p12_npas.d \
-     crypto/err/libcrypto-shlib-err.d \
-     ssl/record/methods/libdefault-lib-ssl3_cbc.d \
-     providers/common/der/libcommon-lib-der_ml_dsa_key.d \
-     crypto/bio/libcrypto-shlib-bio_addr.d \
-     crypto/des/libcrypto-lib-fcrypt_b.d crypto/libssl-shlib-time.d \
-     crypto/ec/libcrypto-lib-ecp_smpl.d crypto/ffc/libcrypto-lib-ffc_dh.d \
-     crypto/x509/libcrypto-shlib-x_all.d crypto/evp/libcrypto-lib-evp_rand.d \
-     crypto/ml_dsa/libcrypto-shlib-ml_dsa_sample.d \
-     crypto/thread/libcrypto-shlib-internal.d \
-     providers/implementations/digests/libdefault-lib-md5_prov.d \
-     providers/implementations/digests/libdefault-lib-md5_sha1_prov.d \
-     test/buildtest_c_tls1-bin-buildtest_tls1.d \
-     crypto/encode_decode/libcrypto-shlib-decoder_lib.d \
-     ssl/quic/libssl-lib-quic_record_tx.d \
-     crypto/pkcs12/libcrypto-shlib-p12_p8d.d \
-     crypto/engine/libcrypto-shlib-tb_cipher.d \
-     ssl/quic/libssl-shlib-quic_wire_pkt.d \
-     crypto/store/libcrypto-shlib-store_result.d \
-     crypto/cms/libcrypto-lib-cms_enc.d \
-     crypto/thread/arch/libcrypto-shlib-thread_none.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_sm4_hw.d \
-     crypto/encode_decode/libcrypto-lib-encoder_pkey.d \
-     providers/implementations/keymgmt/libtemplate-lib-template_kmgmt.d \
-     crypto/ec/libcrypto-shlib-ecx_backend.d \
-     crypto/des/libcrypto-lib-ofb64ede.d \
-     crypto/ec/curve448/arch_64/libcrypto-shlib-f_impl64.d \
-     crypto/bn/libcrypto-shlib-bn_err.d \
-     test/helpers/quicfaultstest-bin-ssltestlib.d \
-     crypto/x509/libcrypto-shlib-x509_lu.d \
-     test/testutil/libtestutil-lib-testutil_init.d \
-     crypto/evp/libcrypto-lib-signature.d \
-     crypto/x509/libcrypto-shlib-v3_purp.d \
-     test/decoder_propq_test-bin-decoder_propq_test.d \
-     ssl/quic/libssl-shlib-quic_tserver.d \
-     ssl/quic/libssl-lib-qlog_event_helpers.d \
-     crypto/asn1/libcrypto-lib-tasn_typ.d \
-     crypto/slh_dsa/libcrypto-lib-slh_hash.d \
-     test/priority_queue_test-bin-priority_queue_test.d \
-     crypto/bio/libcrypto-lib-bio_addr.d ssl/quic/libssl-shlib-json_enc.d \
-     crypto/cmp/libcrypto-lib-cmp_vfy.d crypto/zuc/libcrypto-shlib-zuc.d \
-     providers/libcrypto-shlib-baseprov.d \
-     crypto/x509/libcrypto-shlib-v3_enum.d \
-     crypto/conf/libcrypto-shlib-conf_err.d \
-     test/quic_fifd_test-bin-cc_dummy.d \
-     test/threadpool_test-bin-threadpool_test.d \
-     crypto/x509/libcrypto-lib-v3_san.d apps/openssl-bin-version.d \
-     crypto/modes/libcrypto-lib-ccm128.d \
-     crypto/err/libcrypto-shlib-err_mark.d crypto/libcrypto-shlib-bsearch.d \
-     fuzz/v3name-test-bin-test-corpus.d \
-     test/endecode_test-bin-endecode_test.d \
-     crypto/evp/libcrypto-shlib-skeymgmt_meth.d \
-     crypto/x509/libcrypto-lib-by_dir.d crypto/libcrypto-shlib-mem_sec.d \
-     crypto/x509/libcrypto-lib-v3_ind_iss.d ssl/quic/libssl-shlib-quic_tls.d \
-     crypto/bn/libcrypto-lib-rsaz_exp.d \
-     crypto/x509/libcrypto-shlib-pcy_cache.d \
-     crypto/engine/libcrypto-lib-tb_dsa.d crypto/bn/libcrypto-shlib-bn_lib.d \
-     test/evp_fetch_prov_test-bin-evp_fetch_prov_test.d \
-     test/namemap_internal_test-bin-namemap_internal_test.d \
-     test/constant_time_test-bin-constant_time_test.d \
-     crypto/asn1/libcrypto-shlib-x_sig.d \
-     crypto/x509/libcrypto-shlib-v3_iobo.d \
-     ssl/rio/libssl-shlib-poll_builder.d \
-     ssl/statem/libssl-lib-extensions_cust.d fuzz/x509-test-bin-fuzz_rand.d \
-     crypto/x509/libcrypto-shlib-x509_cmp.d \
-     crypto/evp/libcrypto-shlib-c_alld.d \
-     crypto/asn1/libcrypto-shlib-tasn_fre.d \
-     ssl/quic/libssl-shlib-quic_record_rx.d crypto/libcrypto-lib-init.d \
-     crypto/libcrypto-shlib-ctype.d fuzz/pem-test-bin-pem.d \
-     crypto/libcrypto-shlib-sleep.d \
-     test/ec_internal_test-bin-ec_internal_test.d \
-     crypto/libssl-shlib-quic_vlint.d \
-     providers/common/der/libcommon-lib-der_dsa_gen.d \
-     test/conf_include_test-bin-conf_include_test.d \
-     crypto/comp/libcrypto-lib-c_zlib.d \
-     crypto/async/arch/libcrypto-lib-async_win.d \
-     test/quic_cfq_test-bin-quic_cfq_test.d ssl/quic/libssl-lib-quic_cfq.d \
-     crypto/bio/libcrypto-lib-ossl_core_bio.d \
-     providers/implementations/exchange/libdefault-lib-sm2dh_exch.d \
-     test/cmp_msg_test-bin-cmp_msg_test.d test/rsa_complex-bin-rsa_complex.d \
-     crypto/bio/libcrypto-lib-bf_null.d apps/openssl-bin-s_time.d \
-     crypto/slh_dsa/libcrypto-shlib-slh_adrs.d \
+DEPS=crypto/slh_dsa/libcrypto-shlib-slh_wots.d ssl/libssl-lib-t1_enc.d \
+     ssl/quic/libssl-shlib-qlog_event_helpers.d ssl/libssl-lib-methods.d \
+     crypto/bn/libcrypto-shlib-bn_sqr.d \
+     test/rsa_x931_test-bin-rsa_x931_test.d \
      crypto/cms/libcrypto-shlib-cms_lib.d \
-     crypto/libcrypto-shlib-deterministic_nonce.d \
-     crypto/x509/libcrypto-shlib-v3_attrdesc.d \
-     crypto/x509/libcrypto-shlib-x509_ext.d \
-     crypto/x509/libcrypto-lib-pcy_node.d \
-     crypto/evp/libcrypto-lib-legacy_md5.d \
-     crypto/ffc/libcrypto-lib-ffc_params_validate.d \
-     test/rand_status_test-bin-rand_status_test.d \
-     crypto/bn/libcrypto-lib-bn_rand.d crypto/x509/libcrypto-lib-x_exten.d \
-     crypto/sdf/libcrypto-shlib-sdf_lib.d \
-     test/buildtest_c_stack-bin-buildtest_stack.d \
-     crypto/bn/libcrypto-lib-bn_prime.d crypto/cms/libcrypto-lib-cms_att.d \
-     crypto/libssl-shlib-packet.d crypto/bio/libcrypto-shlib-bio_cb.d \
-     crypto/evp/libcrypto-shlib-evp_fetch.d crypto/err/libcrypto-lib-err.d \
-     crypto/engine/libcrypto-lib-tb_eckey.d crypto/libcrypto-lib-defaults.d \
-     crypto/md5/libcrypto-shlib-md5_dgst.d \
-     crypto/dh/libcrypto-shlib-dh_rfc5114.d crypto/libcrypto-shlib-o_time.d \
-     crypto/evp/libcrypto-shlib-bio_b64.d test/time_test-bin-time_test.d \
-     crypto/asn1/libcrypto-lib-a_verify.d test/ecdsatest-bin-ecdsatest.d \
-     crypto/engine/libcrypto-shlib-tb_dsa.d \
-     crypto/ui/libcrypto-shlib-ui_openssl.d \
-     crypto/modes/libcrypto-shlib-cts128.d \
-     crypto/bio/libcrypto-shlib-bf_buff.d crypto/bn/libcrypto-lib-bn_mul.d \
-     crypto/encode_decode/libcrypto-shlib-encoder_err.d \
-     test/sm3_internal_test-bin-sm3_internal_test.d \
-     ssl/quic/libssl-lib-quic_method.d \
-     test/buildtest_c_objects-bin-buildtest_objects.d \
-     crypto/rsa/libcrypto-lib-rsa_ossl.d \
-     crypto/evp/libcrypto-shlib-e_wbsm4_baiwu.d \
-     test/testutil/libtestutil-lib-test_cleanup.d \
-     test/x509_acert_test-bin-x509_acert_test.d \
-     ssl/quic/libssl-lib-json_enc.d \
-     test/quic_client_test-bin-quic_client_test.d \
-     crypto/evp/libcrypto-shlib-p_enc.d crypto/ec/libcrypto-lib-ec_backend.d \
-     crypto/libcrypto-shlib-core_algorithm.d \
-     crypto/ocsp/libcrypto-shlib-ocsp_lib.d \
-     test/asn1_dsa_internal_test-bin-asn1_dsa_internal_test.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_gcm_hw.d \
-     crypto/cms/libcrypto-shlib-cms_att.d \
-     crypto/asn1/libcrypto-lib-a_print.d crypto/libcrypto-shlib-cryptlib.d \
-     crypto/pem/libcrypto-lib-pem_xaux.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_hw.d \
      crypto/x509/libcrypto-shlib-pcy_data.d \
-     test/helpers/quic_srt_gen_test-bin-pktsplitbio.d \
-     crypto/x509/libcrypto-shlib-x509_set.d \
-     crypto/dh/libcrypto-lib-dh_depr.d \
-     providers/implementations/ciphers/liblegacy-lib-cipher_rc4_hw.d \
-     providers/common/der/libcommon-lib-der_dsa_key.d \
-     crypto/x509/libcrypto-shlib-x509rset.d \
-     crypto/libcrypto-lib-provider_conf.d \
-     crypto/rsa/libcrypto-shlib-rsa_err.d \
-     crypto/bio/libcrypto-shlib-bss_dgram.d \
-     crypto/ml_dsa/libcrypto-shlib-ml_dsa_sign.d \
-     providers/common/der/libcommon-lib-der_slh_dsa_gen.d \
-     test/membio_test-bin-membio_test.d \
-     providers/implementations/kem/libdefault-lib-rsa_kem.d \
-     test/helpers/quic_newcid_test-bin-noisydgrambio.d \
-     crypto/asn1/libcrypto-lib-tasn_new.d \
-     crypto/ec/libcrypto-shlib-ecp_oct.d \
-     crypto/rsa/libcrypto-shlib-rsa_backend.d \
-     test/provider_internal_test-bin-provider_internal_test.d \
-     ssl/libssl-lib-ssl_mcnf.d apps/lib/ca_internals_test-bin-engine.d \
-     test/cmactest-bin-cmactest.d crypto/asn1/libcrypto-lib-ameth_lib.d \
-     crypto/bio/libcrypto-lib-bss_log.d \
-     crypto/ffc/libcrypto-lib-ffc_key_validate.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_sm4_xts.d \
-     test/ffc_internal_test-bin-ffc_internal_test.d \
-     crypto/libcrypto-lib-punycode.d crypto/x509/libcrypto-shlib-t_crl.d \
-     crypto/rand/libcrypto-shlib-rand_uniform.d \
-     crypto/hmac/libcrypto-lib-hmac.d \
-     crypto/dso/libcrypto-shlib-dso_openssl.d \
-     crypto/dh/libcrypto-lib-dh_meth.d crypto/bn/libcrypto-shlib-bn_exp2.d \
-     ssl/libssl-lib-ssl_err_legacy.d crypto/sm3/libcrypto-lib-legacy_sm3.d \
-     crypto/bn/libcrypto-lib-bn_conv.d crypto/modes/libcrypto-lib-wrap128.d \
-     test/asynciotest-bin-asynciotest.d \
-     test/prov_config_test-bin-prov_config_test.d \
-     test/buildtest_c_pem2-bin-buildtest_pem2.d \
-     crypto/modes/libcrypto-shlib-xts128gb.d \
-     crypto/asn1/libcrypto-shlib-a_dup.d crypto/evp/libcrypto-lib-kdf_lib.d \
-     ssl/record/libssl-shlib-rec_layer_d1.d \
-     crypto/rsa/libcrypto-shlib-rsa_x931g.d \
-     ssl/statem/libssl-lib-statem_lib.d \
-     test/bn_internal_test-bin-bn_internal_test.d \
-     crypto/x509/libcrypto-lib-v3_battcons.d \
-     crypto/asn1/libcrypto-lib-asn1_item_list.d \
-     crypto/libcrypto-shlib-params_idx.d \
-     crypto/des/libcrypto-shlib-rand_key.d \
-     crypto/evp/libcrypto-shlib-e_rc4_hmac_md5.d \
-     crypto/ct/libcrypto-shlib-ct_sct.d crypto/bn/libcrypto-shlib-bn_dh.d \
-     crypto/legacy-dso-ctype.d test/helpers/quicapitest-bin-quictestlib.d \
-     apps/lib/cmp_client_test-bin-cmp_mock_srv.d \
-     crypto/ec/libcrypto-shlib-ec_mult.d crypto/libcrypto-shlib-params_dup.d \
-     crypto/rsa/libcrypto-lib-rsa_saos.d crypto/libcrypto-lib-o_fopen.d \
-     apps/openssl-bin-engine.d crypto/pkcs7/libcrypto-lib-pk7_attr.d \
-     crypto/ffc/libcrypto-shlib-ffc_dh.d test/confdump-bin-confdump.d \
-     crypto/x509/libcrypto-shlib-x_x509a.d \
-     crypto/crmf/libcrypto-lib-crmf_lib.d \
-     test/buildtest_c_buffer-bin-buildtest_buffer.d \
-     crypto/x509/libcrypto-lib-t_x509.d \
-     crypto/conf/libcrypto-shlib-conf_api.d \
-     crypto/bn/libcrypto-shlib-rsaz_exp_x2.d \
-     crypto/bio/libcrypto-shlib-bss_core.d \
-     crypto/slh_dsa/libcrypto-shlib-slh_hash.d \
-     crypto/x509/libcrypto-lib-t_crl.d \
-     test/sparse_array_test-bin-sparse_array_test.d \
-     crypto/cmp/libcrypto-lib-cmp_protect.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_tdes_hw.d \
-     test/quic_ackm_test-bin-quic_ackm_test.d \
-     crypto/bn/libcrypto-shlib-bn_add.d \
-     test/helpers/quic_multistream_test-bin-quictestlib.d \
-     ssl/libssl-lib-ssl_stat.d \
-     providers/implementations/signature/libdefault-lib-sm2_sig.d \
-     crypto/evp/libcrypto-lib-keymgmt_lib.d \
-     test/curve448_internal_test-bin-curve448_internal_test.d \
-     crypto/conf/libcrypto-lib-conf_sap.d \
-     crypto/comp/libcrypto-shlib-c_brotli.d ssl/quic/libssl-lib-quic_wire.d \
-     crypto/srp/libcrypto-lib-srp_lib.d \
-     providers/implementations/macs/libdefault-lib-siphash_prov.d \
-     crypto/engine/libcrypto-lib-eng_fat.d ssl/libssl-shlib-tls13_enc.d \
-     crypto/sdf/libcrypto-lib-sdf_meth.d \
-     ssl/quic/libssl-lib-quic_record_shared.d \
-     providers/implementations/kdfs/libdefault-lib-krb5kdf.d \
-     test/cmp_status_test-bin-cmp_status_test.d \
-     crypto/asn1/libcrypto-shlib-tasn_prn.d \
-     crypto/rsa/libcrypto-lib-rsa_lib.d ssl/libssl-lib-ssl_rsa.d \
-     crypto/libcrypto-lib-trace.d \
-     test/buildtest_c_e_ostime-bin-buildtest_e_ostime.d \
-     crypto/des/libcrypto-shlib-fcrypt_b.d \
-     crypto/pem/libcrypto-lib-pem_oth.d \
-     crypto/asn1/libcrypto-shlib-a_utctm.d \
-     crypto/des/libcrypto-shlib-ecb_enc.d \
-     test/quic_newcid_test-bin-quic_newcid_test.d \
-     crypto/ec/libcrypto-shlib-ec_lib.d \
-     test/buildtest_c_ecdh-bin-buildtest_ecdh.d \
-     ssl/quic/libssl-shlib-quic_impl.d crypto/comp/libcrypto-shlib-c_zstd.d \
-     crypto/hmac/libcrypto-shlib-hmac.d crypto/dsa/libcrypto-lib-dsa_gen.d \
-     crypto/x509/libcrypto-lib-v3_attrdesc.d \
-     crypto/des/libcrypto-lib-ecb3_enc.d \
-     crypto/pkcs7/libcrypto-lib-pk7_doit.d \
-     crypto/asn1/libcrypto-shlib-asn_mime.d \
-     crypto/ocsp/libcrypto-lib-ocsp_vfy.d \
-     crypto/async/libcrypto-shlib-async.d crypto/asn1/libcrypto-lib-a_utf8.d \
-     crypto/comp/libcrypto-lib-comp_lib.d \
-     crypto/ec/libcrypto-shlib-ec_print.d \
-     crypto/ec/libcrypto-lib-ecdsa_ossl.d \
-     test/fatalerrtest-bin-fatalerrtest.d \
-     crypto/hashtable/libssl-shlib-hashfunc.d \
-     test/quic_stream_test-bin-quic_stream_test.d \
-     test/testutil/libtestutil-lib-tests.d \
-     test/helpers/servername_test-bin-ssltestlib.d \
-     crypto/des/libcrypto-lib-pcbc_enc.d \
-     providers/implementations/encode_decode/libdefault-lib-decode_msblob2key.d \
-     crypto/pkcs7/libcrypto-lib-pk7_smime.d \
-     crypto/x509/libcrypto-lib-by_file.d \
-     crypto/pkcs7/libcrypto-shlib-bio_pk7.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_chacha20_poly1305_hw.d \
-     apps/openssl-bin-prime.d crypto/pkcs12/libcrypto-lib-pk12err.d \
-     crypto/pem/libcrypto-lib-pem_sign.d \
-     test/helpers/cmp_ctx_test-bin-cmp_testlib.d \
-     test/buildtest_c_rand-bin-buildtest_rand.d \
-     crypto/pkcs12/libcrypto-shlib-p12_key.d \
-     crypto/x509/libcrypto-lib-v3_conf.d ssl/quic/libssl-shlib-uint_set.d \
-     crypto/asn1/libcrypto-lib-asn1_lib.d ssl/libssl-lib-s3_msg.d \
-     providers/implementations/encode_decode/libdefault-lib-decode_pem2der.d \
-     crypto/libcrypto-lib-core_namemap.d \
-     crypto/objects/libcrypto-shlib-obj_dat.d \
-     crypto/ct/libcrypto-shlib-ct_vfy.d \
-     crypto/thread/libcrypto-lib-internal.d \
-     crypto/x509/libcrypto-shlib-v3_akeya.d \
-     crypto/store/libcrypto-lib-store_result.d \
-     crypto/pkcs12/libcrypto-lib-p12_mutl.d \
-     crypto/bn/libcrypto-shlib-bn_rsa_fips186_4.d \
-     crypto/kdf/libcrypto-shlib-kdf_err.d \
-     crypto/slh_dsa/libcrypto-lib-slh_hypertree.d \
-     crypto/rand/libcrypto-shlib-rand_err.d \
-     crypto/rsa/libcrypto-shlib-rsa_pss.d \
-     crypto/engine/libcrypto-shlib-tb_rsa.d \
-     crypto/stack/libcrypto-shlib-stack.d \
-     providers/implementations/ciphers/libcommon-lib-ciphercommon_ccm.d \
-     crypto/pkcs12/libcrypto-shlib-p12_utl.d \
-     crypto/asn1/libcrypto-lib-asn_mime.d ssl/quic/libssl-lib-quic_trace.d \
-     crypto/evp/libcrypto-lib-kem.d ssl/statem/libssl-shlib-statem_lib.d \
-     crypto/ec/libcrypto-lib-ec_check.d \
-     crypto/x509/libcrypto-shlib-v3_single_use.d \
-     test/buildtest_c_pem-bin-buildtest_pem.d \
-     fuzz/hashtable-test-bin-hashtable.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_cbc_hmac_sha1_hw.d \
-     crypto/evp/libcrypto-shlib-evp_pkey.d \
-     crypto/x509/libcrypto-shlib-v3_rolespec.d \
-     crypto/dsa/libcrypto-lib-dsa_ossl.d fuzz/acert-test-bin-acert.d \
-     crypto/ec/libcrypto-lib-ecp_nistz256.d \
-     providers/common/der/libdefault-lib-der_sm2_key.d \
-     crypto/evp/libcrypto-shlib-kdf_lib.d \
-     crypto/evp/libcrypto-shlib-legacy_sha.d \
-     crypto/ec/libcrypto-lib-ecp_mont.d \
-     crypto/dsa/libcrypto-shlib-dsa_check.d \
-     crypto/rsa/libcrypto-lib-rsa_asn1.d \
-     crypto/asn1/libcrypto-shlib-evp_asn1.d \
-     crypto/des/libcrypto-lib-qud_cksm.d \
-     test/buildtest_c_txt_db-bin-buildtest_txt_db.d \
-     crypto/bn/libcrypto-lib-bn_rsa_fips186_4.d \
-     crypto/encode_decode/libcrypto-lib-decoder_meth.d \
-     crypto/comp/libcrypto-shlib-comp_err.d \
-     crypto/sm2/libcrypto-lib-sm2_err.d \
-     crypto/engine/libcrypto-shlib-tb_dh.d \
-     test/cipher_overhead_test-bin-cipher_overhead_test.d \
-     ssl/libssl-lib-ssl_sess.d crypto/evp/libcrypto-shlib-pbe_scrypt.d \
-     apps/openssl-bin-pkcs7.d \
-     test/siphash_internal_test-bin-siphash_internal_test.d \
-     test/ecstresstest-bin-ecstresstest.d \
-     test/buildtest_c_kdf-bin-buildtest_kdf.d \
-     crypto/engine/libcrypto-lib-eng_err.d \
-     crypto/err/libcrypto-shlib-err_all.d \
-     crypto/x509/libcrypto-shlib-v3_attrmap.d \
-     ssl/record/methods/libssl-lib-dtls_meth.d \
-     crypto/evp/libcrypto-lib-cmeth_lib.d test/ct_test-bin-ct_test.d \
-     crypto/x509/libcrypto-lib-v3_bcons.d \
-     crypto/asn1/libcrypto-shlib-asn_mstbl.d \
-     crypto/asn1/libcrypto-shlib-a_octet.d \
-     crypto/cmp/libcrypto-lib-cmp_http.d \
-     test/helpers/json_test-bin-pktsplitbio.d \
-     crypto/eia3/libcrypto-shlib-eia3.d crypto/cms/libcrypto-shlib-cms_ec.d \
-     crypto/x509/libcrypto-shlib-v3_soa_id.d \
-     ssl/libssl-shlib-ssl_err_legacy.d crypto/libcrypto-shlib-asn1_dsa.d \
-     crypto/libcrypto-shlib-provider_child.d \
-     providers/implementations/exchange/libdefault-lib-ecx_exch.d \
-     crypto/cms/libcrypto-shlib-cms_enc.d \
-     crypto/x509/libcrypto-shlib-x509_d2.d \
-     crypto/libcrypto-lib-self_test_core.d \
-     test/buildtest_c_quic-bin-buildtest_quic.d \
-     ssl/quic/libssl-lib-quic_statm.d crypto/ec/libcrypto-shlib-ecdh_kdf.d \
-     providers/implementations/encode_decode/libdefault-lib-encode_key2blob.d \
-     crypto/evp/libcrypto-lib-e_des3.d crypto/cmp/libcrypto-lib-cmp_err.d \
-     crypto/dso/libcrypto-lib-dso_dl.d \
-     crypto/pkcs12/libcrypto-lib-p12_init.d \
-     crypto/objects/libcrypto-shlib-o_names.d apps/openssl-bin-mac.d \
-     ssl/record/methods/libssl-shlib-tls_multib.d \
-     providers/implementations/macs/libdefault-lib-poly1305_prov.d \
-     fuzz/quic-lcidm-test-bin-quic-lcidm.d \
-     crypto/ts/libcrypto-shlib-ts_rsp_sign.d \
-     crypto/rand/libcrypto-shlib-rand_meth.d \
-     crypto/rsa/libcrypto-shlib-rsa_sp800_56b_check.d \
-     test/pkcs12_api_test-bin-pkcs12_api_test.d \
-     crypto/rsa/libcrypto-shlib-rsa_prn.d \
-     ssl/quic/libssl-shlib-quic_channel.d \
-     crypto/ct/libcrypto-shlib-ct_policy.d \
-     crypto/x509/libcrypto-lib-v3_genn.d crypto/evp/libcrypto-shlib-e_null.d \
-     crypto/evp/libcrypto-lib-names.d test/aborttest-bin-aborttest.d \
-     test/dtlstest-bin-dtlstest.d crypto/x509/libcrypto-shlib-v3_pmaps.d \
-     crypto/x509/libcrypto-shlib-x509_txt.d test/hmactest-bin-hmactest.d \
-     crypto/bn/libcrypto-shlib-bn_intern.d \
-     crypto/evp/libcrypto-shlib-pmeth_lib.d \
-     crypto/pkcs12/libcrypto-shlib-p12_sbag.d crypto/libcrypto-lib-ctype.d \
-     test/buildtest_c_sm3-bin-buildtest_sm3.d ssl/libssl-shlib-s3_msg.d \
-     engines/capi-dso-e_capi.d crypto/bio/libcrypto-lib-bss_null.d \
-     crypto/libcrypto-lib-indicator_core.d \
-     test/helpers/quic_newcid_test-bin-ssltestlib.d \
-     apps/openssl-bin-crl2pkcs7.d crypto/evp/libcrypto-shlib-p5_crpt2.d \
-     crypto/pkcs12/libcrypto-lib-p12_decr.d crypto/bn/libcrypto-lib-bn_sm2.d \
-     crypto/rand/libcrypto-shlib-rand_deprecated.d \
-     crypto/asn1/libcrypto-shlib-n_pkey.d \
-     crypto/bn/libcrypto-shlib-bn_word.d \
-     crypto/buffer/libcrypto-shlib-buf_err.d \
-     providers/libcrypto-lib-nullprov.d \
-     providers/implementations/signature/libdefault-lib-ecdsa_sig.d \
-     crypto/des/libcrypto-lib-cbc_cksm.d \
-     providers/implementations/kdfs/libdefault-lib-hkdf.d \
-     crypto/ec/libcrypto-shlib-ec2_oct.d \
-     providers/libcrypto-shlib-prov_running.d \
-     providers/implementations/ciphers/liblegacy-lib-cipher_des_hw.d \
-     test/buildtest_c_sgd-bin-buildtest_sgd.d test/list_test-bin-list_test.d \
-     test/helpers/quic_radix_test-bin-pktsplitbio.d \
-     crypto/cmp/libcrypto-shlib-cmp_err.d \
-     crypto/asn1/libcrypto-lib-bio_ndef.d \
-     crypto/slh_dsa/libcrypto-lib-slh_adrs.d ssl/libssl-shlib-d1_lib.d \
-     test/test_test-bin-test_test.d ssl/libssl-shlib-priority_queue.d \
-     apps/openssl-bin-pkey.d test/testutil/libtestutil-lib-basic_output.d \
-     crypto/bio/libcrypto-lib-bss_dgram_pair.d \
-     crypto/dsa/libcrypto-shlib-dsa_meth.d \
-     crypto/cms/libcrypto-shlib-cms_dd.d \
-     crypto/store/libcrypto-lib-store_init.d crypto/libssl-shlib-getenv.d \
-     crypto/x509/libcrypto-lib-by_store.d crypto/cmac/libcrypto-shlib-cmac.d \
-     ssl/libssl-lib-tls_depr.d ssl/quic/libssl-shlib-quic_obj.d \
-     providers/implementations/kdfs/libdefault-lib-sskdf.d \
-     ssl/statem/libssl-shlib-extensions_clnt.d \
-     crypto/hpke/libcrypto-lib-hpke_util.d \
-     crypto/aes/libcrypto-lib-aes_wrap.d \
-     test/cmp_ctx_test-bin-cmp_ctx_test.d crypto/evp/libcrypto-lib-c_alld.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_tdes_wrap.d \
-     test/buildtest_c_modes-bin-buildtest_modes.d \
-     ssl/tls13secretstest-bin-tls13_enc.d \
-     ssl/record/libssl-lib-rec_layer_s3.d \
-     crypto/pkcs7/libcrypto-lib-pkcs7err.d \
-     crypto/ts/libcrypto-shlib-ts_verify_ctx.d \
-     crypto/bio/libcrypto-lib-bio_dump.d \
-     crypto/x509/libcrypto-lib-v3_usernotice.d \
-     crypto/ec/libcrypto-shlib-ecdsa_vrf.d \
-     crypto/md5/liblegacy-lib-md5_sha1.d \
-     crypto/x509/libcrypto-lib-v3_no_ass.d apps/openssl-bin-nseq.d \
-     crypto/ec/libcrypto-shlib-ecx_key.d crypto/asn1/libcrypto-lib-nsseq.d \
-     crypto/evp/libcrypto-lib-p_enc.d crypto/libcrypto-shlib-context.d \
-     providers/legacy-dso-legacyprov.d fuzz/quic-lcidm-test-bin-fuzz_rand.d \
-     providers/libcrypto-lib-baseprov.d \
-     crypto/evp/libcrypto-shlib-p_verify.d \
-     test/helpers/pkcs12_api_test-bin-pkcs12.d \
-     crypto/evp/libcrypto-lib-p_open.d apps/openssl-bin-cmp.d \
-     crypto/asn1/libcrypto-lib-t_spki.d \
-     providers/evp_extra_test-bin-legacyprov.d \
-     crypto/ess/libcrypto-shlib-ess_lib.d crypto/libcrypto-shlib-getenv.d \
-     crypto/dh/libcrypto-shlib-dh_depr.d \
-     crypto/sm2/libcrypto-shlib-sm2_kmeth.d \
-     test/quic_record_test-bin-quic_record_test.d \
-     crypto/evp/libcrypto-shlib-keymgmt_lib.d \
-     test/stack_test-bin-stack_test.d crypto/sm2/libcrypto-lib-sm2_key.d \
-     crypto/rsa/libcrypto-shlib-rsa_gen.d crypto/libcrypto-lib-params_dup.d \
-     crypto/bio/libcrypto-lib-bss_acpt.d \
-     crypto/thread/arch/libcrypto-shlib-thread_posix.d \
-     crypto/evp/libcrypto-lib-c_allc.d \
-     test/helpers/quic_radix_test-bin-noisydgrambio.d \
-     crypto/evp/libcrypto-shlib-cmeth_lib.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_tdes_default.d \
-     crypto/ocsp/libcrypto-shlib-ocsp_vfy.d \
-     crypto/cmp/libcrypto-shlib-cmp_msg.d crypto/ui/libcrypto-lib-ui_util.d \
-     crypto/crmf/libcrypto-shlib-crmf_lib.d \
-     crypto/engine/libcrypto-shlib-eng_all.d \
-     crypto/x509/libcrypto-shlib-v3_ia5.d \
-     crypto/asn1/libcrypto-shlib-tasn_dec.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_xts_hw.d \
-     test/helpers/json_test-bin-quictestlib.d \
-     crypto/cmp/libcrypto-shlib-cmp_hdr.d \
-     test/helpers/cmp_protect_test-bin-cmp_testlib.d \
-     crypto/x509/libcrypto-lib-x_all.d \
-     crypto/pkcs12/libcrypto-lib-p12_attr.d \
-     crypto/evp/libcrypto-shlib-signature.d \
-     crypto/ts/libcrypto-shlib-ts_req_utils.d \
-     crypto/evp/libcrypto-shlib-legacy_md5.d \
-     crypto/sha/libcrypto-shlib-sha3.d \
-     crypto/thread/arch/libcrypto-lib-thread_posix.d \
-     ssl/quic/libssl-lib-quic_stream_map.d \
-     test/params_test-bin-params_test.d crypto/evp/libcrypto-shlib-p_sign.d \
-     crypto/modes/libcrypto-shlib-ofb128.d \
-     apps/lib/openssl-bin-cmp_mock_srv.d \
-     crypto/engine/libcrypto-lib-eng_cnf.d apps/openssl-bin-ec.d \
-     crypto/asn1/libcrypto-lib-asn_mstbl.d \
-     crypto/libcrypto-shlib-core_namemap.d apps/openssl-bin-pkcs8.d \
-     providers/implementations/exchange/libdefault-lib-ecdh_exch.d \
-     crypto/dsa/libcrypto-lib-dsa_meth.d \
-     test/helpers/recordlentest-bin-ssltestlib.d \
-     providers/common/libdefault-lib-provider_util.d \
-     test/hpke_test-bin-hpke_test.d \
-     providers/implementations/rands/seeding/libdefault-lib-rand_unix.d \
-     apps/openssl-bin-verify.d test/evp_extra_test-bin-fake_rsaprov.d \
-     providers/common/der/libcommon-lib-der_ec_key.d \
-     test/sm4_internal_test-bin-sm4_internal_test.d \
-     crypto/ec/curve448/libcrypto-shlib-eddsa.d \
-     test/sslapitest-bin-filterprov.d crypto/ocsp/libcrypto-lib-ocsp_cl.d \
-     crypto/dh/libcrypto-lib-dh_ameth.d \
-     crypto/tsapi/libcrypto-shlib-tsapi_lib.d \
-     test/helpers/quicfaultstest-bin-pktsplitbio.d \
-     test/buildtest_c_cmac-bin-buildtest_cmac.d \
-     crypto/async/arch/libcrypto-lib-async_null.d \
-     test/provider_status_test-bin-provider_status_test.d \
-     crypto/evp/libcrypto-lib-e_rc4_hmac_md5.d \
-     crypto/ec/libcrypto-lib-ec_oct.d crypto/conf/libcrypto-lib-conf_def.d \
-     crypto/cms/libcrypto-shlib-cms_ess.d ssl/libssl-shlib-ssl_init.d \
-     crypto/x509/libcrypto-lib-x509name.d \
-     crypto/asn1/libcrypto-shlib-a_object.d \
-     crypto/des/libcrypto-lib-xcbc_enc.d \
-     crypto/engine/libcrypto-lib-eng_list.d \
-     crypto/ec/libcrypto-shlib-ec_curve.d \
-     ssl/quic/libssl-lib-quic_tls_api_method.d \
-     crypto/ocsp/libcrypto-shlib-ocsp_http.d \
-     crypto/asn1/libcrypto-lib-x_int64.d test/x509aux-bin-x509aux.d \
-     fuzz/asn1parse-test-bin-test-corpus.d \
-     fuzz/asn1parse-test-bin-asn1parse.d crypto/comp/libcrypto-lib-c_zstd.d \
-     crypto/ec/libcrypto-shlib-ec_key.d \
-     test/provider_internal_test-bin-p_test.d crypto/zuc/libcrypto-lib-zuc.d \
-     ssl/libssl-shlib-ssl_utst.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_tdes.d \
-     apps/openssl-bin-dsaparam.d apps/lib/libapps-lib-engine_loader.d \
-     test/buildtest_c_md5-bin-buildtest_md5.d \
-     crypto/ec/libcrypto-lib-ec_cvt.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_siv.d \
-     crypto/x509/libcrypto-lib-v3_attrmap.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_gcm_siv_polyval.d \
-     crypto/hashtable/libcrypto-shlib-hashfunc.d \
-     crypto/ml_dsa/libcrypto-lib-ml_dsa_params.d \
-     crypto/dsa/libcrypto-shlib-dsa_vrf.d \
-     test/buildtest_c_dtls1-bin-buildtest_dtls1.d \
-     crypto/ml_dsa/libcrypto-lib-ml_dsa_sign.d \
-     crypto/property/libcrypto-shlib-property_parse.d \
-     crypto/evp/libcrypto-lib-skeymgmt_meth.d \
-     ssl/quic/libssl-shlib-quic_srt_gen.d \
-     crypto/slh_dsa/libcrypto-shlib-slh_params.d \
-     crypto/x509/libcrypto-shlib-v3_pcia.d \
-     providers/common/der/libcommon-lib-der_dsa_sig.d \
-     crypto/cmp/libcrypto-lib-cmp_hdr.d crypto/des/libcrypto-shlib-fcrypt.d \
-     ssl/quic/libssl-lib-quic_ackm.d fuzz/server-test-bin-test-corpus.d \
-     crypto/x509/libcrypto-shlib-pcy_map.d \
-     crypto/bio/libcrypto-shlib-bss_bio.d \
-     crypto/libcrypto-lib-deterministic_nonce.d \
-     crypto/cms/libcrypto-lib-cms_io.d \
-     test/buildtest_c_sdf-bin-buildtest_sdf.d \
-     crypto/pkcs12/libcrypto-lib-p12_sbag.d test/pbetest-bin-pbetest.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_ocb.d \
-     crypto/http/libcrypto-shlib-http_err.d \
-     crypto/encode_decode/libcrypto-lib-decoder_pkey.d \
-     test/quic_txpim_test-bin-quic_txpim_test.d \
-     test/helpers/ssl_old_test-bin-predefined_dhparams.d \
-     providers/libcrypto-shlib-nullprov.d \
-     crypto/libcrypto-lib-comp_methods.d \
-     crypto/cms/libcrypto-shlib-cms_rsa.d crypto/md5/liblegacy-lib-md5_one.d \
-     crypto/asn1/libcrypto-lib-tasn_enc.d crypto/asn1/libcrypto-lib-t_pkey.d \
-     crypto/x509/libcrypto-shlib-v3_prn.d \
-     crypto/rsa/libcrypto-lib-rsa_crpt.d crypto/x509/libcrypto-lib-t_req.d \
-     crypto/bio/libcrypto-lib-bio_sock2.d \
-     crypto/bio/libcrypto-shlib-bio_sock2.d \
-     crypto/pem/libcrypto-lib-pvkfmt.d crypto/ts/libcrypto-lib-ts_asn1.d \
-     crypto/x509/libcrypto-shlib-x509name.d crypto/bn/libcrypto-lib-bn_gcd.d \
-     crypto/bio/libcrypto-shlib-bss_sock.d crypto/libcrypto-shlib-o_syslog.d \
-     test/buildtest_c_zkp_transcript-bin-buildtest_zkp_transcript.d \
-     crypto/rsa/libcrypto-shlib-rsa_lib.d \
-     crypto/asn1/libcrypto-shlib-f_int.d \
-     providers/implementations/signature/libdefault-lib-rsa_sig.d \
-     crypto/engine/libcrypto-shlib-tb_asnmth.d \
-     crypto/asn1/libcrypto-lib-a_sign.d \
-     providers/implementations/macs/libdefault-lib-kmac_prov.d \
-     providers/common/der/libdefault-lib-der_rsa_sig.d \
-     test/quic_qlog_test-bin-quic_qlog_test.d \
-     providers/implementations/macs/libdefault-lib-gmac_prov.d \
-     crypto/ts/libcrypto-lib-ts_err.d \
-     crypto/engine/libcrypto-shlib-eng_cnf.d engines/ecptest-dso-e_ecptest.d \
-     crypto/x509/libcrypto-shlib-x509spki.d fuzz/asn1-test-bin-test-corpus.d \
-     providers/implementations/ciphers/libcommon-lib-ciphercommon_block.d \
-     crypto/bn/libcrypto-shlib-bn_x931p.d \
-     crypto/asn1/libcrypto-shlib-p5_pbev2.d test/rand_test-bin-rand_test.d \
-     test/helpers/sslcorrupttest-bin-ssltestlib.d \
-     providers/implementations/kem/libdefault-lib-ecx_kem.d \
-     test/dtls_mtu_test-bin-dtls_mtu_test.d \
-     crypto/asn1/libcrypto-lib-a_mbstr.d \
-     test/nodefltctxtest-bin-nodefltctxtest.d \
-     crypto/x509/libcrypto-lib-v3_akid.d \
-     fuzz/quic-rcidm-test-bin-test-corpus.d \
-     crypto/slh_dsa/libcrypto-lib-slh_params.d \
-     crypto/conf/libcrypto-lib-conf_mall.d \
-     test/buildtest_c_ebcdic-bin-buildtest_ebcdic.d \
-     crypto/ec/libcrypto-shlib-eck_prn.d \
-     crypto/encode_decode/libcrypto-lib-encoder_lib.d \
-     crypto/pkcs7/libcrypto-lib-pk7_mime.d ssl/quic/libssl-shlib-quic_fc.d \
-     ssl/libssl-lib-d1_lib.d apps/openssl-bin-crl.d \
-     crypto/evp/libcrypto-shlib-evp_rand.d \
-     test/helpers/quic_radix_test-bin-ssltestlib.d \
-     crypto/dso/libcrypto-shlib-dso_lib.d \
-     test/testutil/libtestutil-lib-test_options.d test/rc4test-bin-rc4test.d \
-     crypto/x509/libcrypto-lib-x_pubkey.d \
-     crypto/evp/libcrypto-shlib-evp_utils.d \
-     providers/implementations/encode_decode/libdefault-lib-decode_pvk2key.d \
-     crypto/rsa/libcrypto-lib-rsa_sp800_56b_check.d \
-     crypto/evp/libcrypto-shlib-evp_cnf.d \
-     providers/common/der/libdefault-lib-der_sm2_gen.d \
-     crypto/bn/libcrypto-lib-bn_add.d crypto/evp/libcrypto-shlib-m_null.d \
-     crypto/x509/libcrypto-lib-x509_err.d \
-     test/helpers/cmp_client_test-bin-cmp_testlib.d \
-     ssl/libssl-shlib-ssl_lib.d test/testutil/libtestutil-lib-random.d \
-     crypto/libcrypto-lib-params_idx.d \
-     ssl/record/methods/libssl-lib-tls13_meth.d \
-     crypto/ts/libcrypto-lib-ts_rsp_print.d \
-     crypto/bn/libcrypto-shlib-bn_depr.d \
-     crypto/engine/libcrypto-shlib-eng_table.d \
-     crypto/bio/libcrypto-lib-bf_buff.d \
-     test/helpers/cmp_vfy_test-bin-cmp_testlib.d \
-     ssl/statem/libssl-shlib-extensions_srvr.d ssl/libssl-lib-ssl_txt.d \
-     test/x509_time_test-bin-x509_time_test.d \
-     test/helpers/quic_srt_gen_test-bin-ssltestlib.d \
-     crypto/modes/libcrypto-shlib-ocb128.d \
-     crypto/conf/libcrypto-lib-conf_api.d crypto/libcrypto-shlib-cpuid.d \
-     crypto/dso/libcrypto-lib-dso_dlfcn.d apps/openssl-bin-smime.d \
-     ssl/quic/libssl-shlib-quic_engine.d \
-     test/buildtest_c_ssl2-bin-buildtest_ssl2.d \
-     test/buildtest_c_encoder-bin-buildtest_encoder.d \
-     crypto/objects/libcrypto-lib-o_names.d \
-     crypto/asn1/libcrypto-shlib-asn1_err.d \
-     crypto/objects/libcrypto-shlib-obj_xref.d \
-     crypto/thread/arch/libcrypto-shlib-thread_win.d \
-     test/helpers/dtls_mtu_test-bin-ssltestlib.d \
-     crypto/conf/libcrypto-lib-conf_ssl.d \
-     crypto/asn1/libcrypto-shlib-bio_asn1.d \
-     crypto/dh/libcrypto-lib-dh_check.d crypto/bn/libcrypto-shlib-bn_mont.d \
-     crypto/crmf/libcrypto-lib-crmf_pbm.d \
-     crypto/asn1/libcrypto-shlib-a_d2i_fp.d \
-     crypto/slh_dsa/libcrypto-shlib-slh_wots.d \
-     test/ctype_internal_test-bin-ctype_internal_test.d \
-     fuzz/punycode-test-bin-test-corpus.d \
-     crypto/objects/libcrypto-lib-obj_err.d \
-     crypto/cmp/libcrypto-shlib-cmp_genm.d test/json_test-bin-json_test.d \
-     test/localetest-bin-localetest.d \
-     test/algorithmid_test-bin-algorithmid_test.d \
-     crypto/ec/libcrypto-lib-curve25519.d \
-     crypto/x509/libcrypto-shlib-v3_addr.d \
-     crypto/evp/libcrypto-shlib-evp_err.d apps/openssl-bin-cms.d \
-     test/testutil/libtestutil-lib-output.d crypto/ct/libcrypto-lib-ct_oct.d \
-     crypto/cms/libcrypto-shlib-cms_env.d \
-     crypto/libcrypto-shlib-provider_predefined.d \
-     crypto/ec/curve448/libcrypto-shlib-curve448.d \
-     test/buildtest_c_hpke-bin-buildtest_hpke.d \
-     crypto/libcrypto-lib-core_algorithm.d \
-     crypto/x509/libcrypto-shlib-v3_pku.d \
-     ssl/quic/libssl-shlib-quic_reactor.d \
-     crypto/bn/libcrypto-shlib-bn_shift.d crypto/x509/libcrypto-lib-v3err.d \
-     crypto/cms/libcrypto-shlib-cms_smime.d \
-     crypto/bio/libcrypto-lib-bss_mem.d \
-     crypto/ffc/libcrypto-lib-ffc_params.d \
-     crypto/md5/libcrypto-lib-md5_sha1.d crypto/x509/libcrypto-lib-x_name.d \
-     crypto/asn1/libcrypto-lib-tasn_prn.d \
-     crypto/ec/curve448/libcrypto-lib-curve448.d \
-     providers/implementations/encode_decode/libdefault-lib-ml_dsa_codecs.d \
-     ssl/libssl-lib-tls13_enc.d crypto/engine/libcrypto-shlib-tb_rand.d \
-     crypto/evp/libcrypto-shlib-e_old.d \
-     crypto/x509/libcrypto-shlib-v3_skid.d apps/lib/libapps-lib-fmt.d \
-     crypto/asn1/libcrypto-lib-tasn_utl.d crypto/ui/libcrypto-lib-ui_lib.d \
-     ssl/quic/libssl-shlib-quic_srtm.d apps/openssl-bin-list.d \
-     test/helpers/rpktest-bin-ssltestlib.d \
-     ssl/record/methods/libssl-shlib-tls_common.d \
-     crypto/slh_dsa/libcrypto-shlib-slh_fors.d \
-     crypto/bn/libcrypto-lib-bn_mpi.d crypto/ct/libcrypto-shlib-ct_prn.d \
-     fuzz/conf-test-bin-conf.d test/exptest-bin-exptest.d \
-     crypto/asn1/libcrypto-shlib-t_bitst.d \
-     crypto/dsa/libcrypto-shlib-dsa_depr.d \
-     crypto/ts/libcrypto-shlib-ts_rsp_verify.d \
-     crypto/dh/libcrypto-shlib-dh_ameth.d crypto/bn/libcrypto-lib-bn_exp.d \
-     crypto/engine/libcrypto-shlib-eng_err.d \
-     fuzz/conf-test-bin-test-corpus.d \
-     crypto/encode_decode/libcrypto-shlib-encoder_lib.d \
-     crypto/ocsp/libcrypto-shlib-ocsp_asn.d ssl/libssl-shlib-methods.d \
-     test/hexstr_test-bin-hexstr_test.d \
-     crypto/evp/libcrypto-lib-ctrl_params_translate.d \
-     crypto/libcrypto-lib-o_init.d crypto/asn1/libcrypto-shlib-a_mbstr.d \
-     apps/openssl-bin-skeyutl.d crypto/cms/libcrypto-lib-cms_dh.d \
-     ssl/libssl-shlib-ssl_asn1.d crypto/buffer/libcrypto-shlib-buffer.d \
-     providers/implementations/rands/seeding/libdefault-lib-rand_cpu_x86.d \
-     crypto/ec/libcrypto-lib-ecdh_ossl.d crypto/x509/libcrypto-lib-v3_skid.d \
-     fuzz/punycode-test-bin-punycode.d crypto/bn/libcrypto-lib-bn_x931p.d \
-     crypto/dso/libcrypto-lib-dso_lib.d \
-     apps/lib/ca_internals_test-bin-apps_ui.d \
-     fuzz/ml-kem-test-bin-test-corpus.d crypto/rsa/libcrypto-lib-rsa_chk.d \
-     providers/implementations/rands/libdefault-lib-seed_src_jitter.d \
-     test/buildtest_c_e_os2-bin-buildtest_e_os2.d \
-     crypto/cmp/libcrypto-lib-cmp_msg.d \
-     providers/implementations/ciphers/libcommon-lib-ciphercommon_hw.d \
-     crypto/evp/libcrypto-lib-bio_enc.d crypto/dsa/libcrypto-lib-dsa_pmeth.d \
-     crypto/libcrypto-lib-der_writer.d crypto/x509/libcrypto-lib-v3_enum.d \
-     crypto/rsa/libcrypto-lib-rsa_sp800_56b_gen.d \
-     crypto/bn/libcrypto-lib-bn_const.d ssl/libssl-lib-ssl_rsa_legacy.d \
-     crypto/pkcs12/libcrypto-lib-p12_key.d crypto/sha/libcrypto-lib-sha512.d \
-     crypto/ct/libcrypto-shlib-ct_err.d \
-     crypto/cmp/libcrypto-lib-cmp_client.d crypto/sm3/libcrypto-shlib-sm3.d \
-     test/bio_memleak_test-bin-bio_memleak_test.d \
-     crypto/engine/libcrypto-shlib-eng_list.d \
-     test/helpers/sslbuffertest-bin-ssltestlib.d \
-     providers/implementations/keymgmt/libdefault-lib-kdf_legacy_kmgmt.d \
-     test/v3ext-bin-v3ext.d crypto/x509/libcrypto-lib-x509_d2.d \
-     apps/lib/libapps-lib-s_cb.d fuzz/ml-kem-test-bin-fuzz_rand.d \
-     ssl/rio/libssl-shlib-rio_notifier.d \
-     crypto/evp/libcrypto-lib-keymgmt_meth.d \
-     fuzz/acert-test-bin-test-corpus.d crypto/cms/libcrypto-lib-cms_env.d \
-     test/helpers/ssl_test_ctx_test-bin-ssl_test_ctx.d \
-     crypto/rsa/libcrypto-lib-rsa_backend.d \
-     crypto/crmf/libcrypto-lib-crmf_err.d \
-     crypto/modes/libcrypto-lib-siv128.d \
-     providers/implementations/encode_decode/libdefault-lib-encode_key2ms.d \
-     ssl/libssl-shlib-tls_srp.d crypto/ec/libcrypto-lib-ecx_key.d \
-     test/helpers/ecpmeth_test-bin-ssltestlib.d \
-     apps/lib/libapps-lib-http_server.d test/dhtest-bin-dhtest.d \
-     crypto/ts/libcrypto-lib-ts_lib.d apps/lib/libapps-lib-s_socket.d \
-     ssl/libssl-shlib-tls_depr.d crypto/property/libcrypto-lib-property.d \
-     test/sslapitest-bin-tls-provider.d \
-     crypto/tls13secretstest-bin-quic_vlint.d \
-     crypto/rsa/libcrypto-shlib-rsa_schemes.d \
-     crypto/engine/libcrypto-lib-tb_rsa.d ssl/libssl-lib-ssl_asn1.d \
-     apps/lib/libtestutil-lib-opt.d crypto/bn/libcrypto-shlib-bn_nist.d \
-     crypto/asn1/libcrypto-shlib-p5_scrypt.d \
-     crypto/ec/libcrypto-shlib-ec_ameth.d \
-     crypto/x509/libcrypto-lib-v3_iobo.d \
-     crypto/ec/libcrypto-shlib-ecdsa_ossl.d \
-     crypto/asn1/libcrypto-shlib-d2i_param.d \
-     crypto/slh_dsa/libcrypto-shlib-slh_dsa_hash_ctx.d \
-     crypto/bn/libcrypto-shlib-bn_sqrt.d \
-     providers/implementations/digests/libdefault-lib-null_prov.d \
-     crypto/x509/libcrypto-shlib-v3_cpols.d ssl/libssl-shlib-ssl_mcnf.d \
-     test/helpers/quic_radix_test-bin-quictestlib.d \
-     crypto/store/libcrypto-shlib-store_lib.d \
-     crypto/asn1/libcrypto-lib-a_i2d_fp.d \
-     test/buildtest_c_thread-bin-buildtest_thread.d \
-     crypto/asn1/libcrypto-lib-a_type.d \
-     crypto/bn/libcrypto-lib-rsaz_exp_x2.d crypto/libcrypto-lib-asn1_dsa.d \
-     crypto/x509/libcrypto-lib-x509_r2x.d \
-     providers/implementations/ciphers/liblegacy-lib-cipher_rc4_hmac_md5_hw.d \
-     crypto/libcrypto-lib-provider_predefined.d apps/openssl-bin-spkac.d \
-     fuzz/dtlsserver-test-bin-dtlsserver.d \
-     providers/implementations/encode_decode/libdefault-lib-decode_spki2typespki.d \
-     test/pkcs7_test-bin-pkcs7_test.d ssl/statem/libssl-lib-statem_dtls.d \
-     test/buildtest_c_ec-bin-buildtest_ec.d \
-     crypto/dsa/libcrypto-shlib-dsa_sign.d \
-     ssl/statem/libssl-lib-statem_clnt.d ssl/quic/libssl-shlib-quic_lcidm.d \
-     apps/lib/ca_internals_test-bin-app_rand.d \
-     ssl/quic/libssl-lib-quic_txp.d crypto/x509/libcrypto-shlib-x509_trust.d \
-     crypto/rsa/libcrypto-shlib-rsa_oaep.d \
-     crypto/ocsp/libcrypto-lib-v3_ocsp.d crypto/bn/libcrypto-shlib-bn_mpi.d \
-     crypto/slh_dsa/libcrypto-lib-slh_dsa_hash_ctx.d \
-     test/crltest-bin-crltest.d crypto/engine/libcrypto-shlib-eng_fat.d \
-     test/buildtest_c_provider-bin-buildtest_provider.d \
-     crypto/evp/libcrypto-lib-p5_crpt2.d \
-     providers/implementations/ciphers/libcommon-lib-ciphercommon_ccm_hw.d \
-     crypto/asn1/libcrypto-shlib-x_val.d \
-     crypto/x509/libcrypto-lib-v3_extku.d crypto/libcrypto-lib-sleep.d \
-     crypto/engine/libcrypto-lib-eng_dyn.d \
-     crypto/ec/libcrypto-lib-ecx_meth.d \
-     test/bio_addr_test-bin-bio_addr_test.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_wrp.d \
-     test/asn1_time_test-bin-asn1_time_test.d \
-     crypto/pkcs12/libcrypto-lib-p12_kiss.d \
-     fuzz/dtlsclient-test-bin-dtlsclient.d \
-     crypto/ml_dsa/libcrypto-shlib-ml_dsa_matrix.d ssl/libssl-shlib-t1_lib.d \
-     crypto/store/libcrypto-lib-store_strings.d \
-     crypto/pkcs7/libcrypto-shlib-pk7_lib.d \
-     test/radix/quic_radix_test-bin-quic_radix.d \
-     crypto/evp/libcrypto-lib-evp_utils.d \
-     crypto/x509/libcrypto-lib-v3_soa_id.d \
-     fuzz/quic-srtm-test-bin-quic-srtm.d \
-     crypto/des/libcrypto-shlib-set_key.d \
-     crypto/pem/libcrypto-lib-pem_info.d \
-     test/ml_kem_evp_extra_test-bin-ml_kem_evp_extra_test.d \
-     crypto/ec/libcrypto-lib-ec_print.d \
-     test/buildtest_c_bn-bin-buildtest_bn.d \
-     crypto/ml_dsa/libcrypto-lib-ml_dsa_key.d \
-     crypto/des/libcrypto-lib-rand_key.d \
-     crypto/property/libcrypto-lib-property_string.d \
-     test/buildtest_c_des-bin-buildtest_des.d \
-     test/pem_read_depr_test-bin-pem_read_depr_test.d \
-     crypto/ocsp/libcrypto-lib-ocsp_prn.d \
-     fuzz/dtlsserver-test-bin-fuzz_rand.d \
-     test/asn1_decode_test-bin-asn1_decode_test.d \
-     crypto/asn1/libcrypto-shlib-a_type.d \
-     crypto/rsa/libcrypto-lib-rsa_x931.d \
-     crypto/asn1/libcrypto-lib-p5_scrypt.d \
-     crypto/bn/libcrypto-shlib-bn_print.d \
-     crypto/evp/libcrypto-shlib-m_sigver.d \
-     providers/implementations/skeymgmt/libdefault-lib-aes_skmgmt.d \
-     crypto/ess/libcrypto-shlib-ess_asn1.d \
-     crypto/ocsp/libcrypto-shlib-ocsp_srv.d \
-     crypto/sm2/libcrypto-shlib-sm2_crypt.d \
-     crypto/cms/libcrypto-lib-cms_lib.d \
-     crypto/rand/libcrypto-lib-rand_uniform.d \
-     crypto/dh/libcrypto-lib-dh_group_params.d \
-     crypto/asn1/libcrypto-shlib-d2i_pr.d ssl/statem/libssl-lib-statem.d \
-     crypto/x509/libcrypto-shlib-v3_extku.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_tdes_wrap_hw.d \
-     crypto/bio/libcrypto-shlib-bss_mem.d \
-     crypto/ml_dsa/libcrypto-shlib-ml_dsa_ntt.d \
-     providers/implementations/keymgmt/libdefault-lib-ecx_kmgmt.d \
-     crypto/conf/libcrypto-shlib-conf_mall.d fuzz/ct-test-bin-test-corpus.d \
-     crypto/libcrypto-shlib-der_writer.d \
-     crypto/rsa/libcrypto-lib-rsa_schemes.d \
-     crypto/asn1/libcrypto-lib-asn1_gen.d \
-     crypto/rsa/libcrypto-lib-rsa_sign.d crypto/asn1/libcrypto-lib-a_strex.d \
-     crypto/pem/libcrypto-shlib-pem_xaux.d \
-     crypto/bio/libcrypto-shlib-bss_log.d fuzz/smime-test-bin-smime.d \
-     providers/implementations/asymciphers/libdefault-lib-sm2_enc.d \
-     crypto/x509/libcrypto-shlib-x509_req.d \
-     crypto/engine/libcrypto-shlib-tb_pkmeth.d \
-     test/timing_load_creds-bin-timing_load_creds.d \
-     crypto/asn1/libcrypto-shlib-i2d_evp.d \
-     crypto/des/libcrypto-shlib-str2key.d \
-     crypto/des/libcrypto-shlib-pcbc_enc.d \
-     test/testutil/libtestutil-lib-helper.d \
-     crypto/cms/libcrypto-lib-cms_pwri.d \
-     crypto/ec/libcrypto-shlib-ec_deprecated.d \
-     fuzz/dtlsclient-test-bin-fuzz_rand.d apps/lib/libapps-lib-apps_ui.d \
-     crypto/bn/libcrypto-shlib-bn_gcd.d crypto/md5/libcrypto-shlib-md5_one.d \
-     crypto/ess/libcrypto-lib-ess_asn1.d \
-     test/bio_readbuffer_test-bin-bio_readbuffer_test.d \
-     crypto/asn1/libcrypto-lib-x_info.d crypto/asn1/libcrypto-lib-a_object.d \
-     apps/lib/libapps-lib-engine.d ssl/quic/libssl-lib-quic_tls.d \
-     crypto/libcrypto-shlib-o_fopen.d crypto/evp/libcrypto-lib-dh_support.d \
-     ssl/libssl-shlib-d1_msg.d crypto/x509/libcrypto-shlib-t_req.d \
-     crypto/store/libcrypto-lib-store_meth.d \
-     crypto/evp/libcrypto-shlib-e_des.d fuzz/server-test-bin-fuzz_rand.d \
-     test/http_test-bin-http_test.d crypto/evp/libcrypto-shlib-evp_pbe.d \
-     apps/openssl-bin-enc.d crypto/ts/libcrypto-shlib-ts_req_print.d \
-     crypto/bn/libcrypto-lib-bn_shift.d crypto/bn/libcrypto-lib-bn_nist.d \
-     crypto/x509/libcrypto-lib-x509_def.d \
-     fuzz/quic-server-test-bin-fuzz_rand.d \
-     crypto/x509/libcrypto-lib-pcy_tree.d \
-     crypto/libcrypto-shlib-provider_core.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_gcm.d \
-     crypto/asn1/libcrypto-shlib-p8_pkey.d \
-     apps/lib/ca_internals_test-bin-apps.d test/lhash_test-bin-lhash_test.d \
-     ssl/quic/libssl-lib-quic_lcidm.d crypto/x509/libcrypto-shlib-x_crl.d \
-     crypto/hashtable/libcrypto-lib-hashfunc.d \
-     providers/implementations/ciphers/liblegacy-lib-cipher_rc4_hmac_md5.d \
-     crypto/dh/libcrypto-lib-dh_key.d crypto/des/libcrypto-shlib-cfb64ede.d \
-     test/cmp_asn_test-bin-cmp_asn_test.d apps/openssl-bin-genpkey.d \
-     crypto/ec/libcrypto-lib-ec2_oct.d \
-     crypto/siphash/libcrypto-lib-siphash.d \
-     crypto/rsa/libcrypto-shlib-rsa_saos.d ssl/libssl-shlib-ssl_cert_comp.d \
-     test/drbgtest-bin-drbgtest.d crypto/des/libcrypto-lib-ofb64enc.d \
-     ssl/quic/libssl-shlib-quic_wire.d fuzz/slh-dsa-test-bin-slh-dsa.d \
-     crypto/slh_dsa/libcrypto-lib-slh_xmss.d \
-     test/provider_test-bin-provider_test.d \
-     crypto/srp/libcrypto-shlib-srp_lib.d crypto/dsa/libcrypto-lib-dsa_lib.d \
-     crypto/evp/libcrypto-shlib-pmeth_check.d \
-     crypto/encode_decode/libcrypto-lib-decoder_lib.d \
-     crypto/libcrypto-shlib-param_build_set.d \
-     crypto/bn/libcrypto-lib-bn_dh.d ssl/quic/libssl-shlib-quic_txp.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_siv_hw.d \
-     test/build_wincrypt_test-bin-build_wincrypt_test.d \
-     crypto/asn1/libcrypto-lib-a_octet.d \
-     crypto/asn1/libcrypto-shlib-x_info.d \
-     crypto/x509/libcrypto-shlib-v3_ind_iss.d \
-     test/secmemtest-bin-secmemtest.d crypto/x509/libcrypto-shlib-x509_r2x.d \
-     providers/implementations/signature/libdefault-lib-mac_legacy_sig.d \
-     ssl/record/methods/libssl-shlib-tls1_meth.d \
-     crypto/asn1/libcrypto-lib-i2d_evp.d ssl/libssl-lib-ssl_cert_comp.d \
-     ssl/libssl-shlib-pqueue.d crypto/pem/libcrypto-shlib-pem_info.d \
-     crypto/evp/libcrypto-lib-ec_support.d crypto/libcrypto-lib-cryptlib.d \
-     test/buildtest_c_prov_ssl-bin-buildtest_prov_ssl.d \
-     ssl/statem/libssl-shlib-extensions_cust.d apps/openssl-bin-dhparam.d \
-     crypto/x509/libcrypto-shlib-x509aset.d \
-     crypto/asn1/libcrypto-shlib-a_sign.d \
-     crypto/x509/libcrypto-lib-x509cset.d \
-     test/cipherbytes_test-bin-cipherbytes_test.d \
-     test/x509_internal_test-bin-x509_internal_test.d \
-     crypto/x509/libcrypto-lib-pcy_lib.d \
-     providers/implementations/rands/seeding/libdefault-lib-rand_tsc.d \
-     crypto/err/libcrypto-shlib-err_save.d \
-     test/cipherlist_test-bin-cipherlist_test.d \
-     crypto/engine/libcrypto-shlib-eng_dyn.d \
-     crypto/dsa/libcrypto-shlib-dsa_backend.d \
-     crypto/evp/libcrypto-lib-digest.d crypto/aes/libcrypto-lib-aes_ige.d \
-     crypto/dsa/libcrypto-lib-dsa_check.d test/ocspapitest-bin-ocspapitest.d \
-     crypto/lhash/libcrypto-shlib-lhash.d crypto/ui/libcrypto-shlib-ui_err.d \
-     crypto/ts/libcrypto-lib-ts_rsp_utils.d \
-     crypto/rand/libcrypto-lib-randfile.d \
-     crypto/x509/libcrypto-lib-x509rset.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_tdes_common.d \
-     crypto/slh_dsa/libcrypto-shlib-slh_dsa_key.d \
-     crypto/evp/libcrypto-lib-e_aes_cbc_hmac_sha1.d \
-     test/cmp_protect_test-bin-cmp_protect_test.d \
-     crypto/x509/libcrypto-shlib-v3_group_ac.d \
-     crypto/libcrypto-lib-mem_sec.d \
-     crypto/ml_dsa/libcrypto-shlib-ml_dsa_params.d \
-     crypto/dsa/libcrypto-shlib-dsa_err.d \
-     crypto/x509/libcrypto-lib-v3_pcons.d apps/openssl-bin-rsautl.d \
-     crypto/thread/arch/libssl-shlib-thread_posix.d \
-     crypto/ct/libcrypto-lib-ct_vfy.d crypto/libcrypto-lib-cpuid.d \
-     crypto/libcrypto-lib-param_build_set.d \
-     crypto/x509/libcrypto-shlib-x509_meth.d \
-     crypto/encode_decode/libcrypto-lib-decoder_err.d \
-     crypto/libcrypto-shlib-core_fetch.d \
-     test/provider_default_search_path_test-bin-provider_default_search_path_test.d \
-     crypto/x509/libcrypto-lib-pcy_cache.d apps/openssl-bin-dsa.d \
-     crypto/evp/libcrypto-lib-s_lib.d crypto/evp/libcrypto-shlib-names.d \
-     crypto/x509/libcrypto-lib-v3_bitst.d \
-     crypto/engine/libcrypto-lib-tb_ecpmeth.d \
-     crypto/x509/libcrypto-shlib-v3_bcons.d \
-     test/helpers/fatalerrtest-bin-ssltestlib.d \
-     crypto/asn1/libcrypto-lib-a_dup.d crypto/bio/libcrypto-lib-bio_lib.d \
-     crypto/async/libcrypto-shlib-async_err.d \
-     crypto/sha/libcrypto-shlib-sha1_one.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_ccm_hw.d \
-     crypto/ec/libcrypto-lib-ecx_backend.d \
-     crypto/encode_decode/libcrypto-lib-encoder_meth.d \
-     ssl/libssl-lib-s3_enc.d \
-     providers/common/der/libdefault-lib-der_sm2_sig.d \
-     crypto/pkcs7/libcrypto-shlib-pk7_asn1.d \
-     crypto/asn1/libcrypto-lib-evp_asn1.d crypto/bio/libcrypto-lib-bio_cb.d \
-     test/chacha_internal_test-bin-chacha_internal_test.d \
-     crypto/ffc/libcrypto-shlib-ffc_key_generate.d \
-     test/quic_txp_test-bin-cc_dummy.d crypto/dh/libcrypto-lib-dh_kdf.d \
-     crypto/pem/libcrypto-shlib-pem_x509.d \
-     crypto/srp/libcrypto-shlib-srp_vfy.d \
-     crypto/ec/libcrypto-shlib-ecp_nistz256.d \
-     crypto/dsa/libcrypto-shlib-dsa_prn.d \
-     crypto/dsa/libcrypto-lib-dsa_depr.d \
-     crypto/x509/libcrypto-shlib-v3_aaa.d apps/openssl-bin-openssl.d \
-     crypto/ts/libcrypto-shlib-ts_asn1.d \
-     crypto/ec/curve448/arch_32/libcrypto-shlib-f_impl32.d \
-     crypto/evp/libcrypto-lib-p_legacy.d \
-     crypto/engine/libcrypto-shlib-tb_digest.d \
-     crypto/asn1/libcrypto-lib-f_int.d crypto/libcrypto-shlib-mem.d \
-     crypto/evp/libcrypto-shlib-dh_ctrl.d \
-     test/ossl_store_test-bin-ossl_store_test.d \
-     crypto/cms/libcrypto-lib-cms_err.d \
-     crypto/ec/libcrypto-shlib-ecdh_ossl.d \
-     crypto/dh/libcrypto-shlib-dh_check.d \
-     test/params_conversion_test-bin-params_conversion_test.d \
-     ssl/quic/libssl-lib-quic_obj.d \
-     crypto/x509/libcrypto-shlib-v3_battcons.d \
-     ssl/quic/libssl-shlib-quic_port.d \
-     crypto/x509/libcrypto-shlib-v3_admis.d \
-     crypto/x509/libcrypto-shlib-v3_crld.d \
-     apps/lib/libapps-lib-app_provider.d \
-     crypto/ml_dsa/libcrypto-lib-ml_dsa_ntt.d \
-     crypto/err/libcrypto-lib-err_all.d crypto/ui/libcrypto-shlib-ui_lib.d \
-     crypto/x509/libcrypto-lib-v3_pku.d crypto/x509/libcrypto-lib-x_attrib.d \
-     crypto/asn1/libcrypto-shlib-tasn_enc.d \
-     crypto/pkcs12/libcrypto-lib-p12_utl.d \
-     crypto/bn/libcrypto-shlib-bn_kron.d apps/openssl-bin-kdf.d \
-     crypto/ocsp/libcrypto-lib-ocsp_err.d \
-     test/pkcs12_format_test-bin-pkcs12_format_test.d \
-     providers/implementations/encode_decode/libdefault-lib-endecoder_common.d \
-     crypto/err/libcrypto-lib-err_all_legacy.d \
-     test/testutil/libtestutil-lib-apps_shims.d \
-     crypto/async/libcrypto-lib-async.d crypto/x509/libcrypto-lib-x509_v3.d \
-     crypto/x509/libcrypto-shlib-x_name.d \
-     crypto/http/libcrypto-lib-http_lib.d crypto/ec/libcrypto-shlib-ec_oct.d \
-     crypto/evp/libcrypto-shlib-dsa_ctrl.d \
-     crypto/bn/libcrypto-shlib-rsaz_exp.d test/x509_test-bin-x509_test.d \
-     crypto/rand/libcrypto-lib-rand_err.d \
-     crypto/x509/libcrypto-shlib-v3_conf.d fuzz/cms-test-bin-test-corpus.d \
-     crypto/evp/libcrypto-shlib-e_rc4.d \
-     crypto/siphash/libcrypto-shlib-siphash.d \
-     crypto/rsa/libcrypto-lib-rsa_pmeth.d \
-     providers/common/libdefault-lib-provider_seeding.d \
-     test/buildtest_c_param_build-bin-buildtest_param_build.d \
-     test/cmp_hdr_test-bin-cmp_hdr_test.d \
-     crypto/rand/libcrypto-lib-rand_lib.d \
-     providers/implementations/kdfs/libdefault-lib-tls1_prf.d \
-     test/quic_fc_test-bin-quic_fc_test.d \
-     ssl/quic/libssl-shlib-quic_sstream.d \
-     test/tls13ccstest-bin-tls13ccstest.d ssl/quic/libssl-lib-quic_fifd.d \
-     apps/openssl-bin-ca.d test/ssl_old_test-bin-ssl_old_test.d \
-     test/ml_dsa_test-bin-ml_dsa_test.d apps/lib/ca_internals_test-bin-fmt.d \
-     crypto/property/libcrypto-lib-property_err.d \
-     crypto/aes/libcrypto-lib-aes_cfb.d ssl/quic/libssl-shlib-quic_sf_list.d \
-     fuzz/quic-rcidm-test-bin-fuzz_rand.d \
-     test/pairwise_fail_test-bin-pairwise_fail_test.d \
-     crypto/engine/libcrypto-lib-tb_digest.d \
-     crypto/cms/libcrypto-lib-cms_sd.d crypto/sdf/libcrypto-shlib-sdf_meth.d \
-     crypto/libcrypto-shlib-init.d crypto/evp/libcrypto-lib-kdf_meth.d \
-     crypto/x509/libcrypto-lib-v3_aaa.d \
-     test/buildtest_c_obj_mac-bin-buildtest_obj_mac.d \
-     crypto/x509/libcrypto-shlib-x509_att.d \
-     crypto/siphash/libssl-shlib-siphash.d \
-     ssl/quic/libssl-shlib-quic_record_util.d \
-     ssl/quic/libssl-lib-quic_srt_gen.d \
-     test/dsa_no_digest_size_test-bin-dsa_no_digest_size_test.d \
-     fuzz/quic-client-test-bin-test-corpus.d \
-     crypto/asn1/libcrypto-shlib-a_int.d \
-     crypto/asn1/libcrypto-lib-tasn_fre.d \
-     crypto/bio/libcrypto-shlib-bio_err.d \
-     crypto/dh/libcrypto-shlib-dh_backend.d test/provider_test-bin-p_test.d \
-     crypto/evp/libcrypto-lib-ec_ctrl.d \
-     test/buildtest_c_core-bin-buildtest_core.d \
-     test/rsa_x931_test-bin-rsa_x931_test.d apps/openssl-bin-s_client.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_tdes_default_hw.d \
-     crypto/evp/libcrypto-lib-pbe_scrypt.d \
-     crypto/asn1/libcrypto-lib-a_digest.d \
-     crypto/x509/libcrypto-lib-x509_set.d crypto/evp/libcrypto-lib-e_des.d \
-     crypto/encode_decode/libcrypto-shlib-encoder_pkey.d \
-     crypto/libcrypto-lib-ex_data.d crypto/x509/libcrypto-lib-x509_trust.d \
-     crypto/cms/libcrypto-shlib-cms_dh.d \
-     test/helpers/quic_multistream_test-bin-noisydgrambio.d \
-     crypto/ocsp/libcrypto-shlib-ocsp_cl.d \
-     test/buildtest_c_macros-bin-buildtest_macros.d \
-     crypto/x509/libcrypto-lib-x509_obj.d \
-     test/user_property_test-bin-user_property_test.d \
-     test/buildtest_c_async-bin-buildtest_async.d \
-     test/quic_lcidm_test-bin-quic_lcidm_test.d \
-     crypto/bio/libcrypto-lib-bf_prefix.d \
-     crypto/x509/libcrypto-shlib-v3_akid.d \
-     test/context_internal_test-bin-context_internal_test.d \
-     crypto/rsa/libcrypto-shlib-rsa_asn1.d \
-     crypto/dsa/libcrypto-shlib-dsa_pmeth.d \
-     test/helpers/pkcs12_format_test-bin-pkcs12.d \
-     crypto/store/libcrypto-lib-store_lib.d \
-     crypto/ec/libcrypto-shlib-curve25519.d \
-     crypto/pem/libcrypto-shlib-pvkfmt.d apps/openssl-bin-errstr.d \
-     crypto/asn1/libcrypto-shlib-asn1_item_list.d \
-     test/buildtest_c_dsa-bin-buildtest_dsa.d \
-     ssl/quic/libssl-lib-quic_sstream.d crypto/libcrypto-lib-params.d \
-     crypto/encode_decode/libcrypto-shlib-decoder_err.d \
-     crypto/stack/libcrypto-lib-stack.d \
-     ssl/record/methods/libssl-lib-tls1_meth.d \
-     crypto/conf/libcrypto-shlib-conf_lib.d ssl/libssl-shlib-t1_trce.d \
-     crypto/asn1/libcrypto-lib-p5_pbev2.d \
-     crypto/asn1/libcrypto-shlib-bio_ndef.d \
-     crypto/objects/libcrypto-shlib-obj_lib.d \
-     crypto/asn1/libcrypto-lib-a_time.d \
-     crypto/x509/libcrypto-shlib-v3_no_ass.d \
-     ssl/record/methods/libssl-shlib-tlsany_meth.d \
-     crypto/md5/libcrypto-lib-md5_dgst.d crypto/dh/libcrypto-shlib-dh_key.d \
-     test/helpers/cmp_server_test-bin-cmp_testlib.d \
-     providers/common/liblegacy-lib-provider_util.d \
-     ssl/quic/libssl-shlib-quic_thread_assist.d \
-     providers/libcrypto-lib-prov_running.d \
-     crypto/x509/libcrypto-lib-v3_int.d \
-     crypto/cmp/libcrypto-shlib-cmp_server.d \
-     crypto/evp/libcrypto-lib-e_wbsm4_baiwu.d \
-     providers/common/libcommon-lib-provider_err.d \
-     crypto/property/libcrypto-lib-property_query.d \
-     crypto/bn/libcrypto-shlib-bn_exp.d \
-     crypto/modes/libcrypto-shlib-cfb128.d \
-     crypto/x509/libcrypto-lib-v3_purp.d \
-     crypto/dso/libcrypto-shlib-dso_err.d test/sanitytest-bin-sanitytest.d \
-     apps/openssl-bin-sess_id.d crypto/objects/libcrypto-lib-obj_xref.d \
-     ssl/libssl-shlib-ssl_stat.d ssl/libssl-lib-t1_trce.d \
-     ssl/rio/libssl-lib-poll_builder.d \
-     crypto/property/libcrypto-shlib-defn_cache.d \
-     test/wpackettest-bin-wpackettest.d crypto/evp/libcrypto-lib-evp_lib.d \
-     test/buildtest_c_types-bin-buildtest_types.d \
-     fuzz/bignum-test-bin-bignum.d crypto/x509/libcrypto-shlib-x_pubkey.d \
-     providers/implementations/ciphers/libcommon-lib-ciphercommon_gcm_hw.d \
-     crypto/libcrypto-lib-passphrase.d crypto/ct/libcrypto-lib-ct_b64.d \
-     ssl/record/methods/libssl-shlib-tls_pad.d ssl/libssl-shlib-ssl_txt.d \
-     crypto/ct/libcrypto-lib-ct_x509v3.d fuzz/cmp-test-bin-fuzz_rand.d \
-     ssl/libssl-lib-priority_queue.d crypto/x509/libcrypto-shlib-v3_genn.d \
-     crypto/bio/libcrypto-lib-bss_file.d \
-     test/ssl_test_ctx_test-bin-ssl_test_ctx_test.d \
-     crypto/x509/libcrypto-lib-x509_lu.d \
-     crypto/x509/libcrypto-shlib-v3_pcons.d \
-     crypto/cmp/libcrypto-shlib-cmp_util.d \
-     test/buildtest_c_hmac-bin-buildtest_hmac.d \
-     providers/common/der/libcommon-lib-der_ec_sig.d \
-     crypto/bio/libcrypto-lib-bio_print.d \
-     crypto/x509/libcrypto-shlib-x509type.d \
-     test/evp_skey_test-bin-fake_cipherprov.d \
-     test/quic_multistream_test-bin-quic_multistream_test.d \
-     providers/common/der/libcommon-lib-der_ecx_gen.d \
-     fuzz/cmp-test-bin-cmp.d test/pemtest-bin-pemtest.d \
-     crypto/hpke/libcrypto-shlib-hpke_util.d \
-     ssl/quic/libssl-shlib-cc_newreno.d \
-     crypto/hashtable/libcrypto-shlib-hashtable.d \
-     crypto/ca_internals_test-bin-ctype.d \
-     test/rdcpu_sanitytest-bin-rdcpu_sanitytest.d \
-     ssl/statem/libssl-lib-statem_srvr.d apps/openssl-bin-rsa.d \
-     fuzz/quic-client-test-bin-fuzz_rand.d apps/openssl-bin-s_server.d \
-     crypto/async/libcrypto-lib-async_wait.d \
-     test/endecoder_legacy_test-bin-endecoder_legacy_test.d \
-     fuzz/quic-client-test-bin-quic-client.d \
-     crypto/x509/libcrypto-lib-v3_ncons.d \
-     crypto/encode_decode/libcrypto-lib-encoder_err.d \
-     crypto/evp/libcrypto-lib-p_verify.d \
-     crypto/async/arch/libcrypto-shlib-async_null.d \
-     test/x509_req_test-bin-x509_req_test.d ssl/quic/libssl-lib-quic_port.d \
-     crypto/modes/libcrypto-shlib-siv128.d test/exdatatest-bin-exdatatest.d \
-     crypto/ec/libcrypto-lib-ec_ameth.d apps/ca_internals_test-bin-ca.d \
-     crypto/pkcs12/libcrypto-shlib-p12_attr.d fuzz/ml-dsa-test-bin-ml-dsa.d \
-     ssl/libssl-lib-bio_ssl.d crypto/evp/libcrypto-shlib-pmeth_gn.d \
-     crypto/comp/libcrypto-lib-comp_err.d \
-     crypto/store/libcrypto-shlib-store_init.d \
-     crypto/rsa/libcrypto-lib-rsa_x931g.d fuzz/v3name-test-bin-v3name.d \
-     crypto/rand/libcrypto-lib-rand_pool.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_cbc_hmac_sha.d \
-     test/poly1305_internal_test-bin-poly1305_internal_test.d \
-     ssl/record/methods/libcommon-lib-tls_pad.d \
-     crypto/asn1/libcrypto-shlib-x_bignum.d \
-     crypto/x509/libcrypto-lib-x509aset.d \
-     providers/common/libcommon-lib-provider_ctx.d \
-     crypto/evp/libcrypto-shlib-mac_meth.d apps/openssl-bin-pkeyparam.d \
-     test/bio_prefix_text-bin-bio_prefix_text.d \
-     crypto/evp/libcrypto-lib-dh_ctrl.d \
-     ssl/statem/libssl-lib-extensions_clnt.d \
-     crypto/libcrypto-lib-initthread.d crypto/evp/libcrypto-shlib-ec_ctrl.d \
-     crypto/async/arch/libcrypto-lib-async_posix.d \
-     test/evp_pkey_provided_test-bin-evp_pkey_provided_test.d \
-     crypto/property/libcrypto-shlib-property_err.d \
-     test/shlibloadtest-bin-shlibloadtest.d \
-     crypto/evp/libcrypto-shlib-e_chacha20_poly1305.d \
-     crypto/err/libcrypto-shlib-err_prn.d \
-     crypto/x509/libcrypto-shlib-v3_sxnet.d \
-     crypto/modes/libcrypto-lib-ctr128.d \
-     providers/common/der/libcommon-lib-der_ml_dsa_gen.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_gcm_siv_hw.d \
-     crypto/cms/libcrypto-shlib-cms_kari.d \
-     test/punycode_test-bin-punycode_test.d \
-     providers/implementations/rands/libdefault-lib-drbg_hash.d \
-     crypto/rsa/libcrypto-shlib-rsa_sp800_56b_gen.d \
-     test/evp_kdf_test-bin-evp_kdf_test.d \
-     crypto/ec/curve448/libcrypto-shlib-scalar.d \
-     crypto/asn1/libcrypto-shlib-a_print.d \
-     crypto/dh/libcrypto-shlib-dh_group_params.d apps/openssl-bin-dgst.d \
-     test/zuc_internal_test-bin-zuc_internal_test.d \
-     crypto/x509/libcrypto-shlib-pcy_tree.d \
-     crypto/hpke/libcrypto-shlib-hpke.d crypto/des/libcrypto-lib-set_key.d \
-     crypto/dsa/libcrypto-lib-dsa_ameth.d apps/openssl-bin-gendsa.d \
-     crypto/sha/libcrypto-shlib-sha1dgst.d test/dsatest-bin-dsatest.d \
-     providers/implementations/digests/libdefault-lib-sha3_prov.d \
-     apps/lib/libapps-lib-log.d crypto/pkcs12/libcrypto-lib-p12_add.d \
-     providers/common/der/libcommon-lib-der_rsa_key.d \
-     crypto/pkcs12/libcrypto-shlib-p12_add.d \
-     crypto/des/libcrypto-shlib-ofb_enc.d \
-     ssl/record/methods/libssl-shlib-dtls_meth.d \
-     crypto/ocsp/libcrypto-lib-ocsp_ext.d engines/afalg-dso-e_afalg.d \
-     providers/libcrypto-shlib-defltprov.d \
-     crypto/rsa/libcrypto-shlib-rsa_none.d ssl/libssl-lib-ssl_utst.d \
-     crypto/pem/libcrypto-shlib-pem_pkey.d \
-     crypto/rsa/libcrypto-shlib-rsa_depr.d \
-     crypto/dsa/libcrypto-shlib-dsa_ameth.d apps/lib/uitest-bin-apps_ui.d \
-     crypto/ec/libcrypto-shlib-ecp_smpl.d \
-     crypto/asn1/libcrypto-lib-asn_moid.d \
-     crypto/ec/curve448/libcrypto-lib-eddsa.d \
-     crypto/dsa/libcrypto-lib-dsa_sign.d fuzz/bndiv-test-bin-test-corpus.d \
-     crypto/evp/libcrypto-lib-legacy_sha.d \
-     crypto/evp/libcrypto-shlib-e_eea3.d \
-     crypto/x509/libcrypto-lib-v3_group_ac.d \
-     test/buildtest_c_conf_api-bin-buildtest_conf_api.d \
-     providers/implementations/ciphers/liblegacy-lib-cipher_rc4.d \
-     crypto/ec/libcrypto-lib-ec_kmeth.d crypto/asn1/libcrypto-lib-a_gentm.d \
-     crypto/x509/libcrypto-lib-v3_lib.d crypto/evp/libcrypto-lib-pmeth_gn.d \
-     apps/openssl-bin-fipsinstall.d engines/ossltest-dso-e_ossltest.d \
-     crypto/aes/libcrypto-shlib-aes_cfb.d \
-     crypto/bio/libcrypto-shlib-bf_null.d apps/lib/libapps-lib-columns.d \
-     crypto/engine/libcrypto-lib-eng_init.d \
-     crypto/evp/libcrypto-shlib-exchange.d \
-     providers/implementations/kem/libdefault-lib-mlx_kem.d \
-     crypto/des/libcrypto-shlib-ofb64enc.d \
-     providers/implementations/digests/libdefault-lib-sha2_prov.d \
-     providers/implementations/kdfs/libdefault-lib-pkcs12kdf.d \
-     crypto/libcrypto-lib-threads_win.d \
-     test/evp_skey_test-bin-evp_skey_test.d \
-     crypto/sha/libcrypto-shlib-sha512.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_sm4_xts_hw.d \
-     fuzz/slh-dsa-test-bin-test-corpus.d \
-     crypto/pem/libcrypto-shlib-pem_sign.d \
-     crypto/ts/libcrypto-shlib-ts_rsp_utils.d \
-     test/bio_pw_callback_test-bin-bio_pw_callback_test.d \
-     test/sm2_internal_test-bin-sm2_internal_test.d \
-     test/buildtest_c_aes-bin-buildtest_aes.d \
-     ssl/quic/libssl-shlib-quic_stream_map.d test/igetest-bin-igetest.d \
-     crypto/evp/libcrypto-shlib-bio_md.d \
-     crypto/dsa/libcrypto-shlib-dsa_gen.d \
-     crypto/sha/libcrypto-lib-sha1_one.d ssl/libssl-shlib-ssl_ciph.d \
-     test/ca_internals_test-bin-ca_internals_test.d \
-     test/helpers/tls13groupselection_test-bin-ssltestlib.d \
-     crypto/pkcs12/libcrypto-shlib-p12_decr.d \
-     crypto/des/libcrypto-shlib-cfb64enc.d fuzz/asn1-test-bin-fuzz_rand.d \
-     crypto/buffer/libcrypto-lib-buf_err.d \
-     crypto/ec/libcrypto-shlib-ec_asn1.d crypto/bn/libcrypto-shlib-bn_rand.d \
-     test/testutil/libtestutil-lib-stanza.d \
-     providers/implementations/signature/libdefault-lib-slh_dsa_sig.d \
-     crypto/dso/libcrypto-lib-dso_err.d \
-     crypto/engine/libcrypto-lib-eng_all.d \
-     crypto/lhash/libcrypto-shlib-lh_stats.d \
-     crypto/thread/libcrypto-lib-api.d crypto/ts/libcrypto-shlib-ts_err.d \
-     crypto/asn1/libcrypto-lib-x_bignum.d \
-     test/buildtest_c_tsapi-bin-buildtest_tsapi.d \
-     crypto/x509/libcrypto-lib-v3_admis.d \
-     crypto/asn1/libcrypto-shlib-p5_pbe.d \
-     test/buildtest_c_core_object-bin-buildtest_core_object.d \
-     crypto/asn1/libcrypto-shlib-a_strex.d \
-     crypto/pem/libcrypto-lib-pem_x509.d crypto/libcrypto-shlib-ssl_err.d \
-     test/servername_test-bin-servername_test.d \
-     crypto/rsa/libcrypto-lib-rsa_mp.d \
-     crypto/x509/libcrypto-lib-v3_authattid.d \
-     crypto/evp/libcrypto-shlib-asymcipher.d \
-     crypto/sha/libcrypto-lib-sha256.d crypto/err/libcrypto-lib-err_blocks.d \
-     crypto/des/libcrypto-shlib-qud_cksm.d \
-     crypto/bio/libcrypto-lib-bf_readbuff.d \
-     test/asn1_encode_test-bin-asn1_encode_test.d \
-     apps/lib/libapps-lib-app_libctx.d crypto/ui/libcrypto-shlib-ui_util.d \
-     test/strtoultest-bin-strtoultest.d \
-     providers/implementations/kdfs/libdefault-lib-kbkdf.d \
-     crypto/crmf/libcrypto-shlib-crmf_err.d \
-     providers/implementations/rands/libdefault-lib-test_rng.d \
-     apps/openssl-bin-rand.d providers/common/libdefault-lib-bio_prov.d \
-     test/afalgtest-bin-afalgtest.d crypto/asn1/libcrypto-lib-d2i_param.d \
-     test/helpers/json_test-bin-ssltestlib.d \
-     crypto/bn/libcrypto-lib-bn_word.d \
-     crypto/rand/libcrypto-shlib-randfile.d \
-     crypto/md5/liblegacy-lib-md5_dgst.d crypto/bn/libcrypto-shlib-bn_gf2m.d \
-     crypto/x509/libcrypto-lib-x509type.d \
-     crypto/x509/libcrypto-shlib-x509_acert.d \
-     crypto/dsa/libcrypto-shlib-dsa_lib.d \
-     crypto/x509/libcrypto-shlib-v3_info.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_sm4.d \
-     crypto/rsa/libcrypto-shlib-rsa_ossl.d \
-     crypto/pem/libcrypto-lib-pem_pk8.d ssl/quic/libssl-lib-quic_reactor.d \
-     crypto/x509/libcrypto-shlib-v3_san.d fuzz/client-test-bin-test-corpus.d \
-     crypto/des/libcrypto-shlib-cbc_enc.d apps/lib/libapps-lib-names.d \
-     crypto/libcrypto-lib-sparse_array.d crypto/bio/libcrypto-lib-bss_bio.d \
-     providers/implementations/encode_decode/libdefault-lib-decode_epki2pki.d \
-     ssl/libssl-lib-t1_enc.d crypto/pem/libcrypto-shlib-pem_oth.d \
-     test/sm2_mod_test-bin-sm2_mod_test.d \
-     crypto/store/libcrypto-shlib-store_register.d \
-     test/ssl_handshake_rtt_test-bin-ssl_handshake_rtt_test.d \
-     test/buildtest_c_cmp_util-bin-buildtest_cmp_util.d \
-     crypto/libcrypto-lib-provider.d crypto/modes/libcrypto-lib-ofb128.d \
-     ssl/quic/libssl-lib-quic_channel.d ssl/statem/libssl-shlib-statem.d \
-     crypto/x509/libcrypto-lib-x509_req.d \
-     crypto/bio/libcrypto-lib-bio_sock.d \
-     ssl/quic/libssl-shlib-quic_rstream.d \
-     providers/implementations/signature/libdefault-lib-dsa_sig.d \
-     crypto/asn1/libcrypto-shlib-a_gentm.d \
-     crypto/ct/libcrypto-shlib-ct_b64.d crypto/des/libcrypto-lib-cfb_enc.d \
-     crypto/ct/libcrypto-shlib-ct_sct_ctx.d \
-     crypto/evp/libcrypto-shlib-kdf_meth.d \
-     crypto/evp/libcrypto-lib-e_wbsm4_wsise.d \
-     crypto/asn1/libcrypto-shlib-a_verify.d \
-     fuzz/hashtable-test-bin-fuzz_rand.d \
-     ssl/record/methods/libssl-lib-tls_common.d \
-     providers/common/der/libcommon-lib-der_rsa_gen.d \
-     crypto/libcrypto-shlib-quic_vlint.d \
-     test/helpers/quic_srt_gen_test-bin-noisydgrambio.d \
-     crypto/bio/libcrypto-shlib-bf_nbio.d \
-     test/cmp_vfy_test-bin-cmp_vfy_test.d \
-     crypto/pkcs7/libcrypto-lib-pk7_asn1.d \
-     test/ciphername_test-bin-ciphername_test.d \
-     crypto/x509/libcrypto-shlib-t_x509.d \
-     test/provider_pkey_test-bin-provider_pkey_test.d \
-     test/helpers/ssl_handshake_rtt_test-bin-ssltestlib.d \
-     providers/common/der/libcommon-lib-der_ecx_key.d \
-     ssl/quic/libssl-shlib-quic_ackm.d crypto/des/libcrypto-shlib-ecb3_enc.d \
-     crypto/cmac/libcrypto-lib-cmac.d crypto/engine/libcrypto-lib-tb_dh.d \
-     apps/openssl-bin-pkcs12.d crypto/x509/libcrypto-shlib-pcy_node.d \
-     crypto/bn/libcrypto-lib-bn_recp.d \
-     test/helpers/cmp_asn_test-bin-cmp_testlib.d \
-     crypto/ec/curve448/arch_64/libcrypto-lib-f_impl64.d \
-     test/evp_extra_test-bin-evp_extra_test.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_ocb_hw.d \
-     providers/implementations/kem/libtemplate-lib-template_kem.d \
-     crypto/bn/libcrypto-lib-bn_err.d test/v3nametest-bin-v3nametest.d \
-     crypto/x509/libcrypto-shlib-x509_v3.d \
-     crypto/evp/libcrypto-lib-exchange.d crypto/evp/libcrypto-shlib-digest.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_zuc_eea3_hw.d \
-     test/aesgcmtest-bin-aesgcmtest.d \
-     test/defltfips_test-bin-defltfips_test.d \
-     ssl/quic/libssl-lib-quic_sf_list.d \
-     crypto/pkcs12/libcrypto-shlib-p12_init.d \
-     crypto/err/libcrypto-lib-err_save.d crypto/libcrypto-shlib-defaults.d \
-     providers/implementations/keymgmt/libdefault-lib-ec_kmgmt.d \
-     test/buildtest_c_self_test-bin-buildtest_self_test.d \
-     crypto/libcrypto-lib-param_build.d ssl/quic/libssl-lib-quic_wire_pkt.d \
-     providers/implementations/ciphers/libcommon-lib-ciphercommon.d \
-     ssl/quic/libssl-lib-quic_rcidm.d \
-     crypto/engine/libcrypto-shlib-eng_openssl.d \
-     crypto/asn1/libcrypto-shlib-x_spki.d \
-     crypto/bn/libcrypto-shlib-bn_blind.d \
-     crypto/slh_dsa/libcrypto-lib-slh_dsa.d \
-     crypto/cms/libcrypto-lib-cms_ess.d \
-     test/helpers/tls13ccstest-bin-ssltestlib.d \
-     crypto/libcrypto-lib-ssl_err.d crypto/ec/libcrypto-shlib-ecx_meth.d \
-     test/cmsapitest-bin-cmsapitest.d crypto/ec/libcrypto-lib-ecdsa_sign.d \
-     crypto/async/libcrypto-shlib-async_wait.d \
-     crypto/slh_dsa/libcrypto-shlib-slh_dsa.d \
-     providers/common/libdefault-lib-securitycheck_default.d \
-     ssl/libssl-lib-ssl_init.d crypto/md5/libcrypto-lib-md5_one.d \
-     crypto/cmp/libcrypto-shlib-cmp_asn.d \
-     providers/implementations/signature/libdefault-lib-ml_dsa_sig.d \
-     crypto/property/libcrypto-shlib-property_query.d \
-     test/testutil/libtestutil-lib-compare.d \
-     crypto/bn/libcrypto-lib-bn_mod.d crypto/http/libcrypto-lib-http_err.d \
-     crypto/des/libcrypto-lib-cbc_enc.d \
-     crypto/libcrypto-shlib-provider_conf.d crypto/libcrypto-shlib-time.d \
-     crypto/store/libcrypto-shlib-store_meth.d \
-     crypto/x509/libcrypto-lib-v3_ia5.d crypto/bn/libcrypto-shlib-bn_recp.d \
-     crypto/pem/libcrypto-lib-pem_pkey.d crypto/libcrypto-lib-o_str.d \
-     test/gmdifftest-bin-gmdifftest.d crypto/x509/libcrypto-shlib-x509_def.d \
-     fuzz/decoder-test-bin-test-corpus.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_xts_fips.d \
-     crypto/pkcs12/libcrypto-shlib-p12_mutl.d \
-     ssl/quic/libssl-shlib-quic_statm.d crypto/rsa/libcrypto-lib-rsa_depr.d \
-     fuzz/ml-dsa-test-bin-test-corpus.d \
-     crypto/engine/libcrypto-shlib-eng_pkey.d \
-     crypto/ts/libcrypto-lib-ts_req_utils.d fuzz/decoder-test-bin-decoder.d \
-     crypto/des/libcrypto-shlib-des_enc.d \
-     crypto/x509/libcrypto-lib-v3_single_use.d \
-     crypto/x509/libcrypto-lib-v3_rolespec.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_chacha20_hw.d \
-     ssl/libssl-lib-d1_msg.d crypto/libcrypto-shlib-trace.d \
-     crypto/conf/libcrypto-shlib-conf_mod.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_sm4_gcm_hw.d \
-     test/ssl_cert_table_internal_test-bin-ssl_cert_table_internal_test.d \
-     crypto/asn1/libcrypto-lib-asn1_err.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes.d \
-     crypto/x509/libcrypto-lib-v3_crld.d \
-     test/buildtest_c_ml_kem-bin-buildtest_ml_kem.d \
-     ssl/quic/libssl-shlib-qlog_event_helpers.d \
-     test/bio_meth_test-bin-bio_meth_test.d \
-     providers/implementations/encode_decode/libdefault-lib-ml_common_codecs.d \
-     crypto/ec/libcrypto-lib-ecdsa_vrf.d crypto/evp/libcrypto-lib-p_seal.d \
-     crypto/comp/libcrypto-shlib-c_zlib.d \
-     crypto/dsa/libcrypto-shlib-dsa_asn1.d ssl/libssl-lib-pqueue.d \
-     test/bntest-bin-bntest.d \
-     crypto/encode_decode/libcrypto-shlib-decoder_pkey.d \
-     crypto/rsa/libcrypto-lib-rsa_err.d crypto/asn1/libcrypto-lib-x_sig.d \
-     crypto/evp/libcrypto-lib-m_sigver.d crypto/x509/libcrypto-shlib-x_req.d \
-     crypto/x509/libcrypto-shlib-v3_no_rev_avail.d \
-     crypto/bn/libcrypto-lib-bn_print.d apps/openssl-bin-asn1parse.d \
-     providers/implementations/kdfs/libdefault-lib-wbsm4kdf.d \
-     crypto/des/liblegacy-lib-fcrypt_b.d \
-     providers/common/libdefault-lib-capabilities.d \
-     crypto/rsa/libcrypto-shlib-rsa_x931.d \
-     crypto/evp/libcrypto-lib-e_wbsm4_xiaolai.d apps/openssl-bin-storeutl.d \
-     crypto/asn1/libcrypto-lib-a_d2i_fp.d \
-     crypto/dso/libcrypto-shlib-dso_win32.d ssl/quic/libssl-shlib-qlog.d \
-     crypto/cms/libcrypto-lib-cms_dd.d \
-     crypto/asn1/libcrypto-shlib-a_i2d_fp.d \
-     ssl/libssl-shlib-ssl_rsa_legacy.d crypto/rsa/libcrypto-lib-rsa_none.d \
-     crypto/evp/libcrypto-shlib-e_xcbc_d.d \
-     test/helpers/cmp_status_test-bin-cmp_testlib.d \
-     crypto/x509/libcrypto-lib-v3_audit_id.d ssl/quic/libssl-lib-qlog.d \
-     crypto/sm2/libcrypto-shlib-sm2_err.d \
-     crypto/des/libcrypto-shlib-xcbc_enc.d \
-     crypto/x509/libcrypto-lib-x_ietfatt.d \
-     ssl/quic/libssl-lib-quic_rstream.d \
-     crypto/engine/libcrypto-lib-tb_asnmth.d \
-     crypto/evp/libcrypto-lib-pmeth_lib.d crypto/bn/libcrypto-lib-bn_gf2m.d \
-     crypto/rsa/libcrypto-lib-rsa_pss.d \
-     crypto/rsa/libcrypto-shlib-rsa_ameth.d ssl/quic/libssl-shlib-quic_cfq.d \
-     crypto/ec/curve448/libcrypto-lib-scalar.d \
-     crypto/evp/libcrypto-shlib-e_rc5.d \
-     crypto/cms/libcrypto-shlib-cms_asn1.d crypto/evp/libcrypto-lib-e_eea3.d \
-     crypto/dsa/libcrypto-shlib-dsa_key.d test/rsa_mp_test-bin-rsa_mp_test.d \
-     crypto/ct/libcrypto-lib-ct_prn.d crypto/des/libcrypto-shlib-cfb_enc.d \
-     test/testutil/libtestutil-lib-options.d \
-     test/buildtest_c_byteorder-bin-buildtest_byteorder.d \
-     fuzz/quic-srtm-test-bin-fuzz_rand.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_sm4_gcm.d \
-     test/quic_ackm_test-bin-cc_dummy.d crypto/rsa/libcrypto-lib-rsa_prn.d \
-     crypto/asn1/libcrypto-shlib-asn1_parse.d \
-     providers/implementations/rands/libdefault-lib-seed_src.d \
-     crypto/aes/libcrypto-shlib-aes_misc.d \
-     test/memleaktest-bin-memleaktest.d \
-     crypto/x509/libcrypto-lib-v3_timespec.d \
-     test/bio_core_test-bin-bio_core_test.d \
-     crypto/x509/libcrypto-lib-x509_vfy.d \
-     crypto/evp/libcrypto-shlib-evp_enc.d \
-     crypto/bn/libcrypto-shlib-bn_const.d \
-     crypto/rsa/libcrypto-shlib-rsa_chk.d \
-     crypto/store/libcrypto-shlib-store_err.d \
-     test/testutil/libtestutil-lib-main.d \
-     ssl/record/methods/libssl-shlib-ssl3_cbc.d \
-     crypto/ct/libcrypto-shlib-ct_log.d crypto/bn/libcrypto-shlib-bn_srp.d \
-     crypto/des/libcrypto-lib-fcrypt.d \
-     test/helpers/cmp_msg_test-bin-cmp_testlib.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_chacha20_poly1305.d \
-     crypto/bn/libcrypto-lib-bn_kron.d \
-     crypto/ec/curve448/libcrypto-lib-curve448_tables.d \
-     test/testutil/libtestutil-lib-cb.d ssl/quic/libssl-shlib-quic_types.d \
-     crypto/tsapi/libcrypto-lib-tsapi_lib.d test/sslapitest-bin-sslapitest.d \
-     crypto/libcrypto-lib-cversion.d \
-     crypto/evp/libcrypto-lib-e_chacha20_poly1305.d \
-     crypto/x509/libcrypto-shlib-by_file.d \
-     crypto/bio/libcrypto-shlib-bio_sock.d ssl/libssl-shlib-ssl_sess.d \
-     fuzz/ml-kem-test-bin-ml-kem.d crypto/ct/libcrypto-lib-ct_sct_ctx.d \
-     crypto/x509/libcrypto-lib-pcy_data.d crypto/ec/libcrypto-lib-eck_prn.d \
-     crypto/ec/libcrypto-shlib-ecp_nist.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_chacha20.d \
-     crypto/asn1/libcrypto-shlib-d2i_pu.d \
-     crypto/ffc/libcrypto-shlib-ffc_params.d \
-     providers/implementations/ciphers/liblegacy-lib-cipher_desx.d \
-     crypto/x509/libcrypto-shlib-pcy_lib.d \
-     crypto/des/libcrypto-lib-ofb_enc.d \
-     crypto/evp/libcrypto-shlib-e_wbsm4_wsise.d \
-     crypto/engine/libcrypto-lib-eng_ctrl.d \
-     crypto/x509/libcrypto-lib-v3_pci.d crypto/libcrypto-shlib-o_init.d \
-     crypto/dh/libcrypto-lib-dh_rfc5114.d \
-     crypto/cmp/libcrypto-shlib-cmp_protect.d \
-     test/quicapitest-bin-quicapitest.d apps/openssl-bin-ciphers.d \
-     crypto/asn1/libcrypto-lib-asn_pack.d \
-     crypto/http/libcrypto-lib-http_client.d \
-     crypto/ffc/libcrypto-shlib-ffc_backend.d \
-     crypto/evp/libcrypto-shlib-evp_key.d ssl/quic/libssl-lib-quic_impl.d \
-     apps/openssl-bin-req.d \
-     providers/implementations/digests/libdefault-lib-sm3_prov.d \
-     providers/implementations/rands/libdefault-lib-drbg.d \
-     crypto/sm2/libcrypto-shlib-sm2_sign.d \
-     test/ssl_ctx_test-bin-ssl_ctx_test.d crypto/ec/libcrypto-lib-ec_mult.d \
-     ssl/libssl-shlib-t1_enc.d crypto/cms/libcrypto-shlib-cms_sd.d \
-     providers/implementations/storemgmt/libdefault-lib-file_store_any2obj.d \
-     crypto/cmp/libcrypto-lib-cmp_status.d \
-     crypto/err/libcrypto-shlib-err_all_legacy.d \
-     crypto/evp/libcrypto-lib-pmeth_check.d \
-     test/provider_fallback_test-bin-provider_fallback_test.d \
-     crypto/libcrypto-shlib-params_from_text.d \
-     crypto/evp/libcrypto-lib-encode.d \
-     crypto/bn/asm/libcrypto-lib-x86_64-gcc.d \
-     crypto/sm2/libcrypto-shlib-sm2_key.d \
-     test/helpers/quic_newcid_test-bin-quictestlib.d \
-     crypto/store/libcrypto-shlib-store_strings.d \
-     crypto/bn/libcrypto-shlib-bn_sqr.d crypto/evp/libcrypto-lib-evp_enc.d \
-     crypto/bio/libcrypto-lib-bio_meth.d \
-     crypto/pkcs7/libcrypto-shlib-pk7_mime.d \
-     crypto/engine/libcrypto-shlib-eng_ctrl.d \
-     crypto/asn1/libcrypto-lib-tasn_dec.d \
-     ssl/quic/libssl-lib-quic_thread_assist.d \
-     crypto/modes/libcrypto-lib-gcm128.d crypto/dh/libcrypto-shlib-dh_asn1.d \
-     fuzz/dtlsserver-test-bin-test-corpus.d \
-     crypto/evp/libcrypto-shlib-e_des3.d \
-     test/modes_internal_test-bin-modes_internal_test.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_ccm.d \
-     crypto/des/liblegacy-lib-des_enc.d \
-     crypto/property/libcrypto-shlib-property.d \
-     crypto/aes/libcrypto-lib-aes_ofb.d \
-     test/buildtest_c_indicator-bin-buildtest_indicator.d \
-     fuzz/dtlsclient-test-bin-test-corpus.d crypto/evp/libcrypto-shlib-kem.d \
-     crypto/dsa/libcrypto-lib-dsa_prn.d crypto/ct/libcrypto-lib-ct_policy.d \
-     test/buildtest_c_store-bin-buildtest_store.d \
-     ssl/quic/libssl-lib-quic_record_util.d \
-     crypto/libcrypto-lib-threads_pthread.d \
-     crypto/ec/libcrypto-shlib-ec_check.d crypto/evp/libcrypto-lib-evp_err.d \
-     ssl/rio/libssl-shlib-poll_immediate.d ssl/libssl-lib-d1_srtp.d \
-     crypto/x509/libcrypto-shlib-v3err.d crypto/libcrypto-shlib-o_str.d \
-     crypto/bio/libcrypto-shlib-bf_lbuf.d crypto/evp/libcrypto-lib-bio_md.d \
-     test/evp_pkey_ctx_new_from_name-bin-evp_pkey_ctx_new_from_name.d \
-     apps/lib/ca_internals_test-bin-app_libctx.d \
-     test/tls13secretstest-bin-tls13secretstest.d \
-     fuzz/quic-rcidm-test-bin-quic-rcidm.d \
-     crypto/x509/libcrypto-shlib-v3_audit_id.d ssl/libssl-shlib-s3_enc.d \
-     crypto/x509/libcrypto-shlib-x509cset.d \
-     crypto/kdf/libcrypto-lib-kdf_err.d ssl/quic/libssl-lib-quic_demux.d \
-     crypto/cms/libcrypto-lib-cms_ec.d crypto/pkcs12/libcrypto-lib-p12_p8d.d \
-     test/buildtest_c_sslerr_legacy-bin-buildtest_sslerr_legacy.d \
-     crypto/ts/libcrypto-lib-ts_rsp_sign.d \
-     crypto/evp/libcrypto-shlib-s_lib.d crypto/x509/libcrypto-lib-x_x509a.d \
-     crypto/ocsp/libcrypto-lib-ocsp_srv.d fuzz/asn1-test-bin-asn1.d \
-     test/quic_srt_gen_test-bin-quic_srt_gen_test.d \
-     crypto/modes/libcrypto-shlib-xts128.d \
-     fuzz/quic-lcidm-test-bin-test-corpus.d apps/openssl-bin-ecparam.d \
-     test/buildtest_c_dh-bin-buildtest_dh.d \
-     crypto/dsa/libcrypto-lib-dsa_backend.d \
-     crypto/bn/libcrypto-lib-bn_sqrt.d crypto/libcrypto-lib-uid.d \
-     crypto/pkcs7/libcrypto-lib-bio_pk7.d \
-     crypto/pkcs12/libcrypto-lib-p12_npas.d \
-     crypto/ml_dsa/libcrypto-lib-ml_dsa_matrix.d \
-     crypto/x509/libcrypto-shlib-v3_timespec.d \
-     crypto/ess/libcrypto-shlib-ess_err.d \
-     crypto/pkcs12/libcrypto-lib-p12_asn.d \
-     test/threadstest-bin-threadstest.d ssl/libssl-lib-ssl_cert.d \
-     crypto/bn/libcrypto-lib-bn_exp2.d \
-     crypto/http/libcrypto-shlib-http_client.d apps/openssl-bin-speed.d \
-     test/buildtest_c_engine-bin-buildtest_engine.d \
-     crypto/engine/libcrypto-shlib-eng_rdrand.d \
-     crypto/ffc/libcrypto-shlib-ffc_params_validate.d \
-     crypto/cms/libcrypto-lib-cms_cd.d test/p_minimal-dso-p_minimal.d \
-     test/helpers/asynciotest-bin-ssltestlib.d \
-     crypto/ec/curve448/libcrypto-shlib-curve448_tables.d \
-     test/srptest-bin-srptest.d crypto/asn1/libcrypto-shlib-x_long.d \
-     test/buildtest_c_conftypes-bin-buildtest_conftypes.d \
-     apps/lib/libapps-lib-opt.d crypto/x509/libcrypto-shlib-x509_vpm.d \
-     test/quic_wire_test-bin-quic_wire_test.d \
-     providers/implementations/keymgmt/libdefault-lib-dh_kmgmt.d \
-     crypto/dh/libcrypto-shlib-dh_err.d apps/openssl-bin-genrsa.d \
-     providers/implementations/keymgmt/libdefault-lib-mac_legacy_kmgmt.d \
-     crypto/evp/libcrypto-lib-p_sign.d crypto/sha/libcrypto-lib-sha1dgst.d \
-     crypto/rsa/libcrypto-lib-rsa_meth.d crypto/dsa/libcrypto-lib-dsa_vrf.d \
-     test/helpers/quicapitest-bin-ssltestlib.d \
-     crypto/ui/libcrypto-shlib-ui_null.d \
-     crypto/rsa/libcrypto-shlib-rsa_pmeth.d \
-     test/evp_extra_test2-bin-tls-provider.d \
-     crypto/rsa/libcrypto-lib-rsa_pk1.d fuzz/smime-test-bin-test-corpus.d \
-     crypto/objects/libcrypto-lib-obj_dat.d \
-     providers/implementations/digests/libcommon-lib-digestcommon.d \
-     fuzz/quic-server-test-bin-quic-server.d \
-     providers/implementations/kdfs/libdefault-lib-scrypt.d \
-     crypto/aes/libcrypto-shlib-aes_ecb.d crypto/libcrypto-lib-ebcdic.d \
-     crypto/ml_dsa/libcrypto-shlib-ml_dsa_encoders.d \
-     crypto/bn/libcrypto-lib-bn_intern.d \
-     crypto/x509/libcrypto-lib-x509_acert.d \
-     ssl/record/libssl-lib-rec_layer_d1.d \
-     crypto/x509/libcrypto-lib-v3_asid.d crypto/evp/libcrypto-lib-p_dec.d \
-     crypto/dh/libcrypto-lib-dh_asn1.d \
-     test/buildtest_c_evp-bin-buildtest_evp.d \
-     providers/implementations/encode_decode/libdefault-lib-decode_der2key.d \
-     crypto/bio/libcrypto-shlib-bf_readbuff.d \
-     crypto/x509/libcrypto-lib-v3_prn.d crypto/rsa/libcrypto-shlib-rsa_pk1.d \
-     crypto/asn1/asn1_time_test-bin-a_time.d \
-     crypto/rsa/libcrypto-shlib-rsa_sign.d \
-     crypto/x509/libcrypto-shlib-by_store.d \
-     apps/lib/libapps-lib-apps_opt_printf.d \
-     crypto/engine/libcrypto-lib-eng_table.d \
-     crypto/evp/libcrypto-lib-asymcipher.d \
-     crypto/evp/libcrypto-shlib-e_aes.d crypto/bio/libcrypto-lib-bio_err.d \
-     providers/libcrypto-lib-defltprov.d ssl/libssl-lib-ssl_ciph.d \
-     crypto/ec/libcrypto-lib-ecp_meth.d \
-     crypto/engine/libcrypto-shlib-eng_init.d \
-     providers/implementations/kdfs/libdefault-lib-pbkdf2_fips.d \
-     crypto/libcrypto-shlib-provider.d fuzz/ct-test-bin-ct.d \
-     crypto/evp/libcrypto-lib-mac_lib.d ssl/libssl-shlib-d1_srtp.d \
-     crypto/ec/curve448/libcrypto-shlib-f_generic.d \
-     crypto/thread/libcrypto-shlib-arch.d \
-     crypto/asn1/libcrypto-shlib-asn_moid.d \
-     crypto/thread/arch/libssl-shlib-thread_win.d \
-     crypto/cmp/libcrypto-shlib-cmp_ctx.d crypto/lhash/libcrypto-lib-lhash.d \
-     crypto/ui/libcrypto-lib-ui_openssl.d \
-     ssl/record/methods/libssl-lib-ssl3_meth.d \
-     test/sslcorrupttest-bin-sslcorrupttest.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_cbc_hmac_sha256_hw.d \
-     crypto/rsa/libcrypto-shlib-rsa_mp.d ssl/libssl-lib-t1_lib.d \
-     crypto/dh/libcrypto-lib-dh_err.d \
-     test/moduleloadtest-bin-simpledynamic.d \
-     test/helpers/cmp_hdr_test-bin-cmp_testlib.d \
-     test/clienthellotest-bin-clienthellotest.d \
-     crypto/conf/libcrypto-lib-conf_lib.d \
-     test/buildtest_c_rsa-bin-buildtest_rsa.d \
-     test/bio_base64_test-bin-bio_base64_test.d \
-     crypto/x509/libcrypto-lib-x_crl.d crypto/des/libcrypto-lib-cfb64ede.d \
-     crypto/libcrypto-shlib-uid.d crypto/aes/libcrypto-shlib-aes_wrap.d \
-     crypto/ffc/libcrypto-shlib-ffc_params_generate.d \
-     crypto/libcrypto-shlib-passphrase.d crypto/x509/libcrypto-lib-x_req.d \
-     test/evp_test-bin-evp_test.d \
-     test/helpers/endecode_test-bin-predefined_dhparams.d \
-     crypto/x509/libcrypto-lib-x509_vpm.d \
-     test/buildtest_c_configuration-bin-buildtest_configuration.d \
-     test/property_test-bin-property_test.d \
-     providers/implementations/macs/libdefault-lib-cmac_prov.d \
-     crypto/evp/libcrypto-shlib-ec_support.d \
-     providers/implementations/rands/libdefault-lib-drbg_ctr.d \
-     crypto/evp/libcrypto-lib-m_null.d \
-     crypto/ocsp/libcrypto-shlib-ocsp_prn.d \
-     crypto/x509/libcrypto-shlib-by_dir.d \
-     crypto/ec/libcrypto-shlib-ec_pmeth.d crypto/ui/libcrypto-lib-ui_null.d \
-     crypto/x509/libcrypto-shlib-v3_tlsf.d \
-     providers/implementations/keymgmt/libdefault-lib-mlx_kmgmt.d \
-     providers/implementations/encode_decode/libdefault-lib-encode_key2text.d \
-     crypto/thread/libssl-shlib-arch.d crypto/evp/libcrypto-shlib-e_sm4.d \
-     test/helpers/sslapitest-bin-ssltestlib.d \
-     crypto/x509/libcrypto-lib-v3_sda.d fuzz/client-test-bin-client.d \
-     fuzz/bignum-test-bin-test-corpus.d \
-     test/helpers/dtlstest-bin-ssltestlib.d \
-     crypto/evp/libcrypto-shlib-keymgmt_meth.d \
-     crypto/asn1/libcrypto-lib-asn1_parse.d \
-     crypto/x509/libcrypto-lib-v3_cpols.d \
-     test/byteorder_test-bin-byteorder_test.d \
-     crypto/asn1/libcrypto-shlib-asn_pack.d \
-     providers/liblegacy-lib-prov_running.d \
-     crypto/rsa/libcrypto-lib-rsa_mp_names.d \
-     crypto/pkcs12/libcrypto-shlib-p12_p8e.d \
-     crypto/pem/libcrypto-lib-pem_lib.d \
-     crypto/cmp/libcrypto-shlib-cmp_client.d \
-     crypto/evp/libcrypto-lib-evp_pkey.d crypto/dh/libcrypto-shlib-dh_kdf.d \
-     crypto/bn/libcrypto-shlib-bn_div.d \
-     providers/implementations/macs/libdefault-lib-eia3_prov.d \
-     crypto/asn1/libcrypto-shlib-tasn_typ.d \
-     crypto/bio/libcrypto-lib-bss_fd.d crypto/bn/libcrypto-lib-bn_mont.d \
-     test/recordlentest-bin-recordlentest.d \
-     crypto/md5/libcrypto-shlib-md5_sha1.d \
-     crypto/des/libcrypto-shlib-cbc_cksm.d crypto/libcrypto-lib-o_dir.d \
-     apps/openssl-bin-progs.d ssl/libssl-lib-s3_lib.d \
-     crypto/x509/libcrypto-lib-x509spki.d crypto/libcrypto-lib-quic_vlint.d \
-     providers/implementations/keymgmt/libdefault-lib-ml_kem_kmgmt.d \
-     test/asn1_internal_test-bin-asn1_internal_test.d \
-     crypto/asn1/libcrypto-shlib-t_spki.d \
-     test/buildtest_c_zkp_gadget-bin-buildtest_zkp_gadget.d \
-     crypto/libcrypto-lib-cpt_err.d crypto/libcrypto-lib-o_time.d \
-     test/buildtest_c_core_dispatch-bin-buildtest_core_dispatch.d \
-     fuzz/pem-test-bin-test-corpus.d \
-     test/buildtest_c_decoder-bin-buildtest_decoder.d \
-     crypto/des/libcrypto-lib-ecb_enc.d crypto/asn1/libcrypto-lib-bio_asn1.d \
-     crypto/asn1/libcrypto-lib-x_pkey.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_aes_xts.d \
-     crypto/slh_dsa/libcrypto-shlib-slh_xmss.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_sm4_ccm.d \
-     test/helpers/quicapitest-bin-noisydgrambio.d \
-     crypto/ffc/libcrypto-lib-ffc_params_generate.d \
-     crypto/x509/libcrypto-shlib-v3_pci.d crypto/bio/libcrypto-lib-bf_nbio.d \
-     crypto/ec/libcrypto-shlib-ecdsa_sign.d \
-     test/pkey_meth_test-bin-pkey_meth_test.d \
-     crypto/bn/libcrypto-lib-bn_sqr.d \
-     crypto/slh_dsa/libcrypto-lib-slh_dsa_key.d \
-     test/helpers/ssl_test-bin-handshake_srp.d \
-     crypto/crmf/libcrypto-shlib-crmf_asn.d \
-     crypto/engine/libcrypto-lib-eng_openssl.d \
-     crypto/engine/libcrypto-shlib-tb_ecpmeth.d \
-     crypto/bio/libcrypto-shlib-bio_print.d \
-     test/helpers/babasslapitest-bin-ssltestlib.d \
-     crypto/ct/libcrypto-lib-ct_log.d test/ectest-bin-ectest.d \
-     providers/implementations/storemgmt/libdefault-lib-file_store.d \
-     ssl/quic/libssl-lib-quic_rx_depack.d \
-     apps/lib/ca_internals_test-bin-app_provider.d \
-     crypto/modes/libcrypto-lib-xts128gb.d \
-     crypto/dso/libcrypto-lib-dso_openssl.d crypto/sm3/libcrypto-lib-sm3.d \
-     ssl/libssl-shlib-ssl_cert.d crypto/x509/libcrypto-lib-v3_info.d \
-     fuzz/slh-dsa-test-bin-fuzz_rand.d \
-     crypto/ec/curve448/libcrypto-lib-f_generic.d \
-     test/ssl_test-bin-ssl_test.d test/bio_dgram_test-bin-bio_dgram_test.d \
-     crypto/thread/arch/libcrypto-lib-thread_win.d \
-     crypto/x509/libcrypto-shlib-x_exten.d crypto/libcrypto-shlib-ebcdic.d \
-     apps/openssl-bin-passwd.d crypto/evp/libcrypto-lib-evp_fetch.d \
-     ssl/libssl-lib-methods.d crypto/evp/libcrypto-shlib-e_wbsm4_xiaolai.d \
-     crypto/sha/libcrypto-shlib-sha256.d \
-     crypto/libcrypto-shlib-indicator_core.d \
-     providers/implementations/kdfs/libdefault-lib-x942kdf.d \
-     crypto/ffc/libcrypto-lib-ffc_key_generate.d \
-     crypto/conf/libcrypto-shlib-conf_sap.d apps/openssl-bin-rehash.d \
-     test/buildtest_c_params-bin-buildtest_params.d \
-     crypto/ec/libcrypto-lib-ec_key.d \
-     test/helpers/json_test-bin-noisydgrambio.d \
-     providers/implementations/ciphers/liblegacy-lib-cipher_desx_hw.d \
-     crypto/evp/libcrypto-lib-e_null.d engines/dasync-dso-e_dasync.d \
-     crypto/bn/libcrypto-shlib-bn_mul.d crypto/ec/libcrypto-lib-ecdh_kdf.d \
-     crypto/asn1/libcrypto-lib-a_bitstr.d \
-     fuzz/quic-srtm-test-bin-test-corpus.d \
-     crypto/engine/libcrypto-shlib-eng_lib.d \
-     crypto/x509/libcrypto-shlib-t_acert.d \
-     crypto/modes/libcrypto-lib-cbc128.d \
-     test/bad_dtls_test-bin-bad_dtls_test.d \
-     test/fips_version_test-bin-fips_version_test.d \
-     fuzz/decoder-test-bin-fuzz_rand.d crypto/ts/libcrypto-shlib-ts_lib.d \
-     crypto/ml_dsa/libcrypto-lib-ml_dsa_encoders.d \
-     providers/implementations/keymgmt/libdefault-lib-rsa_kmgmt.d \
-     providers/implementations/ciphers/liblegacy-lib-cipher_des.d \
-     crypto/pkcs12/libcrypto-shlib-p12_asn.d \
-     crypto/rsa/libcrypto-lib-rsa_oaep.d crypto/cms/libcrypto-lib-cms_asn1.d \
-     crypto/pkcs7/libcrypto-shlib-pk7_attr.d \
-     crypto/x509/libcrypto-shlib-v3_asid.d \
-     crypto/asn1/libcrypto-lib-x_spki.d \
-     test/evp_pkey_dhkem_test-bin-evp_pkey_dhkem_test.d \
-     crypto/libcrypto-shlib-param_build.d crypto/bn/libcrypto-lib-bn_depr.d \
-     crypto/ts/libcrypto-shlib-ts_conf.d \
-     crypto/poly1305/libcrypto-shlib-poly1305.d \
-     crypto/asn1/libcrypto-lib-a_utctm.d \
-     crypto/slh_dsa/libcrypto-lib-slh_fors.d \
-     crypto/asn1/libcrypto-lib-d2i_pr.d \
-     crypto/pkcs12/libcrypto-shlib-p12_crt.d \
-     crypto/modes/libcrypto-shlib-gcm128.d crypto/asn1/libcrypto-lib-x_val.d \
-     crypto/x509/libcrypto-lib-v3_no_rev_avail.d \
-     crypto/rand/libcrypto-lib-prov_seed.d \
-     test/testutil/libtestutil-lib-provider.d \
-     test/buildtest_c_http-bin-buildtest_http.d \
-     fuzz/provider-test-bin-provider.d crypto/x509/libcrypto-lib-x509_meth.d \
-     crypto/dh/libcrypto-shlib-dh_pmeth.d \
-     providers/common/der/libcommon-lib-der_wrap_gen.d \
-     test/sysdefaulttest-bin-sysdefaulttest.d \
-     crypto/dsa/libcrypto-lib-dsa_err.d \
-     test/time_offset_test-bin-time_offset_test.d \
-     crypto/hpke/libcrypto-lib-hpke.d test/buildtest_c_ts-bin-buildtest_ts.d \
-     test/sslbuffertest-bin-sslbuffertest.d \
-     test/slh_dsa_test-bin-slh_dsa_test.d \
-     providers/implementations/ciphers/libcommon-lib-ciphercommon_gcm.d \
-     crypto/asn1/libcrypto-lib-x_algor.d \
-     test/safe_math_test-bin-safe_math_test.d \
-     crypto/bn/asm/libcrypto-shlib-x86_64-gcc.d \
-     crypto/cmp/libcrypto-lib-cmp_server.d \
-     providers/endecode_test-bin-legacyprov.d ssl/libssl-shlib-bio_ssl.d \
-     test/threadstest_fips-bin-threadstest_fips.d fuzz/crl-test-bin-crl.d \
-     crypto/objects/libcrypto-lib-obj_lib.d \
-     crypto/libcrypto-shlib-threads_lib.d fuzz/cmp-test-bin-test-corpus.d \
-     test/pbelutest-bin-pbelutest.d crypto/x509/libcrypto-lib-x_x509.d \
-     crypto/asn1/libcrypto-shlib-a_time.d \
-     crypto/ec/curve448/arch_32/libcrypto-lib-f_impl32.d \
-     crypto/evp/libcrypto-lib-e_xcbc_d.d apps/lib/libapps-lib-tlssrp_depr.d \
-     crypto/x509/libcrypto-lib-t_acert.d \
-     crypto/pem/libcrypto-shlib-pem_pk8.d \
-     crypto/pem/loader_attic-dso-pvkfmt.d \
-     crypto/libcrypto-lib-provider_core.d \
-     providers/implementations/keymgmt/libdefault-lib-ml_dsa_kmgmt.d \
-     crypto/pem/libcrypto-lib-pem_err.d \
-     crypto/asn1/libcrypto-shlib-tasn_utl.d \
-     crypto/asn1/libcrypto-shlib-asn1_lib.d \
-     crypto/rsa/libcrypto-shlib-rsa_mp_names.d \
-     ssl/quic/libssl-shlib-quic_rcidm.d \
-     crypto/ts/libcrypto-shlib-ts_rsp_print.d \
-     crypto/x509/libcrypto-shlib-v3_usernotice.d \
-     test/tls13encryptiontest-bin-tls13encryptiontest.d \
-     crypto/evp/libcrypto-lib-e_sm4.d crypto/evp/libcrypto-shlib-p_open.d \
-     crypto/x509/libcrypto-lib-x509_att.d \
-     crypto/evp/libcrypto-lib-dsa_ctrl.d ssl/quic/libssl-lib-quic_fc.d \
-     crypto/ec/libcrypto-shlib-ec_backend.d crypto/sm4/libcrypto-lib-sm4.d \
-     crypto/bio/libcrypto-shlib-bss_conn.d \
-     ssl/quic/libssl-shlib-quic_demux.d test/asynctest-bin-asynctest.d \
-     test/ext_internal_test-bin-ext_internal_test.d \
-     test/helpers/quic_newcid_test-bin-pktsplitbio.d \
-     crypto/evp/libcrypto-shlib-p_seal.d engines/padlock-dso-e_padlock.d \
-     crypto/bn/libcrypto-shlib-bn_prime.d \
-     crypto/evp/libcrypto-shlib-ctrl_params_translate.d \
-     test/bio_enc_test-bin-bio_enc_test.d \
-     crypto/ec/libcrypto-shlib-ecp_mont.d ssl/quic/libssl-lib-uint_set.d \
-     crypto/x509/libcrypto-shlib-v3_authattid.d \
-     test/cmp_server_test-bin-cmp_server_test.d test/rpktest-bin-rpktest.d \
-     test/tsapi_test-bin-tsapi_test.d \
-     crypto/evp/libcrypto-shlib-e_aes_cbc_hmac_sha1.d \
-     test/evp_xof_test-bin-evp_xof_test.d test/rc5test-bin-rc5test.d \
-     crypto/asn1/libcrypto-shlib-a_digest.d \
-     crypto/ml_dsa/libcrypto-lib-ml_dsa_key_compress.d \
-     crypto/libcrypto-shlib-params.d crypto/rsa/libcrypto-lib-rsa_ameth.d \
-     test/helpers/quicfaultstest-bin-quictestlib.d \
-     crypto/x509/libcrypto-shlib-x509_obj.d crypto/dh/libcrypto-lib-dh_prn.d \
-     providers/common/der/libcommon-lib-der_slh_dsa_key.d \
-     crypto/evp/libcrypto-shlib-dh_support.d \
-     crypto/aes/libcrypto-lib-aes_ecb.d crypto/aes/libcrypto-shlib-aes_ofb.d \
-     crypto/cmp/libcrypto-shlib-cmp_status.d \
-     providers/implementations/ciphers/libdefault-lib-cipher_sm4_ccm_hw.d \
-     crypto/x509/libcrypto-shlib-v3_ncons.d \
-     test/x509_dup_cert_test-bin-x509_dup_cert_test.d \
-     test/bio_callback_test-bin-bio_callback_test.d \
-     ssl/record/methods/libssl-lib-tls_multib.d \
-     crypto/libcrypto-lib-params_from_text.d \
-     crypto/ct/libcrypto-lib-ct_sct.d \
-     crypto/err/libcrypto-shlib-err_blocks.d \
-     crypto/ct/libcrypto-lib-ct_err.d crypto/crmf/libcrypto-lib-crmf_asn.d \
-     crypto/libcrypto-lib-o_syslog.d crypto/ml_kem/libcrypto-lib-ml_kem.d \
-     crypto/sm2/libcrypto-lib-sm2_kmeth.d \
-     crypto/evp/libcrypto-lib-legacy_md5_sha1.d \
-     crypto/evp/libcrypto-shlib-p_legacy.d \
-     test/ml_kem_internal_test-bin-ml_kem_internal_test.d \
-     test/evp_libctx_test-bin-evp_libctx_test.d \
-     crypto/ec/libcrypto-shlib-ec_kmeth.d \
-     crypto/rand/libcrypto-lib-rand_deprecated.d \
-     providers/implementations/kdfs/libdefault-lib-sshkdf.d \
-     test/buildtest_c_srtp-bin-buildtest_srtp.d \
-     crypto/sm2/libcrypto-lib-sm2_crypt.d \
-     providers/common/der/libcommon-lib-der_digests_gen.d \
-     test/pkey_meth_kdf_test-bin-pkey_meth_kdf_test.d \
-     crypto/dh/libcrypto-lib-dh_gen.d \
-     crypto/slh_dsa/libcrypto-lib-slh_wots.d \
-     crypto/aes/libcrypto-lib-aes_misc.d \
-     crypto/bio/libcrypto-shlib-bio_lib.d \
-     providers/implementations/kdfs/libdefault-lib-pbkdf2.d \
-     crypto/dso/libcrypto-lib-dso_win32.d \
-     crypto/evp/libcrypto-shlib-bio_ok.d \
-     test/cmp_client_test-bin-cmp_client_test.d \
-     crypto/evp/libcrypto-shlib-mac_lib.d \
-     test/quic_rcidm_test-bin-quic_rcidm_test.d \
-     test/helpers/quicfaultstest-bin-noisydgrambio.d \
-     crypto/dh/libcrypto-shlib-dh_lib.d crypto/thread/libcrypto-lib-arch.d \
-     test/sha_test-bin-sha_test.d crypto/evp/libcrypto-lib-e_aes.d \
      providers/common/der/libcommon-lib-der_ec_gen.d \
-     crypto/libcrypto-shlib-sparse_array.d fuzz/cms-test-bin-cms.d \
-     test/x509_load_cert_file_test-bin-x509_load_cert_file_test.d \
-     crypto/asn1/libcrypto-shlib-nsseq.d crypto/libcrypto-lib-packet.d \
-     test/versions-bin-versions.d crypto/libcrypto-shlib-threads_win.d \
-     crypto/ec/libcrypto-lib-ecp_nist.d \
-     test/buildtest_c_ossl_typ-bin-buildtest_ossl_typ.d \
-     crypto/rsa/libcrypto-shlib-rsa_crpt.d \
-     crypto/bio/libcrypto-shlib-bss_file.d crypto/libcrypto-shlib-cversion.d \
-     crypto/cms/libcrypto-shlib-cms_pwri.d \
-     crypto/ffc/libcrypto-lib-ffc_backend.d \
-     test/keymgmt_internal_test-bin-keymgmt_internal_test.d \
-     test/buildtest_c_ecdsa-bin-buildtest_ecdsa.d \
-     crypto/evp/libcrypto-lib-bio_b64.d ssl/quic/libssl-lib-quic_tls_api.d \
-     crypto/bn/libcrypto-lib-bn_lib.d crypto/asn1/libcrypto-shlib-t_pkey.d \
-     crypto/ts/libcrypto-lib-ts_req_print.d \
-     crypto/dh/libcrypto-shlib-dh_prn.d crypto/ess/libcrypto-lib-ess_err.d \
-     test/uitest-bin-uitest.d crypto/bio/libcrypto-shlib-bio_meth.d \
-     crypto/asn1/libcrypto-shlib-f_string.d \
-     crypto/bn/libcrypto-lib-bn_blind.d \
-     crypto/pkcs12/libcrypto-shlib-p12_crpt.d \
-     crypto/pem/libcrypto-shlib-pem_lib.d \
-     crypto/conf/libcrypto-lib-conf_err.d \
-     test/quicfaultstest-bin-quicfaultstest.d \
-     ssl/quic/libssl-shlib-quic_rx_depack.d crypto/eia3/libcrypto-lib-eia3.d \
-     crypto/ocsp/libcrypto-lib-ocsp_lib.d \
-     crypto/bio/libcrypto-shlib-bss_null.d \
-     crypto/dsa/libcrypto-lib-dsa_asn1.d \
-     crypto/sm3/libcrypto-shlib-legacy_sm3.d \
-     engines/loader_attic-dso-e_loader_attic.d \
-     fuzz/crl-test-bin-test-corpus.d \
-     crypto/bio/libcrypto-shlib-ossl_core_bio.d \
-     apps/lib/libapps-lib-app_params.d crypto/libcrypto-shlib-threads_none.d \
-     test/helpers/quic_multistream_test-bin-pktsplitbio.d \
-     test/buildtest_c_rc4-bin-buildtest_rc4.d \
-     crypto/asn1/libcrypto-shlib-x_algor.d \
-     crypto/asn1/libcrypto-shlib-a_strnid.d \
-     crypto/des/libcrypto-lib-str2key.d \
-     crypto/x509/libcrypto-shlib-x_ietfatt.d \
-     crypto/modes/libcrypto-lib-cfb128.d \
-     crypto/ml_dsa/libcrypto-shlib-ml_dsa_key_compress.d \
-     crypto/ec/libcrypto-lib-ec_pmeth.d crypto/bio/libcrypto-lib-bss_sock.d \
+     crypto/libcrypto-shlib-o_str.d crypto/rsa/libcrypto-lib-rsa_depr.d \
+     crypto/evp/libcrypto-lib-evp_rand.d \
+     test/buildtest_c_core_object-bin-buildtest_core_object.d \
+     crypto/asn1/libcrypto-lib-d2i_param.d \
+     crypto/dsa/libcrypto-shlib-dsa_sign.d apps/openssl-bin-openssl.d \
+     crypto/srp/libcrypto-lib-srp_vfy.d ssl/quic/libssl-shlib-quic_obj.d \
+     crypto/x509/libcrypto-lib-by_file.d crypto/cmp/libcrypto-lib-cmp_err.d \
      providers/implementations/encode_decode/libdefault-lib-encode_key2any.d \
-     test/p_test-dso-p_test.d crypto/des/libcrypto-shlib-ofb64ede.d \
-     crypto/x509/libcrypto-lib-v3_akeya.d \
-     crypto/ocsp/libcrypto-lib-ocsp_asn.d \
-     crypto/ml_dsa/libcrypto-shlib-ml_dsa_key.d fuzz/x509-test-bin-x509.d \
-     test/enginetest-bin-enginetest.d crypto/crmf/libcrypto-shlib-crmf_pbm.d \
-     test/errtest-bin-errtest.d \
-     crypto/async/arch/libcrypto-shlib-async_posix.d \
-     test/params_api_test-bin-params_api_test.d \
+     crypto/ec/libcrypto-lib-ec_ameth.d \
+     ssl/record/methods/libssl-shlib-tls_multib.d \
+     test/pbelutest-bin-pbelutest.d apps/openssl-bin-engine.d \
+     test/helpers/quic_srt_gen_test-bin-ssltestlib.d \
+     test/rsa_mp_test-bin-rsa_mp_test.d \
+     ssl/record/methods/libssl-lib-ssl3_meth.d \
+     crypto/modes/libcrypto-shlib-ocb128.d \
+     crypto/evp/libcrypto-shlib-e_rc4.d apps/openssl-bin-storeutl.d \
+     ssl/quic/libssl-lib-quic_srtm.d crypto/conf/libcrypto-lib-conf_mall.d \
+     crypto/conf/libcrypto-lib-conf_api.d crypto/dh/libcrypto-shlib-dh_kdf.d \
+     test/cmp_msg_test-bin-cmp_msg_test.d \
+     test/poly1305_internal_test-bin-poly1305_internal_test.d \
+     ssl/record/methods/libssl-lib-tls13_meth.d \
+     providers/implementations/ciphers/libcommon-lib-ciphercommon_gcm_hw.d \
+     crypto/dh/libcrypto-shlib-dh_gen.d \
+     crypto/libcrypto-lib-params_from_text.d \
+     crypto/err/libcrypto-shlib-err_prn.d \
+     crypto/rsa/libcrypto-lib-rsa_mp_names.d ssl/libssl-shlib-s3_enc.d \
+     test/ssl_ctx_test-bin-ssl_ctx_test.d \
+     crypto/pkcs7/libcrypto-lib-pk7_attr.d \
+     ssl/quic/libssl-lib-quic_channel.d \
+     crypto/modes/libcrypto-shlib-ccm128.d \
+     crypto/x509/libcrypto-lib-v3_pku.d \
+     crypto/asn1/libcrypto-shlib-a_d2i_fp.d \
+     test/buildtest_c_rsa-bin-buildtest_rsa.d \
+     crypto/des/liblegacy-lib-des_enc.d crypto/asn1/libcrypto-lib-x_long.d \
+     test/x509_req_test-bin-x509_req_test.d \
      crypto/ct/libcrypto-shlib-ct_oct.d \
-     crypto/rand/libcrypto-shlib-prov_seed.d \
-     crypto/evp/libcrypto-shlib-c_allc.d \
-     crypto/evp/libcrypto-shlib-evp_lib.d \
-     crypto/dso/libcrypto-shlib-dso_dlfcn.d \
-     crypto/evp/libcrypto-shlib-e_aes_cbc_hmac_sha256.d \
-     test/testutil/libtestutil-lib-fake_random.d \
-     crypto/thread/libcrypto-shlib-api.d \
-     providers/implementations/kem/libdefault-lib-kem_util.d \
-     ssl/libssl-shlib-ssl_conf.d \
-     test/helpers/quic_multistream_test-bin-ssltestlib.d \
-     crypto/asn1/ca_internals_test-bin-a_time.d \
-     crypto/evp/libcrypto-lib-e_rc4.d crypto/cms/libcrypto-shlib-cms_io.d \
-     ssl/libssl-lib-tls_srp.d ssl/quic/libssl-lib-quic_types.d \
+     test/testutil/libtestutil-lib-apps_shims.d \
+     crypto/ct/libcrypto-lib-ct_sct_ctx.d \
+     test/provider_pkey_test-bin-fake_rsaprov.d \
+     crypto/ec/libcrypto-lib-ec_oct.d \
+     crypto/encode_decode/libcrypto-lib-encoder_pkey.d \
+     test/hpke_test-bin-hpke_test.d \
+     providers/implementations/keymgmt/libdefault-lib-dsa_kmgmt.d \
+     fuzz/hashtable-test-bin-hashtable.d \
+     crypto/cms/libcrypto-shlib-cms_pwri.d ssl/quic/libssl-lib-quic_trace.d \
+     test/threadstest-bin-threadstest.d \
+     test/quic_record_test-bin-quic_record_test.d \
+     crypto/dh/libcrypto-shlib-dh_group_params.d \
+     crypto/x509/libcrypto-lib-t_crl.d fuzz/pem-test-bin-pem.d \
+     fuzz/decoder-test-bin-fuzz_rand.d crypto/evp/libcrypto-lib-evp_fetch.d \
+     ssl/quic/libssl-shlib-quic_sstream.d \
+     crypto/ec/libcrypto-shlib-ecdsa_ossl.d \
+     crypto/x509/libcrypto-lib-v3_single_use.d \
+     crypto/encode_decode/libcrypto-lib-decoder_err.d \
+     test/errtest-bin-errtest.d \
+     providers/implementations/signature/libdefault-lib-dsa_sig.d \
+     crypto/rsa/libcrypto-lib-rsa_asn1.d crypto/bio/libcrypto-lib-bss_acpt.d \
+     crypto/dsa/libcrypto-shlib-dsa_meth.d crypto/libcrypto-shlib-sleep.d \
+     crypto/x509/libcrypto-shlib-v3_attrmap.d \
+     crypto/bn/libcrypto-lib-bn_exp.d \
+     providers/common/der/libcommon-lib-der_ecx_key.d \
+     test/ec_internal_test-bin-ec_internal_test.d \
+     fuzz/x509-test-bin-fuzz_rand.d crypto/libcrypto-shlib-cpt_err.d \
+     test/buildtest_c_ecdh-bin-buildtest_ecdh.d \
+     crypto/rand/libcrypto-shlib-rand_err.d fuzz/ml-dsa-test-bin-fuzz_rand.d \
+     crypto/ffc/libcrypto-lib-ffc_backend.d \
+     crypto/ffc/libcrypto-lib-ffc_params.d \
+     test/buildtest_c_dtls1-bin-buildtest_dtls1.d \
+     crypto/x509/libcrypto-shlib-v3_akeya.d \
+     providers/implementations/kdfs/libdefault-lib-wbsm4kdf.d \
+     crypto/x509/libcrypto-lib-v3_utl.d fuzz/crl-test-bin-test-corpus.d \
+     test/buildtest_c_tls1-bin-buildtest_tls1.d \
+     apps/lib/libapps-lib-app_libctx.d \
+     crypto/dso/libcrypto-lib-dso_openssl.d \
+     ssl/record/libssl-shlib-rec_layer_d1.d ssl/quic/libssl-lib-quic_wire.d \
+     providers/implementations/keymgmt/libdefault-lib-ecx_kmgmt.d \
+     ssl/rio/libssl-shlib-rio_notifier.d ssl/quic/libssl-lib-quic_sstream.d \
+     crypto/x509/libcrypto-shlib-x509_cmp.d \
+     crypto/dso/libcrypto-shlib-dso_win32.d ssl/libssl-lib-pqueue.d \
+     crypto/ts/libcrypto-lib-ts_req_utils.d \
+     crypto/dsa/libcrypto-shlib-dsa_key.d \
+     crypto/engine/libcrypto-shlib-tb_digest.d \
+     fuzz/quic-rcidm-test-bin-fuzz_rand.d \
+     crypto/ts/libcrypto-shlib-ts_verify_ctx.d \
+     crypto/conf/libcrypto-shlib-conf_mod.d fuzz/decoder-test-bin-decoder.d \
+     providers/common/der/libdefault-lib-der_sm2_key.d \
+     crypto/x509/libcrypto-lib-v3_bcons.d \
+     crypto/pem/libcrypto-shlib-pem_err.d \
+     crypto/encode_decode/libcrypto-shlib-encoder_pkey.d \
+     apps/lib/cmp_client_test-bin-cmp_mock_srv.d \
+     test/quic_client_test-bin-quic_client_test.d apps/openssl-bin-speed.d \
+     ssl/quic/libssl-shlib-quic_rcidm.d crypto/cms/libcrypto-shlib-cms_env.d \
+     apps/openssl-bin-pkeyutl.d \
+     providers/implementations/keymgmt/libdefault-lib-mac_legacy_kmgmt.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_ccm.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_xts.d \
+     crypto/libcrypto-shlib-defaults.d \
+     providers/implementations/macs/libdefault-lib-gmac_prov.d \
+     crypto/bn/libcrypto-shlib-bn_div.d \
+     crypto/pkcs7/libcrypto-shlib-pk7_mime.d \
+     crypto/bio/libcrypto-lib-bf_null.d test/dtlstest-bin-dtlstest.d \
+     providers/libcrypto-shlib-nullprov.d \
+     providers/implementations/kdfs/libdefault-lib-krb5kdf.d \
+     fuzz/acert-test-bin-acert.d crypto/libcrypto-shlib-ctype.d \
+     test/quic_fifd_test-bin-quic_fifd_test.d \
+     crypto/des/libcrypto-shlib-ofb64ede.d \
+     crypto/dh/libcrypto-shlib-dh_key.d \
+     crypto/bn/asm/libcrypto-lib-x86_64-gcc.d \
+     crypto/evp/libcrypto-shlib-asymcipher.d crypto/libcrypto-lib-asn1_dsa.d \
+     crypto/libcrypto-lib-params_idx.d \
+     crypto/async/arch/libcrypto-shlib-async_posix.d \
+     test/helpers/json_test-bin-ssltestlib.d \
+     crypto/x509/libcrypto-lib-x509_def.d fuzz/bndiv-test-bin-test-corpus.d \
+     crypto/x509/libcrypto-shlib-by_file.d \
+     providers/implementations/exchange/libdefault-lib-kdf_exch.d \
+     crypto/store/libcrypto-shlib-store_result.d \
+     crypto/x509/libcrypto-shlib-x_attrib.d \
+     crypto/asn1/libcrypto-shlib-x_pkey.d \
+     providers/implementations/exchange/libdefault-lib-ecdh_exch.d \
+     crypto/pem/libcrypto-shlib-pem_all.d \
+     test/helpers/cmp_server_test-bin-cmp_testlib.d \
+     test/buildtest_c_param_build-bin-buildtest_param_build.d \
+     crypto/property/libcrypto-lib-property_parse.d \
+     providers/implementations/ciphers/libcommon-lib-ciphercommon_hw.d \
+     crypto/des/libcrypto-lib-cfb64ede.d \
+     test/testutil/libtestutil-lib-test_options.d \
+     crypto/asn1/libcrypto-lib-a_verify.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_sm4_xts_hw.d \
+     crypto/ts/libcrypto-lib-ts_lib.d \
+     crypto/encode_decode/libcrypto-lib-encoder_lib.d \
+     crypto/x509/libcrypto-lib-x509_vpm.d \
+     crypto/evp/libcrypto-shlib-signature.d \
+     crypto/asn1/libcrypto-lib-asn1_gen.d \
+     crypto/slh_dsa/libcrypto-lib-slh_wots.d \
+     test/threadpool_test-bin-threadpool_test.d \
+     crypto/slh_dsa/libcrypto-shlib-slh_hypertree.d \
+     crypto/x509/libcrypto-shlib-v3_audit_id.d ssl/libssl-shlib-d1_msg.d \
+     test/buildtest_c_aes-bin-buildtest_aes.d \
+     providers/implementations/ciphers/liblegacy-lib-cipher_desx.d \
+     crypto/pem/libcrypto-lib-pem_lib.d \
+     providers/implementations/kdfs/libdefault-lib-sshkdf.d \
+     providers/implementations/ciphers/libcommon-lib-ciphercommon_ccm.d \
+     crypto/packettest-bin-quic_vlint.d test/quic_fifd_test-bin-cc_dummy.d \
+     crypto/des/libcrypto-shlib-str2key.d apps/openssl-bin-pkcs12.d \
+     crypto/dh/libcrypto-lib-dh_group_params.d \
+     test/helpers/dtls_mtu_test-bin-ssltestlib.d \
+     crypto/sha/libcrypto-shlib-sha1_one.d \
+     crypto/x509/libcrypto-shlib-x509type.d \
+     crypto/buffer/libcrypto-shlib-buf_err.d \
+     crypto/evp/libcrypto-lib-mac_lib.d apps/openssl-bin-enc.d \
+     crypto/pkcs7/libcrypto-shlib-pk7_doit.d \
+     crypto/ml_dsa/libcrypto-shlib-ml_dsa_ntt.d \
+     crypto/comp/libcrypto-shlib-c_zstd.d \
      crypto/bio/libcrypto-shlib-bf_prefix.d \
-     test/helpers/quicapitest-bin-pktsplitbio.d \
-     providers/implementations/kdfs/libdefault-lib-hmacdrbg_kdf.d \
+     crypto/slh_dsa/libcrypto-shlib-slh_dsa_key.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_tdes_wrap.d \
+     crypto/rsa/libcrypto-lib-rsa_backend.d \
+     test/helpers/cmp_client_test-bin-cmp_testlib.d \
+     crypto/asn1/libcrypto-lib-asn1_item_list.d \
+     crypto/x509/libcrypto-lib-x509_ext.d crypto/ec/libcrypto-lib-ecp_meth.d \
+     crypto/ec/libcrypto-shlib-ec_deprecated.d \
+     crypto/cmp/libcrypto-lib-cmp_status.d \
+     crypto/bn/libcrypto-shlib-bn_mpi.d \
+     test/testutil/libtestutil-lib-testutil_init.d \
+     crypto/x509/libcrypto-lib-v3_admis.d crypto/eia3/libcrypto-shlib-eia3.d \
+     crypto/libcrypto-lib-quic_vlint.d ssl/libssl-lib-ssl_asn1.d \
+     crypto/x509/libcrypto-shlib-v3_ac_tgt.d \
+     fuzz/v3name-test-bin-test-corpus.d \
+     crypto/slh_dsa/libcrypto-shlib-slh_dsa.d \
+     crypto/pkcs7/libcrypto-shlib-pk7_smime.d \
+     crypto/hashtable/libcrypto-lib-hashtable.d \
+     crypto/x509/libcrypto-shlib-v3_lib.d crypto/ec/libcrypto-lib-ec_cvt.d \
+     crypto/property/libcrypto-shlib-property_query.d \
+     crypto/encode_decode/libcrypto-shlib-encoder_lib.d \
+     crypto/evp/libcrypto-shlib-bio_enc.d \
+     test/helpers/sslcorrupttest-bin-ssltestlib.d \
+     crypto/bio/libcrypto-lib-bss_sock.d crypto/ct/libcrypto-lib-ct_log.d \
+     crypto/evp/libcrypto-shlib-m_sigver.d \
+     test/buildtest_c_fips_names-bin-buildtest_fips_names.d \
+     crypto/evp/libcrypto-shlib-legacy_sha.d \
+     crypto/rsa/libcrypto-lib-rsa_x931g.d apps/openssl-bin-pkcs7.d \
+     crypto/http/libcrypto-lib-http_lib.d \
+     fuzz/quic-server-test-bin-quic-server.d \
+     test/trace_api_test-bin-trace_api_test.d \
+     crypto/modes/libcrypto-shlib-ctr128.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_wrp.d \
+     crypto/x509/libcrypto-lib-pcy_map.d crypto/libcrypto-lib-params_dup.d \
+     crypto/evp/libcrypto-lib-e_old.d \
+     crypto/ec/curve448/libcrypto-lib-curve448_tables.d \
+     ssl/quic/libssl-shlib-qlog.d \
+     crypto/bn/libcrypto-shlib-bn_rsa_fips186_4.d \
+     crypto/asn1/libcrypto-lib-asn1_err.d ssl/quic/libssl-shlib-quic_port.d \
+     crypto/libcrypto-lib-cpt_err.d crypto/hashtable/libssl-shlib-hashfunc.d \
+     ssl/quic/libssl-lib-quic_stream_map.d \
+     test/helpers/recordlentest-bin-ssltestlib.d \
+     crypto/cms/libcrypto-lib-cms_enc.d \
+     test/buildtest_c_thread-bin-buildtest_thread.d \
+     ssl/libssl-shlib-ssl_txt.d \
+     test/testutil/libtestutil-lib-format_output.d \
+     crypto/cms/libcrypto-lib-cms_smime.d crypto/evp/libcrypto-lib-evp_pbe.d \
+     crypto/ts/libcrypto-lib-ts_rsp_sign.d \
+     crypto/sm2/libcrypto-shlib-sm2_crypt.d \
+     crypto/asn1/libcrypto-lib-x_algor.d crypto/dsa/libcrypto-lib-dsa_sign.d \
+     test/helpers/cmp_status_test-bin-cmp_testlib.d \
+     providers/implementations/keymgmt/libdefault-lib-kdf_legacy_kmgmt.d \
+     ssl/libssl-shlib-ssl_asn1.d fuzz/bndiv-test-bin-bndiv.d \
+     ssl/quic/libssl-lib-quic_tserver.d crypto/pem/libcrypto-shlib-pem_lib.d \
+     ssl/statem/libssl-shlib-statem_clnt.d \
+     crypto/asn1/libcrypto-shlib-a_octet.d \
+     crypto/x509/libcrypto-lib-x509_err.d \
+     crypto/x509/libcrypto-shlib-x509name.d ssl/quic/libssl-lib-json_enc.d \
+     crypto/x509/libcrypto-shlib-x_name.d \
+     crypto/ml_dsa/libcrypto-lib-ml_dsa_encoders.d \
+     test/testutil/libtestutil-lib-options.d \
+     crypto/ffc/libcrypto-shlib-ffc_key_generate.d \
+     crypto/md5/libcrypto-lib-md5_sha1.d apps/openssl-bin-ecparam.d \
+     crypto/md5/liblegacy-lib-md5_dgst.d \
+     crypto/rsa/libcrypto-lib-rsa_sp800_56b_check.d \
+     ssl/statem/libssl-shlib-extensions_cust.d apps/openssl-bin-cmp.d \
+     crypto/ct/libcrypto-shlib-ct_policy.d \
+     crypto/pkcs7/libcrypto-lib-pk7_lib.d crypto/ec/libcrypto-shlib-ec_cvt.d \
+     crypto/cmp/libcrypto-shlib-cmp_protect.d \
+     crypto/evp/libcrypto-lib-e_xcbc_d.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_tdes.d \
+     crypto/bio/libcrypto-shlib-bio_print.d crypto/evp/libcrypto-lib-names.d \
+     crypto/asn1/libcrypto-shlib-t_spki.d \
+     crypto/sm2/libcrypto-lib-sm2_kmeth.d \
+     crypto/comp/libcrypto-shlib-c_zlib.d \
+     crypto/rsa/libcrypto-shlib-rsa_pss.d \
+     crypto/ui/libcrypto-lib-ui_openssl.d \
+     providers/implementations/ciphers/liblegacy-lib-cipher_rc4_hmac_md5.d \
+     test/testutil/libtestutil-lib-cb.d apps/openssl-bin-s_time.d \
+     crypto/x509/libcrypto-lib-v3_iobo.d \
+     crypto/encode_decode/libcrypto-shlib-decoder_lib.d \
+     crypto/ocsp/libcrypto-shlib-ocsp_lib.d apps/openssl-bin-crl2pkcs7.d \
+     providers/implementations/encode_decode/libdefault-lib-decode_epki2pki.d \
+     crypto/asn1/libcrypto-lib-a_mbstr.d \
+     crypto/sm2/libcrypto-shlib-sm2_kmeth.d \
+     crypto/asn1/libcrypto-shlib-a_utctm.d crypto/libcrypto-shlib-uid.d \
+     crypto/sm4/libcrypto-lib-sm4.d crypto/evp/libcrypto-lib-pmeth_gn.d \
+     ssl/quic/libssl-shlib-quic_wire_pkt.d \
+     crypto/dh/libcrypto-lib-dh_backend.d \
+     crypto/http/libcrypto-shlib-http_lib.d crypto/libcrypto-shlib-mem_sec.d \
+     crypto/bn/libcrypto-lib-bn_sqrt.d \
+     crypto/conf/libcrypto-shlib-conf_mall.d \
+     crypto/x509/libcrypto-lib-v3_no_rev_avail.d \
+     ssl/quic/libssl-shlib-quic_engine.d \
+     crypto/bio/libcrypto-shlib-bf_lbuf.d ssl/libssl-lib-d1_srtp.d \
+     crypto/pkcs12/libcrypto-shlib-p12_utl.d \
+     fuzz/quic-server-test-bin-fuzz_rand.d test/provider_test-bin-p_test.d \
+     crypto/encode_decode/libcrypto-shlib-decoder_pkey.d \
+     test/decoder_propq_test-bin-decoder_propq_test.d \
+     test/namemap_internal_test-bin-namemap_internal_test.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_tdes_default_hw.d \
+     crypto/slh_dsa/libcrypto-shlib-slh_dsa_hash_ctx.d \
+     crypto/dsa/libcrypto-lib-dsa_pmeth.d \
+     crypto/x509/libcrypto-lib-v3_group_ac.d \
+     apps/lib/ca_internals_test-bin-fmt.d \
+     crypto/cms/libcrypto-lib-cms_kari.d \
+     crypto/bio/libcrypto-shlib-bss_core.d \
+     crypto/asn1/libcrypto-lib-tasn_enc.d \
+     test/buildtest_c_params-bin-buildtest_params.d \
+     ssl/record/methods/libssl-shlib-tlsany_meth.d \
+     crypto/x509/libcrypto-lib-x_req.d \
+     test/helpers/quicapitest-bin-quictestlib.d \
+     crypto/asn1/libcrypto-lib-a_type.d \
+     crypto/err/libcrypto-shlib-err_all_legacy.d \
+     crypto/libcrypto-lib-punycode.d \
+     test/buildtest_c_store-bin-buildtest_store.d \
+     providers/libcrypto-shlib-baseprov.d \
+     crypto/x509/libcrypto-lib-v3_usernotice.d \
+     providers/implementations/kem/libdefault-lib-ml_kem_kem.d \
+     fuzz/server-test-bin-fuzz_rand.d crypto/engine/libcrypto-lib-eng_ctrl.d \
+     crypto/pkcs7/libcrypto-lib-pk7_doit.d \
+     crypto/bio/libcrypto-shlib-bss_dgram.d \
+     crypto/bio/libcrypto-shlib-bss_file.d \
+     ssl/quic/libssl-shlib-quic_demux.d fuzz/quic-srtm-test-bin-quic-srtm.d \
+     test/pkcs12_format_test-bin-pkcs12_format_test.d \
+     test/drbgtest-bin-drbgtest.d \
+     test/buildtest_c_modes-bin-buildtest_modes.d \
+     crypto/ec/libcrypto-lib-curve25519.d \
+     crypto/dsa/libcrypto-lib-dsa_meth.d \
+     crypto/encode_decode/libcrypto-shlib-decoder_err.d \
+     crypto/asn1/libcrypto-lib-p5_scrypt.d \
+     crypto/bn/libcrypto-lib-rsaz_exp_x2.d crypto/libcrypto-lib-init.d \
+     ssl/libssl-shlib-ssl_lib.d crypto/pkcs12/libcrypto-lib-pk12err.d \
+     crypto/x509/libcrypto-lib-v3_pmaps.d \
+     crypto/x509/libcrypto-lib-v3_genn.d crypto/ec/libcrypto-lib-ec_check.d \
+     crypto/pkcs7/libcrypto-shlib-bio_pk7.d \
+     providers/common/der/libcommon-lib-der_rsa_key.d \
+     crypto/asn1/libcrypto-lib-x_pkey.d \
+     crypto/http/libcrypto-shlib-http_err.d \
+     test/helpers/sslbuffertest-bin-ssltestlib.d \
+     crypto/rsa/libcrypto-lib-rsa_saos.d fuzz/cmp-test-bin-fuzz_rand.d \
+     crypto/rand/libcrypto-shlib-randfile.d \
+     crypto/asn1/libcrypto-shlib-a_strex.d \
+     crypto/crmf/libcrypto-lib-crmf_err.d \
+     providers/implementations/kdfs/libdefault-lib-tls1_prf.d \
+     crypto/bn/libcrypto-shlib-bn_mont.d crypto/ess/libcrypto-lib-ess_err.d \
+     providers/implementations/digests/libdefault-lib-null_prov.d \
+     crypto/ocsp/libcrypto-lib-ocsp_ext.d crypto/evp/libcrypto-lib-e_eea3.d \
+     test/servername_test-bin-servername_test.d \
+     ssl/quic/libssl-shlib-quic_stream_map.d apps/openssl-bin-genpkey.d \
+     crypto/pem/libcrypto-lib-pem_err.d \
+     crypto/comp/libcrypto-shlib-c_brotli.d \
+     crypto/conf/libcrypto-lib-conf_sap.d ssl/libssl-shlib-ssl_cert.d \
+     crypto/ml_dsa/libcrypto-shlib-ml_dsa_sign.d \
+     crypto/bio/libcrypto-shlib-bss_bio.d apps/lib/libapps-lib-s_socket.d \
+     providers/implementations/ciphers/liblegacy-lib-cipher_rc4_hw.d \
+     crypto/engine/libcrypto-lib-eng_all.d \
+     crypto/pkcs12/libcrypto-shlib-p12_mutl.d \
+     test/evp_extra_test-bin-evp_extra_test.d \
+     crypto/slh_dsa/libcrypto-lib-slh_dsa_hash_ctx.d \
+     crypto/dso/libcrypto-shlib-dso_dlfcn.d \
+     crypto/bn/libcrypto-shlib-bn_gcd.d \
+     crypto/ml_dsa/libcrypto-shlib-ml_dsa_matrix.d \
+     crypto/bio/libcrypto-lib-bio_print.d \
+     crypto/x509/libcrypto-lib-v3_akid.d crypto/libcrypto-lib-getenv.d \
+     crypto/evp/libcrypto-lib-keymgmt_meth.d \
+     crypto/x509/libcrypto-lib-by_dir.d \
+     test/buildtest_c_txt_db-bin-buildtest_txt_db.d \
+     test/quic_wire_test-bin-quic_wire_test.d \
+     crypto/asn1/libcrypto-lib-a_print.d providers/libcrypto-lib-baseprov.d \
+     test/helpers/ecpmeth_test-bin-ssltestlib.d \
+     crypto/ec/libcrypto-shlib-ec_check.d crypto/libcrypto-shlib-info.d \
+     crypto/x509/libcrypto-shlib-x509_r2x.d ssl/libssl-lib-tls_srp.d \
+     crypto/ec/libcrypto-shlib-ec_lib.d \
+     crypto/evp/libcrypto-lib-ctrl_params_translate.d \
+     crypto/evp/libcrypto-shlib-evp_lib.d crypto/bn/libcrypto-lib-bn_div.d \
+     crypto/evp/libcrypto-shlib-m_null.d \
+     crypto/ts/libcrypto-lib-ts_verify_ctx.d \
+     crypto/x509/libcrypto-lib-x_name.d \
+     ssl/rio/libssl-shlib-poll_immediate.d fuzz/punycode-test-bin-punycode.d \
+     test/helpers/pkcs12_api_test-bin-pkcs12.d crypto/libcrypto-lib-o_time.d \
+     ssl/record/methods/libssl-shlib-dtls_meth.d \
+     test/evp_test-bin-evp_test.d crypto/modes/libcrypto-lib-cts128.d \
+     crypto/pkcs12/libcrypto-shlib-p12_decr.d \
+     ssl/statem/libssl-lib-statem_dtls.d \
+     test/buildtest_c_kdf-bin-buildtest_kdf.d fuzz/crl-test-bin-crl.d \
+     test/helpers/servername_test-bin-ssltestlib.d \
+     ssl/quic/libssl-shlib-quic_fc.d crypto/ui/libcrypto-shlib-ui_lib.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes.d \
+     ssl/statem/libssl-lib-statem.d \
+     crypto/hashtable/libcrypto-shlib-hashtable.d \
+     providers/implementations/rands/libdefault-lib-seed_src_jitter.d \
+     test/ctype_internal_test-bin-ctype_internal_test.d \
+     crypto/x509/libcrypto-lib-x509_att.d test/sslapitest-bin-filterprov.d \
+     crypto/evp/libcrypto-lib-legacy_sha.d \
+     crypto/x509/libcrypto-lib-x509_v3.d \
+     test/quic_txp_test-bin-quic_txp_test.d \
+     providers/implementations/ciphers/liblegacy-lib-cipher_rc4_hmac_md5_hw.d \
+     crypto/async/libcrypto-lib-async_wait.d \
+     crypto/pkcs12/libcrypto-lib-p12_npas.d \
+     crypto/x509/libcrypto-shlib-x509_req.d \
+     crypto/modes/libcrypto-lib-ofb128.d \
+     crypto/pkcs12/libcrypto-lib-p12_asn.d \
+     test/tls13groupselection_test-bin-tls13groupselection_test.d \
+     crypto/libcrypto-shlib-threads_lib.d \
+     crypto/ec/libcrypto-lib-ec_backend.d \
+     crypto/bio/libcrypto-shlib-bf_buff.d \
+     crypto/sha/libcrypto-shlib-sha1dgst.d \
+     crypto/rsa/libcrypto-lib-rsa_sp800_56b_gen.d \
+     test/radix/quic_radix_test-bin-quic_radix.d \
+     crypto/ct/libcrypto-shlib-ct_b64.d crypto/bio/libcrypto-shlib-bss_fd.d \
+     crypto/objects/libcrypto-lib-o_names.d \
+     crypto/des/libcrypto-shlib-fcrypt.d test/cmactest-bin-cmactest.d \
+     crypto/libcrypto-shlib-cpuid.d crypto/ct/libcrypto-lib-ct_oct.d \
+     crypto/engine/libcrypto-shlib-eng_lib.d \
+     fuzz/dtlsserver-test-bin-fuzz_rand.d \
+     providers/common/der/libdefault-lib-der_sm2_sig.d \
+     crypto/libcrypto-lib-param_build.d \
+     crypto/store/libcrypto-shlib-store_register.d \
+     crypto/x509/libcrypto-lib-x509_txt.d \
+     crypto/libcrypto-lib-core_namemap.d \
+     crypto/asn1/libcrypto-shlib-a_gentm.d \
+     test/buildtest_c_zkp_gadget-bin-buildtest_zkp_gadget.d \
+     crypto/x509/libcrypto-shlib-v3_cpols.d \
+     crypto/pkcs12/libcrypto-lib-p12_key.d test/cmsapitest-bin-cmsapitest.d \
+     crypto/x509/libcrypto-shlib-t_acert.d ssl/libssl-lib-ssl_err_legacy.d \
+     test/bio_enc_test-bin-bio_enc_test.d \
+     crypto/x509/libcrypto-lib-pcy_node.d test/p_test-dso-p_test.d \
+     crypto/aes/libcrypto-shlib-aes_ige.d fuzz/pem-test-bin-test-corpus.d \
+     providers/implementations/storemgmt/libdefault-lib-file_store.d \
+     ssl/quic/libssl-shlib-quic_reactor.d \
+     crypto/libcrypto-shlib-sparse_array.d crypto/libcrypto-lib-context.d \
+     crypto/asn1/libcrypto-lib-x_val.d crypto/bn/libcrypto-lib-bn_exp2.d \
+     ssl/libssl-shlib-s3_msg.d crypto/dh/libcrypto-shlib-dh_check.d \
+     crypto/x509/libcrypto-lib-x_crl.d crypto/dso/libcrypto-shlib-dso_lib.d \
+     crypto/x509/libcrypto-lib-x_pubkey.d \
+     crypto/engine/libcrypto-shlib-eng_init.d test/asynctest-bin-asynctest.d \
+     crypto/ts/libcrypto-shlib-ts_asn1.d \
+     crypto/asn1/asn1_time_test-bin-a_time.d \
+     crypto/bio/libcrypto-lib-bio_cb.d crypto/bn/libcrypto-lib-bn_blind.d \
+     crypto/ec/libcrypto-shlib-ecx_key.d \
+     test/helpers/quic_multistream_test-bin-noisydgrambio.d \
+     crypto/x509/libcrypto-lib-x_attrib.d \
+     crypto/thread/arch/libcrypto-shlib-thread_win.d \
+     crypto/x509/libcrypto-lib-v3_san.d \
+     crypto/asn1/libcrypto-lib-ameth_lib.d \
+     crypto/cmp/libcrypto-lib-cmp_util.d \
+     test/helpers/quic_srt_gen_test-bin-quictestlib.d \
+     test/x509_check_cert_pkey_test-bin-x509_check_cert_pkey_test.d \
+     test/rand_test-bin-rand_test.d \
+     test/helpers/quic_newcid_test-bin-quictestlib.d \
+     test/siphash_internal_test-bin-siphash_internal_test.d \
+     crypto/dh/libcrypto-lib-dh_key.d ssl/libssl-shlib-t1_lib.d \
+     crypto/pem/libcrypto-shlib-pem_pkey.d crypto/bn/libcrypto-lib-bn_conv.d \
+     crypto/engine/libcrypto-lib-eng_lib.d \
+     crypto/ml_dsa/libcrypto-lib-ml_dsa_params.d \
+     test/quic_ackm_test-bin-cc_dummy.d \
+     test/quic_tserver_test-bin-quic_tserver_test.d \
+     crypto/asn1/libcrypto-shlib-n_pkey.d \
+     ssl/quic/libssl-shlib-quic_srt_gen.d \
+     crypto/conf/libcrypto-lib-conf_err.d \
+     crypto/ocsp/libcrypto-lib-ocsp_asn.d \
+     test/helpers/ssl_test-bin-handshake.d \
+     crypto/comp/libcrypto-lib-c_zlib.d ssl/quic/libssl-lib-quic_engine.d \
+     crypto/x509/libcrypto-shlib-x509_acert.d \
+     crypto/cmp/libcrypto-shlib-cmp_asn.d \
+     crypto/x509/libcrypto-lib-v3_tlsf.d \
+     crypto/evp/libcrypto-shlib-pmeth_lib.d \
+     crypto/rsa/libcrypto-lib-rsa_pss.d crypto/bn/libcrypto-lib-bn_mul.d \
+     crypto/sm3/libcrypto-shlib-sm3.d \
+     test/pairwise_fail_test-bin-pairwise_fail_test.d \
+     crypto/thread/libcrypto-shlib-internal.d \
+     ssl/record/methods/libssl-lib-tls_multib.d \
+     test/threadstest_fips-bin-threadstest_fips.d \
+     crypto/evp/libcrypto-shlib-pmeth_gn.d \
+     crypto/asn1/libcrypto-lib-d2i_pu.d fuzz/provider-test-bin-provider.d \
+     providers/implementations/encode_decode/libdefault-lib-encode_key2text.d \
+     ssl/quic/libssl-lib-quic_rcidm.d \
+     test/x509_load_cert_file_test-bin-x509_load_cert_file_test.d \
+     crypto/cms/libcrypto-lib-cms_cd.d \
+     providers/implementations/rands/seeding/libdefault-lib-rand_tsc.d \
+     crypto/libcrypto-lib-provider_core.d \
+     crypto/asn1/libcrypto-shlib-a_int.d ssl/quic/libssl-shlib-quic_txp.d \
+     test/bio_callback_test-bin-bio_callback_test.d \
+     crypto/rand/libcrypto-lib-rand_uniform.d \
+     crypto/asn1/libcrypto-lib-asn1_parse.d \
+     providers/implementations/digests/libcommon-lib-digestcommon.d \
+     crypto/rsa/libcrypto-shlib-rsa_crpt.d \
+     crypto/bio/libcrypto-shlib-bf_null.d apps/openssl-bin-ts.d \
+     crypto/ec/libcrypto-shlib-ecp_oct.d crypto/srp/libcrypto-lib-srp_lib.d \
+     crypto/buffer/libcrypto-shlib-buffer.d \
+     crypto/ts/libcrypto-lib-ts_rsp_utils.d \
+     ssl/statem/libssl-lib-extensions_srvr.d \
+     crypto/asn1/libcrypto-lib-p8_pkey.d apps/openssl-bin-dhparam.d \
+     crypto/rand/libcrypto-shlib-rand_lib.d \
+     providers/implementations/signature/libdefault-lib-eddsa_sig.d \
+     crypto/ec/curve448/arch_64/libcrypto-shlib-f_impl64.d \
+     crypto/thread/arch/libcrypto-lib-thread_posix.d \
+     crypto/x509/libcrypto-shlib-x509_obj.d \
+     crypto/evp/libcrypto-lib-dsa_ctrl.d crypto/libcrypto-lib-o_syslog.d \
+     ssl/libssl-shlib-tls_depr.d ssl/quic/libssl-lib-quic_record_tx.d \
+     test/buildtest_c_symhacks-bin-buildtest_symhacks.d \
+     test/json_test-bin-json_test.d crypto/hpke/libcrypto-shlib-hpke.d \
+     crypto/libcrypto-shlib-bsearch.d \
+     test/testutil/libtestutil-lib-compare.d \
+     crypto/cms/libcrypto-lib-cms_ess.d \
+     ssl/quic/libssl-lib-quic_tls_api_method.d \
+     crypto/async/libcrypto-lib-async_err.d \
+     crypto/evp/libcrypto-shlib-e_wbsm4_wsise.d \
+     crypto/thread/libcrypto-shlib-arch.d \
+     crypto/evp/libcrypto-lib-cmeth_lib.d \
+     providers/implementations/kdfs/libdefault-lib-scrypt.d \
+     providers/implementations/ciphers/liblegacy-lib-cipher_des.d \
+     crypto/x509/libcrypto-shlib-x509_meth.d \
+     crypto/bio/libcrypto-lib-bf_buff.d crypto/bn/libcrypto-lib-bn_sm2.d \
+     crypto/modes/libcrypto-lib-ccm128.d crypto/evp/libcrypto-lib-p_enc.d \
+     test/helpers/json_test-bin-noisydgrambio.d \
+     apps/lib/ca_internals_test-bin-app_provider.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_siv_hw.d \
+     crypto/bn/libcrypto-shlib-bn_add.d test/bioprinttest-bin-bioprinttest.d \
+     crypto/libcrypto-lib-o_str.d ssl/quic/libssl-lib-quic_rstream.d \
      providers/implementations/ciphers/libdefault-lib-cipher_cts.d \
-     crypto/evp/libcrypto-lib-e_rc5.d fuzz/provider-test-bin-test-corpus.d
+     crypto/evp/libcrypto-shlib-e_null.d \
+     crypto/bio/libcrypto-shlib-bio_sock.d \
+     ssl/statem/libssl-shlib-extensions_srvr.d \
+     test/helpers/dtlstest-bin-ssltestlib.d \
+     test/quic_qlog_test-bin-quic_qlog_test.d \
+     test/sslapitest-bin-sslapitest.d crypto/cmp/libcrypto-lib-cmp_client.d \
+     crypto/objects/libcrypto-shlib-obj_err.d \
+     crypto/evp/libcrypto-shlib-kdf_meth.d \
+     crypto/slh_dsa/libcrypto-shlib-slh_fors.d \
+     crypto/pkcs12/libcrypto-shlib-p12_key.d \
+     fuzz/asn1-test-bin-test-corpus.d \
+     crypto/libcrypto-shlib-self_test_core.d \
+     ssl/statem/libssl-shlib-statem.d crypto/cms/libcrypto-shlib-cms_sd.d \
+     providers/implementations/digests/libdefault-lib-sha3_prov.d \
+     crypto/ec/libcrypto-shlib-ec_pmeth.d \
+     crypto/rand/libcrypto-lib-rand_lib.d \
+     crypto/asn1/libcrypto-shlib-asn1_item_list.d \
+     apps/lib/ca_internals_test-bin-app_libctx.d \
+     crypto/ec/libcrypto-lib-ecp_mont.d ssl/quic/libssl-shlib-quic_trace.d \
+     crypto/asn1/libcrypto-lib-f_int.d crypto/bio/libcrypto-lib-bf_lbuf.d \
+     crypto/evp/libcrypto-shlib-mac_meth.d \
+     fuzz/asn1parse-test-bin-test-corpus.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_ocb_hw.d \
+     crypto/evp/libcrypto-lib-dh_support.d \
+     providers/implementations/ciphers/liblegacy-lib-cipher_tdes_common.d \
+     crypto/x509/libcrypto-lib-by_store.d \
+     crypto/ocsp/libcrypto-lib-ocsp_cl.d \
+     test/timing_load_creds-bin-timing_load_creds.d \
+     providers/implementations/macs/libdefault-lib-hmac_prov.d \
+     test/membio_test-bin-membio_test.d \
+     crypto/cmp/libcrypto-shlib-cmp_client.d \
+     crypto/cms/libcrypto-lib-cms_env.d crypto/rsa/libcrypto-lib-rsa_pmeth.d \
+     crypto/asn1/libcrypto-shlib-a_type.d \
+     crypto/rsa/libcrypto-shlib-rsa_ameth.d crypto/dh/libcrypto-lib-dh_lib.d \
+     crypto/ct/libcrypto-shlib-ct_log.d \
+     crypto/x509/libcrypto-shlib-by_store.d \
+     crypto/libcrypto-shlib-provider_core.d \
+     test/provider_fallback_test-bin-provider_fallback_test.d \
+     crypto/rsa/libcrypto-shlib-rsa_pk1.d crypto/x509/libcrypto-lib-v3err.d \
+     crypto/bn/libcrypto-shlib-bn_rand.d \
+     crypto/x509/libcrypto-shlib-v3_purp.d \
+     crypto/evp/libcrypto-lib-ec_support.d \
+     crypto/pkcs12/libcrypto-lib-p12_decr.d \
+     crypto/poly1305/libcrypto-shlib-poly1305.d \
+     crypto/asn1/libcrypto-lib-evp_asn1.d \
+     crypto/ec/libcrypto-shlib-ecdsa_sign.d \
+     ssl/quic/libssl-shlib-quic_txpim.d \
+     crypto/x509/libcrypto-shlib-v3_admis.d \
+     test/x509_acert_test-bin-x509_acert_test.d \
+     crypto/rsa/libcrypto-shlib-rsa_sign.d \
+     crypto/cmp/libcrypto-lib-cmp_server.d \
+     crypto/ec/curve448/libcrypto-shlib-scalar.d \
+     crypto/libcrypto-shlib-o_init.d crypto/asn1/libcrypto-shlib-f_string.d \
+     crypto/dso/libcrypto-shlib-dso_err.d \
+     crypto/bio/libcrypto-shlib-bio_addr.d \
+     crypto/err/libcrypto-lib-err_mark.d test/rsa_test-bin-rsa_test.d \
+     crypto/encode_decode/libcrypto-lib-decoder_meth.d \
+     crypto/engine/libcrypto-lib-tb_digest.d \
+     crypto/ec/curve448/libcrypto-shlib-eddsa.d \
+     crypto/property/libcrypto-shlib-property_parse.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_xts_hw.d \
+     ssl/rio/libssl-lib-poll_immediate.d \
+     crypto/bn/libcrypto-shlib-bn_x931p.d \
+     crypto/store/libcrypto-shlib-store_err.d \
+     crypto/x509/libcrypto-shlib-v3_no_rev_avail.d \
+     crypto/x509/libcrypto-shlib-v3_ncons.d test/ct_test-bin-ct_test.d \
+     test/buildtest_c_provider-bin-buildtest_provider.d \
+     crypto/asn1/libcrypto-shlib-a_print.d \
+     providers/implementations/kdfs/libdefault-lib-pkcs12kdf.d \
+     crypto/async/arch/libcrypto-lib-async_posix.d \
+     crypto/asn1_time_test-bin-ctype.d crypto/bn/libcrypto-shlib-bn_exp.d \
+     crypto/bio/libcrypto-lib-bio_err.d \
+     providers/common/der/libdefault-lib-der_rsa_sig.d \
+     crypto/evp/libcrypto-lib-p_verify.d \
+     crypto/pkcs12/libcrypto-lib-p12_sbag.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_tdes_default.d \
+     crypto/dh/libcrypto-shlib-dh_ameth.d \
+     crypto/evp/libcrypto-shlib-p_legacy.d \
+     crypto/ui/libcrypto-shlib-ui_openssl.d \
+     crypto/evp/libcrypto-shlib-e_rc4_hmac_md5.d \
+     crypto/bn/libcrypto-shlib-bn_print.d \
+     crypto/pkcs12/libcrypto-shlib-p12_asn.d \
+     crypto/dsa/libcrypto-lib-dsa_ameth.d \
+     crypto/dsa/libcrypto-shlib-dsa_gen.d ssl/rio/libssl-lib-rio_notifier.d \
+     providers/implementations/encode_decode/libdefault-lib-decode_pem2der.d \
+     crypto/conf/libcrypto-shlib-conf_ssl.d \
+     crypto/x509/libcrypto-lib-pcy_tree.d \
+     crypto/async/libcrypto-shlib-async_err.d \
+     crypto/cms/libcrypto-lib-cms_lib.d crypto/libcrypto-lib-time.d \
+     test/buildtest_c_cmac-bin-buildtest_cmac.d ssl/libssl-shlib-methods.d \
+     crypto/ec/libcrypto-lib-ecp_nistz256.d \
+     test/provfetchtest-bin-provfetchtest.d \
+     crypto/x509/libcrypto-shlib-x509_vpm.d ssl/quic/libssl-lib-quic_statm.d \
+     crypto/evp/libcrypto-shlib-evp_err.d \
+     providers/implementations/ciphers/liblegacy-lib-cipher_desx_hw.d \
+     test/aesgcmtest-bin-aesgcmtest.d crypto/pkcs12/libcrypto-lib-p12_init.d \
+     crypto/pem/libcrypto-lib-pem_x509.d \
+     crypto/rsa/libcrypto-shlib-rsa_chk.d crypto/cmp/libcrypto-lib-cmp_asn.d \
+     crypto/ffc/libcrypto-shlib-ffc_params.d \
+     crypto/asn1/libcrypto-lib-bio_asn1.d \
+     crypto/rsa/libcrypto-lib-rsa_x931.d \
+     crypto/bio/libcrypto-shlib-bio_meth.d \
+     crypto/dso/libcrypto-lib-dso_err.d \
+     crypto/x509/libcrypto-lib-v3_rolespec.d crypto/libssl-shlib-packet.d \
+     crypto/aes/libcrypto-shlib-aes_wrap.d \
+     providers/implementations/signature/libdefault-lib-slh_dsa_sig.d \
+     crypto/evp/libcrypto-shlib-evp_fetch.d \
+     crypto/pkcs7/libcrypto-lib-pk7_mime.d \
+     crypto/buffer/libcrypto-lib-buf_err.d apps/openssl-bin-info.d \
+     ssl/quic/libssl-lib-quic_fc.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_tdes_hw.d \
+     crypto/bn/libcrypto-lib-bn_nist.d \
+     test/bio_core_test-bin-bio_core_test.d \
+     providers/implementations/macs/libdefault-lib-cmac_prov.d \
+     crypto/x509/libcrypto-shlib-x_pubkey.d \
+     crypto/slh_dsa/libcrypto-lib-slh_params.d \
+     crypto/ts/libcrypto-shlib-ts_rsp_print.d \
+     test/quic_fc_test-bin-quic_fc_test.d \
+     crypto/libcrypto-lib-self_test_core.d crypto/libcrypto-shlib-cversion.d \
+     providers/common/der/libcommon-lib-der_ml_dsa_gen.d \
+     test/byteorder_test-bin-byteorder_test.d \
+     crypto/libcrypto-lib-provider.d test/rc4test-bin-rc4test.d \
+     fuzz/dtlsserver-test-bin-dtlsserver.d crypto/evp/libcrypto-lib-p_seal.d \
+     crypto/dh/libcrypto-shlib-dh_lib.d crypto/rsa/libcrypto-lib-rsa_ossl.d \
+     crypto/libcrypto-shlib-initthread.d \
+     crypto/ml_dsa/libcrypto-lib-ml_dsa_key.d \
+     crypto/evp/libcrypto-shlib-ec_ctrl.d \
+     crypto/bio/libcrypto-lib-bio_sock2.d \
+     crypto/x509/libcrypto-shlib-v3_sxnet.d \
+     crypto/sdf/libcrypto-lib-sdf_lib.d \
+     crypto/pkcs7/libcrypto-lib-pk7_asn1.d ssl/quic/libssl-lib-quic_txpim.d \
+     ssl/record/libssl-lib-rec_layer_d1.d \
+     crypto/dso/libcrypto-shlib-dso_openssl.d \
+     test/helpers/cmp_hdr_test-bin-cmp_testlib.d \
+     crypto/ca_internals_test-bin-ctype.d \
+     test/quic_rcidm_test-bin-quic_rcidm_test.d \
+     fuzz/server-test-bin-server.d crypto/x509/libcrypto-shlib-pcy_cache.d \
+     providers/implementations/signature/libdefault-lib-mac_legacy_sig.d \
+     ssl/libssl-shlib-s3_lib.d crypto/libcrypto-shlib-params.d \
+     crypto/dsa/libcrypto-shlib-dsa_prn.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_sm4_gcm_hw.d \
+     crypto/pkcs12/libcrypto-shlib-pk12err.d \
+     crypto/ec/libcrypto-lib-ecdh_ossl.d crypto/ec/libcrypto-shlib-ec_oct.d \
+     crypto/bn/libcrypto-lib-bn_ctx.d \
+     test/ml_kem_evp_extra_test-bin-ml_kem_evp_extra_test.d \
+     crypto/pem/libcrypto-lib-pem_all.d \
+     crypto/conf/libcrypto-shlib-conf_lib.d \
+     providers/implementations/keymgmt/libdefault-lib-ml_dsa_kmgmt.d \
+     crypto/asn1/libcrypto-lib-a_int.d \
+     providers/implementations/macs/libdefault-lib-kmac_prov.d \
+     crypto/cms/libcrypto-lib-cms_dh.d \
+     providers/implementations/keymgmt/libdefault-lib-mlx_kmgmt.d \
+     crypto/evp/libcrypto-shlib-names.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_zuc_eea3_hw.d \
+     crypto/libcrypto-lib-info.d crypto/ct/libcrypto-shlib-ct_x509v3.d \
+     crypto/dso/libcrypto-shlib-dso_dl.d crypto/des/libcrypto-lib-cfb_enc.d \
+     providers/implementations/exchange/libdefault-lib-ecx_exch.d \
+     ssl/statem/libssl-shlib-extensions.d \
+     crypto/sha/libcrypto-shlib-sha256.d \
+     crypto/rand/libcrypto-lib-rand_err.d crypto/pem/libcrypto-lib-pvkfmt.d \
+     ssl/statem/libssl-lib-extensions_clnt.d \
+     crypto/libcrypto-shlib-params_from_text.d \
+     crypto/encode_decode/libcrypto-lib-encoder_err.d \
+     crypto/evp/libcrypto-lib-e_rc4_hmac_md5.d \
+     crypto/ffc/libcrypto-shlib-ffc_key_validate.d \
+     crypto/evp/libcrypto-lib-legacy_md5.d \
+     crypto/asn1/libcrypto-lib-asn1_lib.d \
+     crypto/http/libcrypto-shlib-http_client.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_chacha20_poly1305_hw.d \
+     crypto/engine/libcrypto-lib-eng_fat.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_chacha20.d \
+     providers/implementations/storemgmt/libdefault-lib-file_store_any2obj.d \
+     crypto/ml_dsa/libcrypto-lib-ml_dsa_matrix.d \
+     crypto/bn/libcrypto-shlib-bn_prime.d ssl/libssl-shlib-ssl_init.d \
+     test/hexstr_test-bin-hexstr_test.d \
+     crypto/ocsp/libcrypto-shlib-ocsp_cl.d \
+     crypto/ts/libcrypto-shlib-ts_req_utils.d \
+     crypto/pkcs12/libcrypto-shlib-p12_kiss.d \
+     crypto/engine/libcrypto-shlib-eng_all.d \
+     test/bio_base64_test-bin-bio_base64_test.d \
+     crypto/cms/libcrypto-shlib-cms_kari.d crypto/sm4/libcrypto-shlib-sm4.d \
+     ssl/quic/libssl-shlib-cc_newreno.d \
+     test/pkey_meth_kdf_test-bin-pkey_meth_kdf_test.d \
+     crypto/asn1/libcrypto-lib-i2d_evp.d \
+     crypto/libcrypto-shlib-provider_conf.d \
+     test/pem_read_depr_test-bin-pem_read_depr_test.d \
+     crypto/evp/libcrypto-shlib-e_eea3.d ssl/rio/libssl-lib-poll_builder.d \
+     providers/implementations/rands/libdefault-lib-test_rng.d \
+     apps/openssl-bin-ciphers.d ssl/quic/libssl-shlib-quic_method.d \
+     crypto/x509/libcrypto-lib-x_all.d crypto/x509/libcrypto-shlib-v3_addr.d \
+     fuzz/hashtable-test-bin-test-corpus.d \
+     crypto/ess/libcrypto-lib-ess_lib.d ssl/libssl-lib-ssl_sess.d \
+     crypto/ml_dsa/libcrypto-shlib-ml_dsa_key_compress.d \
+     test/ciphername_test-bin-ciphername_test.d \
+     crypto/des/libcrypto-lib-qud_cksm.d crypto/asn1/libcrypto-lib-x_info.d \
+     crypto/encode_decode/libcrypto-shlib-encoder_err.d \
+     crypto/tsapi/libcrypto-shlib-tsapi_lib.d \
+     crypto/bn/libcrypto-lib-bn_kron.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_sm4_ccm.d \
+     crypto/ui/libcrypto-shlib-ui_null.d \
+     test/buildtest_c_pem-bin-buildtest_pem.d \
+     apps/lib/libapps-lib-http_server.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_cbc_hmac_sha1_hw.d \
+     ssl/libssl-lib-t1_lib.d \
+     test/buildtest_c_cmp_util-bin-buildtest_cmp_util.d \
+     ssl/quic/libssl-lib-quic_demux.d crypto/asn1/libcrypto-lib-a_object.d \
+     crypto/engine/libcrypto-lib-tb_pkmeth.d fuzz/ml-kem-test-bin-ml-kem.d \
+     crypto/err/libcrypto-lib-err_prn.d \
+     crypto/libcrypto-lib-provider_child.d crypto/libcrypto-shlib-o_dir.d \
+     crypto/kdf/libcrypto-lib-kdf_err.d \
+     crypto/evp/libcrypto-shlib-e_aes_cbc_hmac_sha256.d \
+     ssl/record/methods/libssl-shlib-tls1_meth.d \
+     crypto/asn1/libcrypto-lib-tasn_typ.d \
+     crypto/rsa/libcrypto-shlib-rsa_err.d \
+     crypto/evp/libcrypto-shlib-mac_lib.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_sm4.d \
+     ssl/quic/libssl-lib-quic_reactor.d apps/openssl-bin-progs.d \
+     apps/openssl-bin-srp.d crypto/rsa/libcrypto-lib-rsa_mp.d \
+     ssl/libssl-lib-ssl_init.d \
+     providers/implementations/kdfs/libdefault-lib-pbkdf2.d \
+     test/sslcorrupttest-bin-sslcorrupttest.d \
+     crypto/evp/libcrypto-shlib-ec_support.d ssl/libssl-shlib-ssl_stat.d \
+     crypto/ml_dsa/libcrypto-shlib-ml_dsa_sample.d \
+     test/constant_time_test-bin-constant_time_test.d \
+     test/x509aux-bin-x509aux.d crypto/engine/libcrypto-shlib-tb_dh.d \
+     crypto/conf/libcrypto-lib-conf_lib.d \
+     crypto/sm2/libcrypto-lib-sm2_crypt.d \
+     crypto/crmf/libcrypto-shlib-crmf_pbm.d \
+     crypto/asn1/libcrypto-lib-a_utf8.d crypto/asn1/libcrypto-lib-p5_pbev2.d \
+     providers/implementations/ciphers/libcommon-lib-ciphercommon_gcm.d \
+     crypto/ec/libcrypto-shlib-ecx_meth.d \
+     test/pkey_meth_test-bin-pkey_meth_test.d \
+     crypto/lhash/libcrypto-shlib-lh_stats.d \
+     crypto/bn/libcrypto-shlib-bn_lib.d \
+     crypto/x509/libcrypto-shlib-x509_def.d \
+     crypto/lhash/libcrypto-shlib-lhash.d apps/openssl-bin-errstr.d \
+     crypto/modes/libcrypto-lib-xts128.d \
+     crypto/des/libcrypto-shlib-xcbc_enc.d crypto/libcrypto-lib-ssl_err.d \
+     crypto/dh/libcrypto-lib-dh_gen.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_gcm.d \
+     crypto/rand/libcrypto-shlib-rand_meth.d \
+     test/dtls_mtu_test-bin-dtls_mtu_test.d \
+     crypto/x509/libcrypto-lib-v3_audit_id.d \
+     test/quic_srt_gen_test-bin-quic_srt_gen_test.d \
+     crypto/bn/libcrypto-lib-bn_lib.d \
+     test/buildtest_c_types-bin-buildtest_types.d \
+     test/bio_tfo_test-bin-bio_tfo_test.d \
+     crypto/engine/libcrypto-shlib-eng_list.d \
+     crypto/evp/libcrypto-lib-e_aes_cbc_hmac_sha256.d \
+     test/danetest-bin-danetest.d crypto/async/libcrypto-shlib-async.d \
+     apps/openssl-bin-rehash.d crypto/dh/libcrypto-lib-dh_rfc5114.d \
+     test/time_test-bin-time_test.d crypto/dh/libcrypto-shlib-dh_backend.d \
+     crypto/pkcs12/libcrypto-lib-p12_p8d.d crypto/ui/libcrypto-lib-ui_null.d \
+     fuzz/cmp-test-bin-cmp.d crypto/conf/libcrypto-lib-conf_ssl.d \
+     crypto/libcrypto-lib-o_fopen.d apps/lib/uitest-bin-apps_ui.d \
+     crypto/cms/libcrypto-shlib-cms_err.d \
+     crypto/x509/libcrypto-lib-x509_set.d \
+     crypto/cms/libcrypto-shlib-cms_asn1.d \
+     crypto/ts/libcrypto-shlib-ts_rsp_utils.d \
+     crypto/libcrypto-lib-comp_methods.d \
+     crypto/property/libcrypto-shlib-defn_cache.d \
+     crypto/ocsp/libcrypto-shlib-ocsp_srv.d \
+     test/evp_byname_test-bin-evp_byname_test.d \
+     ssl/statem/libssl-lib-statem_clnt.d \
+     providers/implementations/asymciphers/libdefault-lib-sm2_enc.d \
+     ssl/quic/libssl-lib-quic_record_rx.d \
+     crypto/x509/libcrypto-shlib-v3_conf.d \
+     crypto/ocsp/libcrypto-shlib-ocsp_vfy.d \
+     test/buildtest_c_cryptoerr_legacy-bin-buildtest_cryptoerr_legacy.d \
+     crypto/evp/libcrypto-shlib-s_lib.d \
+     test/quic_txpim_test-bin-quic_txpim_test.d \
+     crypto/x509/libcrypto-shlib-v3_crld.d \
+     crypto/dh/libcrypto-shlib-dh_err.d crypto/comp/libcrypto-lib-c_zstd.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_sm4_ccm_hw.d \
+     providers/implementations/signature/libdefault-lib-ml_dsa_sig.d \
+     providers/implementations/rands/libdefault-lib-drbg.d \
+     test/sslbuffertest-bin-sslbuffertest.d \
+     test/buildtest_c_http-bin-buildtest_http.d \
+     crypto/objects/libcrypto-shlib-obj_xref.d \
+     ssl/record/methods/libcommon-lib-tls_pad.d \
+     crypto/engine/libcrypto-lib-tb_rand.d \
+     crypto/bn/libcrypto-shlib-bn_gf2m.d \
+     crypto/poly1305/libcrypto-lib-poly1305.d \
+     crypto/property/libcrypto-shlib-property_err.d \
+     test/bio_addr_test-bin-bio_addr_test.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_gcm_siv.d \
+     crypto/ui/libcrypto-shlib-ui_err.d crypto/x509/libcrypto-shlib-x_all.d \
+     crypto/evp/libcrypto-lib-e_aes.d crypto/x509/libcrypto-lib-x_ietfatt.d \
+     crypto/x509/libcrypto-shlib-x509_v3.d \
+     crypto/pem/libcrypto-shlib-pvkfmt.d providers/libcrypto-lib-nullprov.d \
+     crypto/libcrypto-lib-provider_predefined.d \
+     crypto/asn1/libcrypto-lib-asn_mstbl.d crypto/libcrypto-shlib-cryptlib.d \
+     ssl/quic/libssl-shlib-quic_reactor_wait_ctx.d \
+     crypto/slh_dsa/libcrypto-shlib-slh_xmss.d \
+     crypto/ec/libcrypto-lib-ec_curve.d \
+     test/evp_pkey_dhkem_test-bin-evp_pkey_dhkem_test.d \
+     test/helpers/quic_newcid_test-bin-ssltestlib.d \
+     crypto/modes/libcrypto-lib-siv128.d test/afalgtest-bin-afalgtest.d \
+     crypto/hashtable/libcrypto-lib-hashfunc.d \
+     crypto/ec/libcrypto-shlib-ecp_nistz256.d \
+     crypto/evp/libcrypto-shlib-p5_crpt.d test/crltest-bin-crltest.d \
+     crypto/http/libcrypto-lib-http_err.d \
+     test/helpers/quicfaultstest-bin-quictestlib.d \
+     crypto/x509/libcrypto-shlib-v3_prn.d test/sslapitest-bin-tls-provider.d \
+     crypto/ec/libcrypto-lib-ecx_key.d crypto/txt_db/libcrypto-lib-txt_db.d \
+     crypto/rsa/libcrypto-shlib-rsa_asn1.d crypto/libcrypto-shlib-provider.d \
+     crypto/slh_dsa/libcrypto-lib-slh_fors.d \
+     crypto/rsa/libcrypto-shlib-rsa_sp800_56b_gen.d \
+     ssl/libssl-shlib-ssl_rsa.d fuzz/quic-lcidm-test-bin-test-corpus.d \
+     crypto/objects/libcrypto-lib-obj_dat.d \
+     test/ossl_store_test-bin-ossl_store_test.d \
+     crypto/asn1/libcrypto-shlib-a_dup.d \
+     test/testutil/libtestutil-lib-output.d \
+     providers/implementations/encode_decode/libdefault-lib-ml_kem_codecs.d \
+     crypto/ec/libcrypto-shlib-ecp_mont.d \
+     crypto/asn1/libcrypto-shlib-a_digest.d \
+     crypto/pkcs12/libcrypto-shlib-p12_p8d.d \
+     crypto/thread/arch/libssl-shlib-thread_posix.d \
+     crypto/bn/libcrypto-lib-bn_gf2m.d engines/ecptest-dso-e_ecptest.d \
+     crypto/x509/libcrypto-lib-v3_battcons.d \
+     crypto/ffc/libcrypto-shlib-ffc_backend.d \
+     crypto/bio/libcrypto-shlib-bss_acpt.d \
+     crypto/ts/libcrypto-lib-ts_rsp_print.d \
+     test/bio_meth_test-bin-bio_meth_test.d apps/lib/libapps-lib-opt.d \
+     crypto/pem/libcrypto-lib-pem_pkey.d \
+     providers/implementations/digests/libdefault-lib-sm3_prov.d \
+     crypto/slh_dsa/libcrypto-lib-slh_xmss.d \
+     crypto/rsa/libcrypto-lib-rsa_prn.d crypto/ec/libcrypto-shlib-ec2_oct.d \
+     crypto/asn1/libcrypto-shlib-tasn_prn.d \
+     crypto/pem/libcrypto-shlib-pem_info.d \
+     crypto/ct/libcrypto-shlib-ct_vfy.d crypto/evp/libcrypto-shlib-digest.d \
+     crypto/libcrypto-shlib-param_build.d crypto/ui/libcrypto-lib-ui_util.d \
+     crypto/ec/libcrypto-shlib-ec_err.d \
+     crypto/slh_dsa/libcrypto-shlib-slh_params.d \
+     ssl/quic/libssl-shlib-quic_lcidm.d \
+     test/buildtest_c_dh-bin-buildtest_dh.d \
+     crypto/evp/libcrypto-lib-m_null.d \
+     crypto/engine/libcrypto-shlib-eng_dyn.d \
+     crypto/evp/libcrypto-shlib-p_verify.d \
+     test/quic_lcidm_test-bin-quic_lcidm_test.d \
+     crypto/x509/libcrypto-lib-x509_vfy.d \
+     crypto/evp/libcrypto-shlib-keymgmt_lib.d \
+     crypto/evp/libcrypto-lib-p_open.d \
+     test/buildtest_c_indicator-bin-buildtest_indicator.d \
+     fuzz/ml-kem-test-bin-test-corpus.d crypto/libssl-shlib-quic_vlint.d \
+     test/helpers/cmp_vfy_test-bin-cmp_testlib.d \
+     crypto/aes/libcrypto-lib-aes_ige.d \
+     ssl/quic/libssl-shlib-quic_tls_api_method.d \
+     crypto/rsa/libcrypto-shlib-rsa_x931.d \
+     crypto/ocsp/libcrypto-shlib-ocsp_err.d \
+     crypto/des/libcrypto-lib-str2key.d \
+     providers/common/liblegacy-lib-provider_util.d \
+     crypto/objects/libcrypto-lib-obj_lib.d \
+     test/params_test-bin-params_test.d \
+     providers/implementations/encode_decode/libdefault-lib-encode_key2blob.d \
+     test/testutil/libtestutil-lib-random.d \
+     crypto/encode_decode/libcrypto-lib-decoder_pkey.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_xts_fips.d \
+     crypto/ec/libcrypto-shlib-eck_prn.d crypto/libcrypto-lib-mem_sec.d \
+     crypto/cmp/libcrypto-lib-cmp_http.d \
+     fuzz/quic-lcidm-test-bin-quic-lcidm.d \
+     crypto/modes/libcrypto-shlib-gcm128.d \
+     crypto/store/libcrypto-lib-store_meth.d \
+     test/evp_pkey_provided_test-bin-evp_pkey_provided_test.d \
+     crypto/evp/libcrypto-shlib-e_old.d \
+     test/cmp_client_test-bin-cmp_client_test.d \
+     crypto/err/libcrypto-lib-err.d crypto/ffc/libcrypto-shlib-ffc_dh.d \
+     crypto/evp/libcrypto-shlib-e_des.d test/http_test-bin-http_test.d \
+     crypto/x509/libcrypto-shlib-v3_bcons.d crypto/libcrypto-lib-cversion.d \
+     test/buildtest_c_ts-bin-buildtest_ts.d \
+     crypto/libcrypto-shlib-threads_pthread.d \
+     crypto/x509/libcrypto-shlib-v3_san.d \
+     test/quic_stream_test-bin-quic_stream_test.d \
+     crypto/engine/libcrypto-lib-tb_ecpmeth.d \
+     ssl/quic/libssl-shlib-quic_statm.d apps/lib/libtestutil-lib-opt.d \
+     test/buildtest_c_buffer-bin-buildtest_buffer.d \
+     apps/lib/libapps-lib-apps_opt_printf.d \
+     crypto/libcrypto-shlib-core_namemap.d \
+     ssl/quic/libssl-shlib-quic_rx_depack.d crypto/ct/libcrypto-lib-ct_vfy.d \
+     crypto/evp/libcrypto-shlib-legacy_md5.d \
+     crypto/evp/libcrypto-lib-digest.d crypto/des/libcrypto-shlib-cfb64ede.d \
+     crypto/thread/libssl-shlib-arch.d ssl/libssl-shlib-ssl_ciph.d \
+     apps/lib/libapps-lib-apps_ui.d \
+     providers/implementations/signature/libdefault-lib-rsa_sig.d \
+     crypto/bio/libcrypto-shlib-ossl_core_bio.d \
+     crypto/pkcs7/libcrypto-lib-bio_pk7.d \
+     crypto/x509/libcrypto-lib-v3_timespec.d \
+     test/helpers/ssl_test-bin-handshake_srp.d \
+     crypto/x509/libcrypto-shlib-v3_iobo.d fuzz/bignum-test-bin-bignum.d \
+     crypto/sdf/libcrypto-lib-sdf_meth.d \
+     crypto/asn1/libcrypto-shlib-x_bignum.d ssl/quic/libssl-lib-quic_types.d \
+     crypto/dh/libcrypto-lib-dh_depr.d crypto/asn1/libcrypto-lib-tasn_fre.d \
+     crypto/evp/libcrypto-shlib-kdf_lib.d \
+     apps/lib/ca_internals_test-bin-engine.d \
+     crypto/aes/libcrypto-shlib-aes_ecb.d \
+     crypto/dh/libcrypto-shlib-dh_depr.d crypto/ess/libcrypto-lib-ess_asn1.d \
+     providers/implementations/digests/libdefault-lib-md5_prov.d \
+     ssl/libssl-shlib-ssl_conf.d test/buildtest_c_des-bin-buildtest_des.d \
+     crypto/bio/libcrypto-lib-bss_core.d crypto/libcrypto-lib-packet.d \
+     ssl/quic/libssl-lib-quic_cfq.d crypto/evp/libcrypto-shlib-p_enc.d \
+     test/pkcs7_test-bin-pkcs7_test.d \
+     crypto/libcrypto-shlib-provider_child.d \
+     crypto/rsa/libcrypto-shlib-rsa_pmeth.d \
+     test/helpers/quic_srt_gen_test-bin-noisydgrambio.d \
+     crypto/ml_dsa/libcrypto-lib-ml_dsa_sign.d \
+     crypto/dsa/libcrypto-lib-dsa_prn.d crypto/cmp/libcrypto-lib-cmp_msg.d \
+     crypto/ct/libcrypto-shlib-ct_sct_ctx.d \
+     test/buildtest_c_srtp-bin-buildtest_srtp.d \
+     crypto/x509/libcrypto-shlib-t_x509.d \
+     crypto/rsa/libcrypto-shlib-rsa_ossl.d \
+     test/buildtest_c_rc4-bin-buildtest_rc4.d \
+     crypto/des/libcrypto-shlib-des_enc.d \
+     crypto/dsa/libcrypto-shlib-dsa_pmeth.d \
+     crypto/evp/libcrypto-shlib-evp_key.d \
+     providers/implementations/rands/libdefault-lib-drbg_ctr.d \
+     crypto/bn/libcrypto-lib-bn_mod.d \
+     test/ml_kem_internal_test-bin-ml_kem_internal_test.d \
+     crypto/dsa/libcrypto-shlib-dsa_backend.d \
+     providers/implementations/macs/libdefault-lib-poly1305_prov.d \
+     crypto/x509/libcrypto-lib-v3_pci.d \
+     crypto/pkcs12/libcrypto-lib-p12_attr.d \
+     crypto/ec/libcrypto-shlib-ec_ameth.d \
+     crypto/pkcs12/libcrypto-shlib-p12_crpt.d \
+     crypto/err/libcrypto-shlib-err_blocks.d \
+     providers/implementations/encode_decode/libdefault-lib-decode_der2key.d \
+     crypto/bio/libcrypto-lib-bss_null.d crypto/des/libcrypto-lib-ecb3_enc.d \
+     providers/common/libcommon-lib-provider_err.d \
+     crypto/evp/libcrypto-lib-evp_cnf.d \
+     providers/implementations/keymgmt/libtemplate-lib-template_kmgmt.d \
+     crypto/ec/libcrypto-lib-ec_pmeth.d \
+     crypto/sm2/libcrypto-shlib-sm2_sign.d \
+     crypto/ec/libcrypto-shlib-ecdh_kdf.d crypto/ec/libcrypto-lib-ec_key.d \
+     crypto/x509/libcrypto-lib-v3_attrdesc.d \
+     providers/implementations/encode_decode/libdefault-lib-endecoder_common.d \
+     crypto/rsa/libcrypto-shlib-rsa_depr.d \
+     crypto/ocsp/libcrypto-shlib-v3_ocsp.d crypto/sha/libcrypto-lib-sha3.d \
+     crypto/x509/libcrypto-shlib-x_crl.d \
+     crypto/ocsp/libcrypto-shlib-ocsp_asn.d \
+     crypto/md5/libcrypto-shlib-md5_dgst.d \
+     crypto/ct/libcrypto-shlib-ct_prn.d crypto/cms/libcrypto-shlib-cms_ec.d \
+     crypto/ec/curve448/libcrypto-lib-eddsa.d \
+     crypto/x509/libcrypto-lib-v3_pcia.d crypto/evp/libcrypto-lib-p_legacy.d \
+     test/helpers/quic_radix_test-bin-noisydgrambio.d \
+     crypto/engine/libcrypto-lib-eng_cnf.d \
+     crypto/ec/libcrypto-shlib-ecp_meth.d \
+     crypto/engine/libcrypto-lib-tb_dsa.d \
+     providers/implementations/kem/libdefault-lib-kem_util.d \
+     crypto/pkcs12/libcrypto-lib-p12_p8e.d \
+     crypto/pem/libcrypto-lib-pem_sign.d \
+     test/endecode_test-bin-endecode_test.d ssl/quic/libssl-lib-qlog.d \
+     test/pemtest-bin-pemtest.d crypto/asn1/libcrypto-shlib-asn1_err.d \
+     crypto/x509/libcrypto-shlib-x_x509a.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_gcm_siv_hw.d \
+     fuzz/slh-dsa-test-bin-slh-dsa.d crypto/ct/libcrypto-lib-ct_x509v3.d \
+     test/bio_dgram_test-bin-bio_dgram_test.d \
+     crypto/x509/libcrypto-shlib-x_ietfatt.d \
+     test/bio_readbuffer_test-bin-bio_readbuffer_test.d \
+     crypto/des/libcrypto-lib-fcrypt.d fuzz/client-test-bin-fuzz_rand.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_sm4_hw.d \
+     crypto/evp/libcrypto-lib-c_allc.d \
+     crypto/cmp/libcrypto-shlib-cmp_status.d \
+     test/enginetest-bin-enginetest.d \
+     providers/implementations/rands/seeding/libdefault-lib-rand_unix.d \
+     crypto/ts/libcrypto-shlib-ts_rsp_sign.d test/aborttest-bin-aborttest.d \
+     crypto/bio/libcrypto-shlib-bss_mem.d \
+     crypto/ocsp/libcrypto-lib-ocsp_srv.d \
+     crypto/bio/libcrypto-shlib-bss_log.d \
+     crypto/rsa/libcrypto-lib-rsa_none.d crypto/libcrypto-lib-uid.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_tdes_common.d \
+     test/punycode_test-bin-punycode_test.d \
+     crypto/dh/libcrypto-shlib-dh_pmeth.d crypto/rsa/libcrypto-lib-rsa_pk1.d \
+     providers/implementations/exchange/libdefault-lib-dh_exch.d \
+     fuzz/acert-test-bin-test-corpus.d \
+     ssl/record/methods/libssl-lib-dtls_meth.d \
+     crypto/x509/libcrypto-lib-x509cset.d crypto/libcrypto-shlib-o_fopen.d \
+     crypto/asn1/libcrypto-shlib-x_int64.d \
+     crypto/evp/libcrypto-shlib-e_wbsm4_baiwu.d \
+     crypto/pkcs12/libcrypto-lib-p12_crpt.d \
+     test/testutil/libtestutil-lib-fake_random.d \
+     crypto/cmp/libcrypto-shlib-cmp_vfy.d crypto/evp/libcrypto-lib-e_sm4.d \
+     ssl/quic/libssl-shlib-quic_cfq.d ssl/libssl-lib-ssl_utst.d \
+     crypto/des/libcrypto-shlib-rand_key.d \
+     crypto/ec/libcrypto-shlib-curve25519.d \
+     test/helpers/quicfaultstest-bin-ssltestlib.d \
+     apps/lib/libapps-lib-app_rand.d \
+     ssl/statem/libssl-shlib-extensions_clnt.d \
+     crypto/bio/libcrypto-lib-bss_dgram.d \
+     test/safe_math_test-bin-safe_math_test.d \
+     test/buildtest_c_ssl2-bin-buildtest_ssl2.d \
+     crypto/objects/libcrypto-shlib-obj_dat.d apps/openssl-bin-pkey.d \
+     crypto/bio/libcrypto-shlib-bss_sock.d \
+     crypto/evp/libcrypto-shlib-p_dec.d test/quicapitest-bin-quicapitest.d \
+     ssl/quic/libssl-shlib-quic_channel.d \
+     crypto/pkcs7/libcrypto-shlib-pk7_attr.d \
+     crypto/x509/libcrypto-shlib-v3_group_ac.d \
+     ssl/record/methods/libssl-lib-tls_common.d \
+     crypto/asn1/libcrypto-lib-a_octet.d ssl/quic/libssl-lib-quic_txp.d \
+     test/buildtest_c_ossl_typ-bin-buildtest_ossl_typ.d \
+     crypto/x509/libcrypto-shlib-v3_sda.d \
+     crypto/x509/libcrypto-lib-v3_ac_tgt.d crypto/bn/libcrypto-lib-bn_add.d \
+     test/test_test-bin-test_test.d crypto/asn1/libcrypto-shlib-a_strnid.d \
+     fuzz/v3name-test-bin-v3name.d crypto/asn1/libcrypto-shlib-x_spki.d \
+     ssl/quic/libssl-lib-qlog_event_helpers.d \
+     crypto/cms/libcrypto-shlib-cms_rsa.d \
+     crypto/ts/libcrypto-lib-ts_req_print.d \
+     engines/loader_attic-dso-e_loader_attic.d \
+     crypto/sha/libcrypto-lib-sha1dgst.d crypto/cms/libcrypto-lib-cms_sd.d \
+     crypto/engine/libcrypto-lib-tb_dh.d \
+     crypto/asn1/libcrypto-shlib-x_long.d \
+     test/fatalerrtest-bin-fatalerrtest.d fuzz/bignum-test-bin-test-corpus.d \
+     crypto/asn1/libcrypto-shlib-tasn_dec.d \
+     test/sm2_internal_test-bin-sm2_internal_test.d \
+     fuzz/dtlsclient-test-bin-fuzz_rand.d \
+     crypto/x509/libcrypto-lib-x509_req.d fuzz/smime-test-bin-smime.d \
+     providers/implementations/rands/libdefault-lib-drbg_hash.d \
+     crypto/libcrypto-shlib-passphrase.d \
+     test/sparse_array_test-bin-sparse_array_test.d \
+     crypto/x509/libcrypto-lib-v3_enum.d crypto/evp/libcrypto-lib-kdf_lib.d \
+     crypto/x509/libcrypto-lib-v3_pcons.d \
+     crypto/x509/libcrypto-shlib-v3_rolespec.d \
+     crypto/bn/libcrypto-shlib-bn_kron.d \
+     crypto/asn1/libcrypto-shlib-asn_mime.d \
+     providers/common/der/libcommon-lib-der_ec_key.d \
+     apps/lib/ca_internals_test-bin-app_rand.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_ccm_hw.d \
+     crypto/ec/libcrypto-lib-ecp_smpl.d \
+     test/buildtest_c_objects-bin-buildtest_objects.d \
+     crypto/libcrypto-shlib-time.d crypto/aes/libcrypto-shlib-aes_misc.d \
+     crypto/crmf/libcrypto-shlib-crmf_err.d \
+     crypto/modes/libcrypto-lib-ocb128.d \
+     crypto/bn/libcrypto-shlib-bn_intern.d test/tsapi_test-bin-tsapi_test.d \
+     crypto/modes/libcrypto-lib-xts128gb.d crypto/libcrypto-shlib-ebcdic.d \
+     crypto/tls13secretstest-bin-quic_vlint.d \
+     crypto/bn/libcrypto-shlib-bn_word.d fuzz/cms-test-bin-test-corpus.d \
+     crypto/asn1/libcrypto-lib-a_i2d_fp.d \
+     test/buildtest_c_stack-bin-buildtest_stack.d \
+     crypto/evp/libcrypto-shlib-dsa_ctrl.d \
+     test/sm4_internal_test-bin-sm4_internal_test.d \
+     crypto/hpke/libcrypto-lib-hpke_util.d \
+     crypto/dsa/libcrypto-lib-dsa_backend.d crypto/eia3/libcrypto-lib-eia3.d \
+     test/helpers/json_test-bin-pktsplitbio.d \
+     crypto/x509/libcrypto-shlib-pcy_map.d \
+     crypto/asn1/libcrypto-shlib-tasn_scn.d \
+     crypto/asn1/libcrypto-lib-a_utctm.d crypto/asn1/libcrypto-shlib-x_val.d \
+     crypto/sdf/libcrypto-shlib-sdf_meth.d \
+     test/testutil/libtestutil-lib-driver.d test/ssl_test-bin-ssl_test.d \
+     crypto/store/libcrypto-lib-store_err.d ssl/quic/libssl-lib-quic_impl.d \
+     providers/common/der/libdefault-lib-der_sm2_gen.d \
+     test/v3ext-bin-v3ext.d crypto/dsa/libcrypto-shlib-dsa_depr.d \
+     crypto/x509/libcrypto-lib-x509name.d \
+     test/helpers/cmp_msg_test-bin-cmp_testlib.d \
+     providers/implementations/macs/libdefault-lib-eia3_prov.d \
+     crypto/hashtable/libcrypto-shlib-hashfunc.d \
+     crypto/engine/libcrypto-lib-tb_asnmth.d \
+     crypto/libcrypto-shlib-provider_predefined.d \
+     crypto/x509/libcrypto-shlib-x509cset.d \
+     providers/common/der/libcommon-lib-der_digests_gen.d \
+     crypto/ts/libcrypto-lib-ts_conf.d \
+     crypto/evp/libcrypto-shlib-pmeth_check.d ssl/libssl-shlib-tls13_enc.d \
+     crypto/x509/libcrypto-lib-v3_ncons.d crypto/bn/libcrypto-lib-bn_sqr.d \
+     crypto/libcrypto-shlib-params_dup.d \
+     crypto/evp/libcrypto-lib-pbe_scrypt.d ssl/libssl-shlib-ssl_utst.d \
+     crypto/sha/libcrypto-lib-sha1_one.d \
+     fuzz/punycode-test-bin-test-corpus.d test/p_minimal-dso-p_minimal.d \
+     apps/openssl-bin-genrsa.d crypto/cmp/libcrypto-shlib-cmp_http.d \
+     test/provider_internal_test-bin-p_test.d crypto/libssl-shlib-ctype.d \
+     crypto/ec/libcrypto-shlib-ec_print.d \
+     crypto/thread/libcrypto-lib-internal.d \
+     crypto/evp/libcrypto-shlib-e_xcbc_d.d \
+     test/helpers/quicapitest-bin-pktsplitbio.d apps/openssl-bin-pkcs8.d \
+     crypto/x509/libcrypto-shlib-v3_akid.d \
+     test/buildtest_c_evp-bin-buildtest_evp.d \
+     crypto/objects/libcrypto-shlib-obj_lib.d \
+     providers/implementations/kem/libdefault-lib-rsa_kem.d \
+     providers/endecode_test-bin-legacyprov.d \
+     crypto/err/libcrypto-shlib-err_save.d \
+     crypto/md5/liblegacy-lib-md5_sha1.d \
+     crypto/conf/libcrypto-shlib-conf_sap.d \
+     crypto/dso/libcrypto-lib-dso_dlfcn.d \
+     crypto/libcrypto-shlib-threads_none.d \
+     test/ext_internal_test-bin-ext_internal_test.d \
+     providers/implementations/ciphers/liblegacy-lib-cipher_des_hw.d \
+     fuzz/quic-lcidm-test-bin-fuzz_rand.d engines/dasync-dso-e_dasync.d \
+     crypto/engine/libcrypto-shlib-eng_err.d \
+     crypto/evp/libcrypto-shlib-p_open.d crypto/pem/libcrypto-lib-pem_xaux.d \
+     crypto/dsa/libcrypto-shlib-dsa_ossl.d \
+     crypto/slh_dsa/libcrypto-lib-slh_dsa_key.d \
+     providers/implementations/encode_decode/libdefault-lib-decode_spki2typespki.d \
+     ssl/libssl-lib-ssl_stat.d crypto/x509/libcrypto-shlib-v3_ind_iss.d \
+     crypto/asn1/libcrypto-lib-x_int64.d fuzz/hashtable-test-bin-fuzz_rand.d \
+     providers/common/libdefault-lib-securitycheck.d \
+     crypto/evp/libcrypto-lib-kdf_meth.d \
+     crypto/asn1/libcrypto-lib-asn_moid.d \
+     crypto/evp/libcrypto-shlib-legacy_md5_sha1.d \
+     test/packettest-bin-packettest.d crypto/evp/libcrypto-lib-bio_ok.d \
+     providers/implementations/asymciphers/libdefault-lib-rsa_enc.d \
+     crypto/engine/libcrypto-lib-eng_pkey.d ssl/quic/libssl-lib-quic_ackm.d \
+     crypto/libcrypto-shlib-asn1_dsa.d test/ml_dsa_test-bin-ml_dsa_test.d \
+     test/provider_status_test-bin-provider_status_test.d \
+     providers/implementations/kdfs/libdefault-lib-kbkdf.d \
+     test/asn1_string_table_test-bin-asn1_string_table_test.d \
+     crypto/bn/libcrypto-shlib-bn_err.d crypto/evp/libcrypto-shlib-bio_ok.d \
+     test/provider_default_search_path_test-bin-provider_default_search_path_test.d \
+     test/ffc_internal_test-bin-ffc_internal_test.d \
+     ssl/libssl-lib-ssl_conf.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_chacha20_hw.d \
+     crypto/sm3/libcrypto-shlib-legacy_sm3.d \
+     crypto/siphash/libcrypto-shlib-siphash.d \
+     test/x509_internal_test-bin-x509_internal_test.d \
+     crypto/ffc/libcrypto-lib-ffc_dh.d \
+     crypto/pkcs12/libcrypto-shlib-p12_sbag.d \
+     crypto/objects/libcrypto-lib-obj_xref.d \
+     crypto/dh/libcrypto-lib-dh_prn.d crypto/rand/libcrypto-lib-rand_pool.d \
+     crypto/ess/libcrypto-shlib-ess_err.d \
+     test/ecstresstest-bin-ecstresstest.d \
+     providers/libcrypto-shlib-defltprov.d apps/openssl-bin-skeyutl.d \
+     crypto/asn1/ca_internals_test-bin-a_time.d \
+     ssl/quic/libssl-lib-quic_wire_pkt.d crypto/evp/libcrypto-lib-e_des3.d \
+     crypto/des/libcrypto-lib-ofb64ede.d crypto/bio/libcrypto-shlib-bio_cb.d \
+     crypto/rsa/libcrypto-shlib-rsa_none.d \
+     crypto/rsa/libcrypto-lib-rsa_gen.d crypto/pem/libcrypto-shlib-pem_pk8.d \
+     crypto/evp/libcrypto-lib-pmeth_check.d \
+     crypto/ml_dsa/libcrypto-lib-ml_dsa_key_compress.d \
+     crypto/x509/libcrypto-shlib-v3_skid.d \
+     crypto/lhash/libcrypto-lib-lh_stats.d \
+     fuzz/quic-client-test-bin-test-corpus.d \
+     crypto/async/arch/libcrypto-shlib-async_null.d \
+     crypto/thread/arch/libcrypto-lib-thread_none.d \
+     crypto/cms/libcrypto-lib-cms_rsa.d crypto/des/libcrypto-lib-pcbc_enc.d \
+     test/quic_ackm_test-bin-quic_ackm_test.d \
+     crypto/des/libcrypto-lib-cbc_cksm.d ssl/libssl-lib-s3_lib.d \
+     test/testutil/libtestutil-lib-provider.d \
+     fuzz/server-test-bin-test-corpus.d ssl/quic/libssl-lib-cc_newreno.d \
+     crypto/asn1/libcrypto-shlib-a_sign.d crypto/md5/liblegacy-lib-md5_one.d \
+     crypto/x509/libcrypto-lib-v3_attrmap.d \
+     ssl/statem/libssl-lib-statem_lib.d \
+     crypto/asn1/libcrypto-shlib-asn_moid.d \
+     test/helpers/quic_radix_test-bin-quictestlib.d \
+     crypto/pkcs12/libcrypto-lib-p12_kiss.d \
+     crypto/sm2/libcrypto-lib-sm2_sign.d \
+     test/sysdefaulttest-bin-sysdefaulttest.d \
+     fuzz/dtlsserver-test-bin-test-corpus.d \
+     crypto/x509/libcrypto-lib-x509_meth.d \
+     crypto/des/libcrypto-shlib-cbc_enc.d \
+     crypto/des/libcrypto-shlib-cbc_cksm.d \
+     crypto/x509/libcrypto-lib-pcy_cache.d \
+     crypto/libcrypto-shlib-indicator_core.d \
+     apps/lib/libapps-lib-engine_loader.d \
+     test/build_wincrypt_test-bin-build_wincrypt_test.d \
+     ssl/quic/libssl-shlib-quic_record_util.d \
+     crypto/rsa/libcrypto-shlib-rsa_gen.d \
+     test/ssl_test_ctx_test-bin-ssl_test_ctx_test.d \
+     test/evp_pkey_ctx_new_from_name-bin-evp_pkey_ctx_new_from_name.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_zuc_eea3.d \
+     crypto/libcrypto-lib-o_dir.d crypto/evp/libcrypto-lib-evp_err.d \
+     crypto/ocsp/libcrypto-lib-ocsp_prn.d apps/ca_internals_test-bin-ca.d \
+     crypto/bio/libcrypto-lib-bio_lib.d \
+     test/context_internal_test-bin-context_internal_test.d \
+     test/buildtest_c_e_ostime-bin-buildtest_e_ostime.d \
+     crypto/asn1/libcrypto-shlib-t_bitst.d \
+     crypto/x509/libcrypto-lib-pcy_lib.d \
+     crypto/store/libcrypto-lib-store_init.d \
+     test/quic_txp_test-bin-cc_dummy.d \
+     test/chacha_internal_test-bin-chacha_internal_test.d \
+     crypto/x509/libcrypto-shlib-v3_genn.d \
+     crypto/engine/libcrypto-shlib-tb_eckey.d \
+     crypto/property/libcrypto-lib-property_err.d \
+     crypto/x509/libcrypto-shlib-pcy_node.d \
+     fuzz/quic-srtm-test-bin-fuzz_rand.d \
+     providers/implementations/kem/libdefault-lib-ecx_kem.d \
+     crypto/x509/libcrypto-lib-x509rset.d \
+     crypto/cms/libcrypto-lib-cms_asn1.d \
+     crypto/dsa/libcrypto-lib-dsa_check.d \
+     crypto/des/libcrypto-lib-fcrypt_b.d ssl/quic/libssl-lib-quic_sf_list.d \
+     crypto/modes/libcrypto-shlib-cfb128.d \
+     crypto/x509/libcrypto-shlib-v3_authattid.d \
+     crypto/evp/libcrypto-lib-encode.d crypto/ts/libcrypto-lib-ts_asn1.d \
+     test/evp_extra_test2-bin-tls-provider.d \
+     crypto/dsa/libcrypto-lib-dsa_asn1.d crypto/x509/libcrypto-lib-v3_skid.d \
+     crypto/conf/libcrypto-shlib-conf_err.d \
+     providers/implementations/digests/libdefault-lib-sha2_prov.d \
+     crypto/rsa/libcrypto-shlib-rsa_saos.d crypto/libcrypto-shlib-punycode.d \
+     crypto/cms/libcrypto-lib-cms_io.d crypto/md5/libcrypto-lib-md5_dgst.d \
+     test/ssl_handshake_rtt_test-bin-ssl_handshake_rtt_test.d \
+     crypto/asn1/libcrypto-shlib-bio_ndef.d \
+     test/buildtest_c_obj_mac-bin-buildtest_obj_mac.d \
+     ssl/quic/libssl-lib-quic_rx_depack.d \
+     crypto/x509/libcrypto-shlib-x509_txt.d crypto/libcrypto-shlib-mem.d \
+     crypto/ui/libcrypto-lib-ui_err.d \
+     providers/implementations/signature/libdefault-lib-sm2_sig.d \
+     ssl/quic/libssl-shlib-quic_srtm.d crypto/asn1/libcrypto-shlib-a_time.d \
+     crypto/bn/libcrypto-shlib-bn_srp.d ssl/libssl-shlib-t1_enc.d \
+     crypto/ec/libcrypto-lib-ec_err.d crypto/crmf/libcrypto-lib-crmf_pbm.d \
+     crypto/thread/libcrypto-lib-api.d \
+     crypto/store/libcrypto-lib-store_result.d \
+     crypto/conf/libcrypto-lib-conf_mod.d test/list_test-bin-list_test.d \
+     crypto/engine/libcrypto-shlib-eng_cnf.d \
+     test/provider_test-bin-provider_test.d \
+     test/moduleloadtest-bin-simpledynamic.d \
+     crypto/evp/libcrypto-lib-p_lib.d crypto/evp/libcrypto-shlib-evp_pbe.d \
+     test/helpers/quicapitest-bin-noisydgrambio.d \
+     crypto/engine/libcrypto-lib-eng_err.d apps/openssl-bin-asn1parse.d \
+     crypto/x509/libcrypto-lib-x509_r2x.d ssl/libssl-shlib-ssl_rsa_legacy.d \
+     test/provider_pkey_test-bin-provider_pkey_test.d \
+     apps/openssl-bin-verify.d crypto/asn1/libcrypto-shlib-ameth_lib.d \
+     crypto/bn/libcrypto-shlib-rsaz_exp_x2.d \
+     test/evp_skey_test-bin-evp_skey_test.d \
+     crypto/bio/libcrypto-shlib-bio_err.d \
+     test/bn_internal_test-bin-bn_internal_test.d \
+     crypto/libcrypto-lib-threads_win.d crypto/bio/libcrypto-lib-bio_sock.d \
+     test/buildtest_c_hmac-bin-buildtest_hmac.d \
+     crypto/x509/libcrypto-lib-v3_cpols.d test/pbetest-bin-pbetest.d \
+     providers/common/libdefault-lib-bio_prov.d \
+     crypto/conf/libcrypto-shlib-conf_api.d crypto/ts/libcrypto-lib-ts_err.d \
+     crypto/ocsp/libcrypto-shlib-ocsp_prn.d \
+     test/provider_internal_test-bin-provider_internal_test.d \
+     crypto/x509/libcrypto-lib-x509_acert.d \
+     crypto/async/libcrypto-lib-async.d ssl/libssl-shlib-bio_ssl.d \
+     crypto/x509/libcrypto-lib-v3_ind_iss.d \
+     crypto/modes/libcrypto-shlib-xts128gb.d \
+     test/evp_pkey_dparams_test-bin-evp_pkey_dparams_test.d \
+     crypto/bio/libcrypto-lib-bss_log.d ssl/libssl-lib-tls13_enc.d \
+     fuzz/conf-test-bin-test-corpus.d crypto/asn1/libcrypto-lib-a_d2i_fp.d \
+     test/quic_cfq_test-bin-quic_cfq_test.d \
+     crypto/dh/libcrypto-lib-dh_check.d crypto/ct/libcrypto-shlib-ct_err.d \
+     apps/lib/libapps-lib-fmt.d crypto/evp/libcrypto-lib-mac_meth.d \
+     test/property_test-bin-property_test.d \
+     crypto/async/arch/libcrypto-shlib-async_win.d \
+     crypto/cmp/libcrypto-shlib-cmp_genm.d \
+     crypto/siphash/libssl-shlib-siphash.d test/v3nametest-bin-v3nametest.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_cbc_hmac_sha256_hw.d \
+     test/bntest-bin-bntest.d crypto/bn/libcrypto-lib-bn_print.d \
+     crypto/ec/libcrypto-lib-ecx_backend.d crypto/evp/libcrypto-lib-kem.d \
+     providers/implementations/macs/libdefault-lib-siphash_prov.d \
+     crypto/modes/libcrypto-shlib-cts128.d \
+     test/buildtest_c_sdf-bin-buildtest_sdf.d \
+     crypto/ec/libcrypto-shlib-ecp_smpl.d crypto/thread/libcrypto-lib-arch.d \
+     apps/lib/libapps-lib-apps.d test/evp_kdf_test-bin-evp_kdf_test.d \
+     crypto/bn/libcrypto-lib-bn_const.d crypto/aes/libcrypto-lib-aes_ofb.d \
+     test/dsa_no_digest_size_test-bin-dsa_no_digest_size_test.d \
+     test/rsa_complex-bin-rsa_complex.d \
+     crypto/x509/libcrypto-shlib-v3_usernotice.d \
+     ssl/quic/libssl-lib-quic_thread_assist.d \
+     crypto/libcrypto-lib-threads_lib.d \
+     ssl/quic/libssl-shlib-quic_record_shared.d \
+     test/asn1_stable_parse_test-bin-asn1_stable_parse_test.d \
+     crypto/evp/libcrypto-shlib-evp_utils.d \
+     crypto/dsa/libcrypto-lib-dsa_gen.d \
+     crypto/x509/libcrypto-shlib-pcy_tree.d \
+     crypto/ec/libcrypto-lib-ecp_nist.d engines/capi-dso-e_capi.d \
+     crypto/pem/libcrypto-lib-pem_oth.d crypto/x509/libcrypto-lib-v3_crld.d \
+     crypto/comp/libcrypto-shlib-comp_lib.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_tdes_wrap_hw.d \
+     providers/implementations/ciphers/libcommon-lib-ciphercommon_block.d \
+     test/buildtest_c_zkp_transcript-bin-buildtest_zkp_transcript.d \
+     crypto/evp/libcrypto-lib-legacy_md5_sha1.d \
+     test/fips_version_test-bin-fips_version_test.d \
+     crypto/aes/libcrypto-shlib-aes_ofb.d crypto/sha/libcrypto-shlib-sha3.d \
+     crypto/asn1/libcrypto-shlib-tasn_utl.d crypto/libcrypto-lib-ctype.d \
+     crypto/asn1/libcrypto-shlib-d2i_param.d \
+     crypto/dh/libcrypto-lib-dh_ameth.d \
+     crypto/dsa/libcrypto-shlib-dsa_ameth.d \
+     test/algorithmid_test-bin-algorithmid_test.d \
+     fuzz/client-test-bin-client.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_chacha20_poly1305.d \
+     ssl/quic/libssl-shlib-quic_ackm.d crypto/x509/libcrypto-lib-x_x509.d \
+     crypto/thread/arch/libssl-shlib-thread_none.d ssl/libssl-lib-ssl_txt.d \
+     test/helpers/cmp_protect_test-bin-cmp_testlib.d \
+     ssl/quic/libssl-shlib-quic_record_tx.d apps/openssl-bin-x509.d \
+     crypto/x509/libcrypto-shlib-v3_info.d \
+     crypto/rsa/libcrypto-shlib-rsa_mp_names.d \
+     crypto/sm2/libcrypto-lib-sm2_err.d \
+     providers/implementations/ciphers/libcommon-lib-ciphercommon.d \
+     crypto/ec/libcrypto-lib-ecdsa_ossl.d \
+     crypto/ec/curve448/libcrypto-shlib-curve448_tables.d \
+     test/evp_libctx_test-bin-evp_libctx_test.d \
+     crypto/bio/libcrypto-shlib-bio_lib.d crypto/cms/libcrypto-lib-cms_dd.d \
+     ssl/quic/libssl-shlib-quic_thread_assist.d \
+     test/buildtest_c_macros-bin-buildtest_macros.d \
+     crypto/libcrypto-shlib-ex_data.d \
+     test/helpers/cmp_ctx_test-bin-cmp_testlib.d \
+     crypto/libcrypto-shlib-der_writer.d apps/lib/libapps-lib-app_provider.d \
+     crypto/bio/libcrypto-lib-bss_bio.d \
+     crypto/asn1/libcrypto-shlib-tasn_typ.d \
+     test/buildtest_c_sm3-bin-buildtest_sm3.d \
+     crypto/bio/libcrypto-lib-bss_dgram_pair.d \
+     crypto/des/libcrypto-shlib-ofb64enc.d \
+     crypto/evp/libcrypto-shlib-encode.d crypto/evp/libcrypto-lib-e_null.d \
+     test/buildtest_c_pem2-bin-buildtest_pem2.d \
+     crypto/ec/libcrypto-lib-eck_prn.d test/ssl_old_test-bin-ssl_old_test.d \
+     test/bad_dtls_test-bin-bad_dtls_test.d \
+     crypto/x509/libcrypto-shlib-v3_bitst.d \
+     providers/implementations/encode_decode/libdefault-lib-decode_msblob2key.d \
+     crypto/x509/libcrypto-shlib-x509_err.d \
+     crypto/des/libcrypto-shlib-ecb3_enc.d \
+     test/memleaktest-bin-memleaktest.d crypto/evp/libcrypto-lib-bio_enc.d \
+     apps/lib/libapps-lib-s_cb.d crypto/bio/libcrypto-shlib-bf_nbio.d \
+     crypto/buffer/libcrypto-lib-buffer.d \
+     crypto/modes/libcrypto-shlib-xts128.d \
+     crypto/bn/libcrypto-shlib-bn_nist.d \
+     test/helpers/cmp_asn_test-bin-cmp_testlib.d \
+     test/asynciotest-bin-asynciotest.d ssl/rio/libssl-shlib-poll_builder.d \
+     crypto/evp/libcrypto-lib-c_alld.d crypto/aes/libcrypto-lib-aes_wrap.d \
+     crypto/ec/curve448/libcrypto-lib-curve448.d \
+     crypto/engine/libcrypto-shlib-eng_openssl.d \
+     crypto/x509/libcrypto-lib-v3_sda.d \
+     crypto/engine/libcrypto-shlib-tb_asnmth.d \
+     test/param_build_test-bin-param_build_test.d \
+     crypto/bn/libcrypto-shlib-bn_const.d \
+     crypto/libcrypto-lib-param_build_set.d \
+     crypto/evp/libcrypto-shlib-ctrl_params_translate.d \
+     crypto/ec/libcrypto-lib-ec_lib.d crypto/asn1/libcrypto-shlib-d2i_pr.d \
+     test/asn1_dsa_internal_test-bin-asn1_dsa_internal_test.d \
+     test/time_offset_test-bin-time_offset_test.d \
+     crypto/evp/libcrypto-shlib-e_chacha20_poly1305.d \
+     providers/legacy-dso-legacyprov.d \
+     crypto/x509/libcrypto-lib-x509_trust.d \
+     crypto/hpke/libcrypto-shlib-hpke_util.d \
+     crypto/libcrypto-lib-sparse_array.d \
+     crypto/ec/libcrypto-shlib-ec_curve.d test/strtoultest-bin-strtoultest.d \
+     ssl/record/methods/libssl-shlib-ssl3_cbc.d \
+     test/buildtest_c_md5-bin-buildtest_md5.d \
+     crypto/dsa/libcrypto-shlib-dsa_err.d \
+     crypto/asn1/libcrypto-lib-a_digest.d \
+     fuzz/decoder-test-bin-test-corpus.d \
+     crypto/pkcs12/libcrypto-shlib-p12_npas.d \
+     crypto/x509/libcrypto-lib-x509type.d \
+     providers/implementations/encode_decode/libdefault-lib-ml_dsa_codecs.d \
+     test/buildtest_c_ml_kem-bin-buildtest_ml_kem.d \
+     test/testutil/libtestutil-lib-helper.d \
+     test/helpers/fatalerrtest-bin-ssltestlib.d \
+     test/testutil/libtestutil-lib-main.d \
+     crypto/cmp/libcrypto-shlib-cmp_msg.d engines/afalg-dso-e_afalg.d \
+     crypto/dsa/libcrypto-shlib-dsa_asn1.d apps/openssl-bin-sess_id.d \
+     crypto/pkcs7/libcrypto-lib-pk7_smime.d \
+     fuzz/ml-dsa-test-bin-test-corpus.d crypto/pem/libcrypto-shlib-pem_oth.d \
+     crypto/asn1/libcrypto-shlib-tasn_enc.d \
+     crypto/asn1/libcrypto-lib-tasn_new.d \
+     crypto/x509/libcrypto-lib-v3_sxnet.d crypto/libcrypto-lib-sleep.d \
+     crypto/x509/libcrypto-lib-v3_extku.d test/stack_test-bin-stack_test.d \
+     crypto/crmf/libcrypto-shlib-crmf_asn.d \
+     test/helpers/quic_radix_test-bin-pktsplitbio.d apps/openssl-bin-ocsp.d \
+     crypto/rand/libcrypto-lib-prov_seed.d \
+     crypto/stack/libcrypto-lib-stack.d \
+     ssl/record/methods/libssl-lib-tlsany_meth.d \
+     crypto/bio/libcrypto-lib-bf_nbio.d \
+     crypto/ec/curve448/arch_32/libcrypto-lib-f_impl32.d \
+     crypto/evp/libcrypto-lib-e_rc4.d crypto/x509/libcrypto-shlib-x509_lu.d \
+     crypto/bio/libcrypto-lib-ossl_core_bio.d \
+     crypto/pkcs12/libcrypto-lib-p12_add.d \
+     crypto/ts/libcrypto-shlib-ts_err.d crypto/dh/libcrypto-lib-dh_kdf.d \
+     apps/openssl-bin-s_client.d crypto/ts/libcrypto-lib-ts_rsp_verify.d \
+     test/cmp_protect_test-bin-cmp_protect_test.d \
+     crypto/bio/libcrypto-lib-bss_conn.d \
+     ssl/record/methods/libssl-shlib-tls_pad.d \
+     test/priority_queue_test-bin-priority_queue_test.d \
+     crypto/libcrypto-shlib-params_idx.d crypto/libcrypto-lib-params.d \
+     crypto/pkcs12/libcrypto-lib-p12_utl.d \
+     providers/implementations/kdfs/liblegacy-lib-pbkdf1.d \
+     apps/openssl-bin-prime.d crypto/pkcs12/libcrypto-lib-p12_crt.d \
+     test/gmdifftest-bin-gmdifftest.d crypto/err/libcrypto-lib-err_save.d \
+     providers/common/libdefault-lib-securitycheck_default.d \
+     test/buildtest_c_ecdsa-bin-buildtest_ecdsa.d \
+     crypto/cmp/libcrypto-shlib-cmp_hdr.d crypto/cmac/libcrypto-shlib-cmac.d \
+     crypto/asn1/libcrypto-shlib-a_mbstr.d \
+     providers/implementations/rands/libdefault-lib-drbg_hmac.d \
+     test/ssl_cert_table_internal_test-bin-ssl_cert_table_internal_test.d \
+     apps/openssl-bin-mac.d crypto/dsa/libcrypto-lib-dsa_key.d \
+     crypto/objects/libcrypto-lib-obj_err.d \
+     ssl/quic/libssl-shlib-quic_tserver.d apps/openssl-bin-ec.d \
+     test/localetest-bin-localetest.d crypto/dsa/libcrypto-shlib-dsa_check.d \
+     test/helpers/ssl_test-bin-ssl_test_ctx.d \
+     crypto/bn/libcrypto-lib-bn_mpi.d crypto/x509/libcrypto-lib-pcy_data.d \
+     crypto/asn1/libcrypto-shlib-evp_asn1.d \
+     crypto/asn1/libcrypto-shlib-a_i2d_fp.d \
+     crypto/x509/libcrypto-shlib-x_req.d apps/openssl-bin-ca.d \
+     ssl/record/methods/libdefault-lib-ssl3_cbc.d \
+     ssl/quic/libssl-lib-uint_set.d crypto/asn1/libcrypto-shlib-a_bitstr.d \
+     apps/openssl-bin-cms.d crypto/rsa/libcrypto-shlib-rsa_prn.d \
+     test/helpers/quic_multistream_test-bin-ssltestlib.d \
+     crypto/dh/libcrypto-shlib-dh_prn.d \
+     crypto/bio/libcrypto-shlib-bss_null.d \
+     test/helpers/rpktest-bin-ssltestlib.d test/versions-bin-versions.d \
+     crypto/dsa/libcrypto-shlib-dsa_lib.d \
+     ssl/record/methods/libssl-lib-tls1_meth.d test/exptest-bin-exptest.d \
+     test/conf_include_test-bin-conf_include_test.d \
+     providers/implementations/exchange/libdefault-lib-sm2dh_exch.d \
+     crypto/sm2/libcrypto-shlib-sm2_key.d \
+     providers/common/der/libcommon-lib-der_dsa_key.d \
+     apps/lib/libapps-lib-names.d \
+     test/buildtest_c_ebcdic-bin-buildtest_ebcdic.d \
+     crypto/evp/libcrypto-shlib-cmeth_lib.d \
+     crypto/dsa/libcrypto-lib-dsa_depr.d crypto/ui/libcrypto-lib-ui_lib.d \
+     fuzz/quic-client-test-bin-fuzz_rand.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_sm4_gcm.d \
+     test/verify_extra_test-bin-verify_extra_test.d \
+     crypto/x509/libcrypto-shlib-v3_timespec.d \
+     crypto/des/libcrypto-shlib-pcbc_enc.d \
+     test/bio_memleak_test-bin-bio_memleak_test.d \
+     crypto/libcrypto-lib-initthread.d crypto/bn/libcrypto-shlib-bn_depr.d \
+     crypto/bn/libcrypto-lib-bn_recp.d \
+     test/helpers/json_test-bin-quictestlib.d \
+     crypto/pkcs7/libcrypto-shlib-pkcs7err.d \
+     crypto/rsa/libcrypto-shlib-rsa_sp800_56b_check.d \
+     crypto/ec/libcrypto-lib-ecdsa_sign.d \
+     crypto/stack/libcrypto-shlib-stack.d \
+     providers/implementations/skeymgmt/libdefault-lib-generic.d \
+     crypto/evp/libcrypto-lib-p5_crpt2.d \
+     crypto/x509/libcrypto-shlib-x509rset.d \
+     crypto/x509/libcrypto-shlib-x509_trust.d \
+     test/buildtest_c_byteorder-bin-buildtest_byteorder.d \
+     crypto/ocsp/libcrypto-lib-ocsp_lib.d \
+     crypto/ec/libcrypto-shlib-ecx_backend.d \
+     test/ocspapitest-bin-ocspapitest.d crypto/des/liblegacy-lib-fcrypt_b.d \
+     crypto/cms/libcrypto-shlib-cms_enc.d \
+     test/helpers/pkcs12_format_test-bin-pkcs12.d \
+     fuzz/ml-kem-test-bin-fuzz_rand.d crypto/ec/libcrypto-shlib-ec_mult.d \
+     crypto/bn/libcrypto-shlib-bn_recp.d \
+     test/params_api_test-bin-params_api_test.d \
+     crypto/bio/libcrypto-lib-bio_meth.d apps/lib/libapps-lib-engine.d \
+     fuzz/slh-dsa-test-bin-fuzz_rand.d crypto/x509/libcrypto-lib-t_x509.d \
+     crypto/x509/libcrypto-lib-x_x509a.d \
+     test/evp_extra_test2-bin-evp_extra_test2.d fuzz/cms-test-bin-cms.d \
+     crypto/ec/curve448/libcrypto-shlib-f_generic.d \
+     crypto/asn1/libcrypto-shlib-x_sig.d apps/openssl-bin-fipsinstall.d \
+     crypto/dh/libcrypto-lib-dh_asn1.d \
+     test/defltfips_test-bin-defltfips_test.d \
+     test/evp_fetch_prov_test-bin-evp_fetch_prov_test.d \
+     crypto/siphash/libcrypto-lib-siphash.d \
+     crypto/x509/libcrypto-lib-v3_authattid.d \
+     crypto/modes/libcrypto-shlib-ofb128.d \
+     crypto/rsa/libcrypto-lib-rsa_ameth.d \
+     providers/implementations/rands/seeding/libdefault-lib-rand_cpu_x86.d \
+     crypto/cmp/libcrypto-shlib-cmp_ctx.d \
+     crypto/crmf/libcrypto-lib-crmf_lib.d \
+     ssl/statem/libssl-shlib-statem_dtls.d \
+     crypto/cms/libcrypto-lib-cms_att.d \
+     crypto/engine/libcrypto-shlib-eng_pkey.d \
+     crypto/encode_decode/libcrypto-shlib-decoder_meth.d \
+     test/testutil/libtestutil-lib-test_cleanup.d \
+     crypto/evp/libcrypto-shlib-c_alld.d \
+     test/babasslapitest-bin-babasslapitest.d \
+     test/cipher_overhead_test-bin-cipher_overhead_test.d \
+     test/rsa_sp800_56b_test-bin-rsa_sp800_56b_test.d \
+     crypto/pkcs12/libcrypto-shlib-p12_init.d \
+     test/buildtest_c_engine-bin-buildtest_engine.d \
+     ssl/quic/libssl-shlib-uint_set.d test/slh_dsa_test-bin-slh_dsa_test.d \
+     crypto/engine/libcrypto-lib-eng_list.d apps/openssl-bin-rsa.d \
+     crypto/des/libcrypto-lib-xcbc_enc.d test/hmactest-bin-hmactest.d \
+     crypto/x509/libcrypto-shlib-x_exten.d \
+     test/cipherlist_test-bin-cipherlist_test.d \
+     crypto/ml_dsa/libcrypto-shlib-ml_dsa_params.d \
+     providers/common/der/libcommon-lib-der_rsa_gen.d \
+     crypto/cms/libcrypto-shlib-cms_att.d \
+     test/testutil/libtestutil-lib-load.d crypto/bio/libcrypto-lib-bss_mem.d \
+     crypto/x509/libcrypto-shlib-v3_ia5.d \
+     fuzz/asn1parse-test-bin-asn1parse.d \
+     crypto/asn1/libcrypto-shlib-asn_pack.d \
+     test/bio_prefix_text-bin-bio_prefix_text.d \
+     test/evp_extra_test-bin-fake_pipelineprov.d \
+     test/bio_pw_callback_test-bin-bio_pw_callback_test.d \
+     ssl/libssl-shlib-ssl_mcnf.d test/cmp_asn_test-bin-cmp_asn_test.d \
+     crypto/x509/libcrypto-shlib-x509spki.d \
+     crypto/rsa/libcrypto-shlib-rsa_x931g.d \
+     crypto/ffc/libcrypto-lib-ffc_params_generate.d \
+     crypto/x509/libcrypto-shlib-t_req.d \
+     ssl/quic/libssl-shlib-quic_tls_api.d \
+     crypto/evp/libcrypto-shlib-exchange.d \
+     crypto/x509/libcrypto-lib-v3_prn.d \
+     crypto/ml_dsa/libcrypto-lib-ml_dsa_ntt.d \
+     crypto/pkcs7/libcrypto-shlib-pk7_asn1.d \
+     crypto/ec/libcrypto-lib-ecdh_kdf.d test/evp_xof_test-bin-evp_xof_test.d \
+     crypto/libcrypto-lib-provider_conf.d \
+     providers/implementations/keymgmt/libdefault-lib-slh_dsa_kmgmt.d \
+     crypto/rsa/libcrypto-shlib-rsa_meth.d \
+     test/buildtest_c_sgd-bin-buildtest_sgd.d \
+     crypto/asn1/libcrypto-lib-nsseq.d ssl/quic/libssl-shlib-quic_types.d \
+     ssl/quic/libssl-shlib-json_enc.d ssl/statem/libssl-shlib-statem_lib.d \
+     crypto/asn1/libcrypto-lib-x_sig.d crypto/libssl-shlib-time.d \
+     crypto/async/arch/libcrypto-lib-async_null.d \
+     ssl/record/libssl-lib-rec_layer_s3.d ssl/libssl-lib-d1_lib.d \
+     ssl/quic/libssl-shlib-quic_rstream.d \
+     test/helpers/quic_radix_test-bin-ssltestlib.d \
+     ssl/libssl-shlib-d1_srtp.d ssl/libssl-lib-ssl_mcnf.d \
+     crypto/store/libcrypto-lib-store_strings.d \
+     ssl/quic/libssl-lib-quic_lcidm.d crypto/ct/libcrypto-lib-ct_sct.d \
+     providers/common/der/libcommon-lib-der_ec_sig.d \
+     ssl/libssl-shlib-t1_trce.d crypto/engine/libcrypto-lib-eng_table.d \
+     test/buildtest_c_core_dispatch-bin-buildtest_core_dispatch.d \
+     crypto/thread/libcrypto-shlib-api.d \
+     providers/implementations/skeymgmt/libdefault-lib-aes_skmgmt.d \
+     crypto/x509/libcrypto-shlib-v3_pku.d crypto/asn1/libcrypto-lib-a_dup.d \
+     crypto/x509/libcrypto-shlib-x509_vfy.d \
+     crypto/pkcs12/libcrypto-shlib-p12_p8e.d test/dhtest-bin-dhtest.d \
+     crypto/x509/libcrypto-lib-x509_d2.d \
+     crypto/ml_dsa/libcrypto-shlib-ml_dsa_encoders.d \
+     crypto/bio/libcrypto-lib-bf_prefix.d crypto/dh/libcrypto-lib-dh_meth.d \
+     crypto/asn1/libcrypto-lib-f_string.d ssl/libssl-lib-ssl_lib.d \
+     crypto/md5/libcrypto-shlib-md5_one.d crypto/libcrypto-lib-ebcdic.d \
+     crypto/asn1/libcrypto-shlib-asn1_gen.d crypto/cmac/libcrypto-lib-cmac.d \
+     crypto/evp/libcrypto-shlib-kem.d crypto/slh_dsa/libcrypto-lib-slh_dsa.d \
+     crypto/evp/libcrypto-lib-e_wbsm4_wsise.d \
+     crypto/aes/libcrypto-lib-aes_misc.d \
+     crypto/asn1/libcrypto-shlib-i2d_evp.d \
+     crypto/rand/libcrypto-shlib-rand_deprecated.d \
+     crypto/engine/libcrypto-shlib-eng_ctrl.d \
+     crypto/x509/libcrypto-lib-v3_addr.d \
+     crypto/asn1/libcrypto-shlib-tasn_fre.d \
+     providers/implementations/keymgmt/libdefault-lib-ml_kem_kmgmt.d \
+     crypto/libcrypto-shlib-ssl_err.d \
+     crypto/libcrypto-shlib-core_algorithm.d \
+     crypto/asn1/libcrypto-lib-tasn_dec.d crypto/ec/libcrypto-lib-ecp_oct.d \
+     ssl/libssl-shlib-tls_srp.d crypto/bn/libcrypto-shlib-bn_mod.d \
+     crypto/bn/libcrypto-shlib-bn_ctx.d \
+     crypto/rsa/libcrypto-shlib-rsa_schemes.d \
+     crypto/ec/libcrypto-shlib-ecdh_ossl.d crypto/bn/libcrypto-lib-bn_mont.d \
+     test/helpers/ssl_test_ctx_test-bin-ssl_test_ctx.d \
+     crypto/asn1/libcrypto-lib-x_spki.d \
+     test/tls13secretstest-bin-tls13secretstest.d \
+     providers/implementations/kem/libdefault-lib-ec_kem.d \
+     crypto/ec/libcrypto-shlib-ec_key.d crypto/dso/libcrypto-lib-dso_dl.d \
+     crypto/ess/libcrypto-shlib-ess_lib.d crypto/libcrypto-lib-der_writer.d \
+     crypto/evp/libcrypto-lib-signature.d ssl/quic/libssl-shlib-quic_wire.d \
+     crypto/slh_dsa/libcrypto-shlib-slh_adrs.d \
+     crypto/x509/libcrypto-lib-x509_obj.d \
+     crypto/ocsp/libcrypto-lib-v3_ocsp.d \
+     test/helpers/endecode_test-bin-predefined_dhparams.d \
+     crypto/ec/libcrypto-lib-ec2_oct.d crypto/x509/libcrypto-shlib-v3_pci.d \
+     crypto/asn1/libcrypto-shlib-t_pkey.d \
+     test/helpers/quicfaultstest-bin-pktsplitbio.d \
+     test/shlibloadtest-bin-simpledynamic.d \
+     test/testutil/libtestutil-lib-basic_output.d \
+     crypto/sm3/libcrypto-lib-sm3.d crypto/aes/libcrypto-lib-aes_cfb.d \
+     crypto/ffc/libcrypto-shlib-ffc_params_validate.d \
+     providers/implementations/kdfs/liblegacy-lib-pvkkdf.d \
+     crypto/bn/libcrypto-lib-bn_prime.d \
+     crypto/ec/curve448/libcrypto-lib-scalar.d \
+     crypto/slh_dsa/libcrypto-lib-slh_hypertree.d \
+     crypto/x509/libcrypto-lib-v3_ia5.d \
+     test/curve448_internal_test-bin-curve448_internal_test.d \
+     crypto/asn1/libcrypto-shlib-a_verify.d apps/openssl-bin-gendsa.d \
+     fuzz/x509-test-bin-x509.d apps/lib/ca_internals_test-bin-apps_ui.d \
+     providers/common/libcommon-lib-provider_ctx.d \
+     crypto/ec/libcrypto-lib-ec_mult.d crypto/asn1/libcrypto-lib-a_sign.d \
+     crypto/des/libcrypto-shlib-cfb64enc.d \
+     providers/implementations/kdfs/libdefault-lib-hkdf.d \
+     test/sm3_internal_test-bin-sm3_internal_test.d \
+     crypto/evp/libcrypto-lib-s_lib.d \
+     crypto/property/libcrypto-lib-defn_cache.d \
+     crypto/bio/libcrypto-shlib-bss_conn.d \
+     crypto/err/libcrypto-shlib-err_mark.d \
+     crypto/engine/libcrypto-shlib-tb_pkmeth.d \
+     crypto/store/libcrypto-lib-store_register.d \
+     crypto/x509/libcrypto-lib-v3_asid.d \
+     test/prov_config_test-bin-prov_config_test.d \
+     crypto/evp/libcrypto-shlib-dh_ctrl.d \
+     crypto/libcrypto-lib-indicator_core.d \
+     crypto/encode_decode/libcrypto-lib-encoder_meth.d \
+     crypto/asn1/libcrypto-shlib-bio_asn1.d crypto/evp/libcrypto-lib-p_dec.d \
+     ssl/libssl-shlib-d1_lib.d crypto/property/libcrypto-lib-property.d \
+     ssl/quic/libssl-shlib-quic_impl.d \
+     crypto/ml_dsa/libcrypto-shlib-ml_dsa_key.d \
+     crypto/ec/curve448/libcrypto-lib-f_generic.d \
+     providers/libcrypto-lib-defltprov.d \
+     crypto/pem/loader_attic-dso-pvkfmt.d \
+     test/pkcs12_api_test-bin-pkcs12_api_test.d \
+     crypto/des/libcrypto-lib-rand_key.d crypto/libcrypto-lib-core_fetch.d \
+     crypto/evp/libcrypto-shlib-e_sm4.d fuzz/asn1-test-bin-asn1.d \
+     test/zuc_internal_test-bin-zuc_internal_test.d \
+     crypto/rsa/libcrypto-lib-rsa_err.d crypto/cms/libcrypto-shlib-cms_cd.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_gcm_siv_polyval.d \
+     ssl/quic/libssl-lib-quic_record_util.d \
+     crypto/ffc/libcrypto-lib-ffc_key_validate.d \
+     crypto/ml_dsa/libcrypto-lib-ml_dsa_sample.d \
+     crypto/cms/libcrypto-shlib-cms_io.d ssl/libssl-lib-bio_ssl.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_siv.d \
+     crypto/cms/libcrypto-shlib-cms_smime.d \
+     providers/implementations/ciphers/liblegacy-lib-cipher_rc4.d \
+     crypto/x509/libcrypto-lib-v3_info.d \
+     crypto/asn1/libcrypto-shlib-asn1_parse.d \
+     fuzz/client-test-bin-test-corpus.d crypto/asn1/libcrypto-lib-tasn_utl.d \
+     crypto/engine/libcrypto-lib-tb_eckey.d \
+     crypto/evp/libcrypto-lib-p_sign.d crypto/x509/libcrypto-shlib-v3_enum.d \
+     crypto/x509/libcrypto-shlib-v3_single_use.d \
+     crypto/x509/libcrypto-lib-x509spki.d \
+     crypto/des/libcrypto-lib-ofb64enc.d \
+     fuzz/provider-test-bin-test-corpus.d \
+     crypto/asn1/libcrypto-shlib-p5_pbe.d \
+     crypto/ec/curve448/arch_32/libcrypto-shlib-f_impl32.d \
+     test/cmp_status_test-bin-cmp_status_test.d \
+     crypto/ec/libcrypto-shlib-ecp_nist.d \
+     providers/common/libdefault-lib-capabilities.d \
+     crypto/tsapi/libcrypto-lib-tsapi_lib.d \
+     crypto/engine/libcrypto-shlib-eng_table.d \
+     fuzz/quic-server-test-bin-test-corpus.d \
+     test/buildtest_c_self_test-bin-buildtest_self_test.d \
+     ssl/libssl-lib-d1_msg.d ssl/libssl-lib-ssl_rsa_legacy.d \
+     crypto/libcrypto-lib-trace.d crypto/srp/libcrypto-shlib-srp_vfy.d \
+     crypto/x509/libcrypto-shlib-v3_asid.d \
+     crypto/des/libcrypto-shlib-qud_cksm.d \
+     providers/common/libdefault-lib-digest_to_nid.d \
+     test/user_property_test-bin-user_property_test.d \
+     crypto/asn1/libcrypto-lib-t_spki.d test/destest-bin-destest.d \
+     fuzz/quic-rcidm-test-bin-quic-rcidm.d \
+     crypto/dso/libcrypto-lib-dso_win32.d \
+     ssl/statem/libssl-shlib-statem_srvr.d \
+     crypto/ec/libcrypto-lib-ec_print.d ssl/libssl-shlib-pqueue.d \
+     test/tls13ccstest-bin-tls13ccstest.d \
+     crypto/thread/arch/libcrypto-lib-thread_win.d \
+     crypto/bn/libcrypto-shlib-bn_dh.d apps/openssl-bin-rsautl.d \
+     crypto/bio/libcrypto-lib-bio_dump.d crypto/des/libcrypto-lib-ofb_enc.d \
+     test/helpers/quicfaultstest-bin-noisydgrambio.d \
+     crypto/evp/libcrypto-shlib-skeymgmt_meth.d \
+     test/cipherbytes_test-bin-cipherbytes_test.d \
+     crypto/conf/libcrypto-shlib-conf_def.d \
+     crypto/evp/libcrypto-shlib-evp_cnf.d crypto/aes/libcrypto-lib-aes_ecb.d \
+     crypto/x509/libcrypto-shlib-v3_pcia.d \
+     test/buildtest_c_dsa-bin-buildtest_dsa.d \
+     ssl/libssl-shlib-ssl_cert_comp.d \
+     crypto/store/libcrypto-shlib-store_meth.d \
+     crypto/asn1/libcrypto-shlib-p5_pbev2.d \
+     crypto/evp/libcrypto-lib-evp_utils.d \
+     crypto/des/libcrypto-shlib-fcrypt_b.d \
+     crypto/cmp/libcrypto-shlib-cmp_util.d \
+     test/buildtest_c_configuration-bin-buildtest_configuration.d \
+     crypto/x509/libcrypto-shlib-v3_battcons.d \
+     providers/implementations/rands/libdefault-lib-seed_src.d \
+     test/uitest-bin-uitest.d test/buildtest_c_hpke-bin-buildtest_hpke.d \
+     crypto/comp/libcrypto-lib-comp_lib.d \
+     crypto/asn1/libcrypto-shlib-a_utf8.d \
+     ssl/statem/libssl-lib-extensions_cust.d \
+     crypto/des/libcrypto-lib-set_key.d crypto/bn/libcrypto-shlib-bn_mul.d \
+     providers/common/libdefault-lib-provider_seeding.d \
+     crypto/bn/libcrypto-lib-bn_shift.d crypto/ocsp/libcrypto-lib-ocsp_err.d \
+     crypto/cms/libcrypto-lib-cms_pwri.d \
+     crypto/pkcs12/libcrypto-shlib-p12_crt.d \
+     crypto/des/libcrypto-lib-cfb64enc.d crypto/bn/libcrypto-lib-bn_err.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_sm4_xts.d \
+     crypto/ct/libcrypto-shlib-ct_sct.d \
+     providers/implementations/keymgmt/libdefault-lib-dh_kmgmt.d \
+     crypto/asn1/libcrypto-lib-x_bignum.d crypto/x509/libcrypto-lib-v3_lib.d \
+     crypto/asn1/libcrypto-shlib-d2i_pu.d test/lhash_test-bin-lhash_test.d \
+     test/ecpmeth_test-bin-ecpmeth_test.d \
+     crypto/comp/libcrypto-shlib-comp_err.d \
+     crypto/engine/libcrypto-shlib-eng_fat.d test/dsatest-bin-dsatest.d \
+     crypto/thread/arch/libcrypto-shlib-thread_posix.d \
+     crypto/asn1/libcrypto-lib-a_bitstr.d \
+     crypto/evp/libcrypto-shlib-p_sign.d \
+     test/sm2_mod_test-bin-sm2_mod_test.d \
+     crypto/asn1/libcrypto-shlib-tasn_new.d \
+     ssl/quic/libssl-lib-quic_method.d crypto/x509/libcrypto-shlib-v3err.d \
+     crypto/zuc/libcrypto-shlib-zuc.d crypto/asn1/libcrypto-lib-tasn_scn.d \
+     test/moduleloadtest-bin-moduleloadtest.d \
+     crypto/ec/curve448/libcrypto-shlib-curve448.d \
+     crypto/asn1/libcrypto-shlib-nsseq.d \
+     test/cmp_server_test-bin-cmp_server_test.d \
+     crypto/property/libcrypto-lib-property_query.d \
+     crypto/encode_decode/libcrypto-lib-decoder_lib.d \
+     crypto/asn1/libcrypto-shlib-x_info.d \
+     crypto/slh_dsa/libcrypto-lib-slh_hash.d \
+     providers/common/libdefault-lib-provider_util.d \
+     test/sanitytest-bin-sanitytest.d \
+     test/helpers/quic_srt_gen_test-bin-pktsplitbio.d \
+     crypto/asn1/libcrypto-shlib-a_object.d crypto/libcrypto-shlib-o_time.d \
+     ssl/quic/libssl-lib-quic_reactor_wait_ctx.d \
+     fuzz/smime-test-bin-test-corpus.d \
+     test/nodefltctxtest-bin-nodefltctxtest.d ssl/quic/libssl-lib-quic_tls.d \
+     crypto/pkcs12/libcrypto-shlib-p12_add.d \
+     providers/implementations/kem/libtemplate-lib-template_kem.d \
+     apps/openssl-bin-spkac.d crypto/libcrypto-lib-mem.d \
+     crypto/x509/libcrypto-shlib-v3_int.d \
+     crypto/sm2/libcrypto-shlib-sm2_err.d \
+     providers/implementations/rands/seeding/libdefault-lib-rand_win.d \
+     test/rc5test-bin-rc5test.d fuzz/quic-client-test-bin-quic-client.d \
+     ssl/record/methods/libssl-shlib-tls13_meth.d \
+     crypto/store/libcrypto-shlib-store_lib.d \
+     crypto/asn1/libcrypto-lib-p5_pbe.d crypto/ec/libcrypto-lib-ec_asn1.d \
+     providers/implementations/kdfs/libdefault-lib-sskdf.d \
+     apps/lib/libapps-lib-log.d crypto/evp/libcrypto-shlib-keymgmt_meth.d \
+     crypto/libcrypto-lib-bsearch.d crypto/modes/libcrypto-lib-cbc128.d \
+     crypto/des/libcrypto-shlib-ofb_enc.d \
+     crypto/bn/asm/libcrypto-shlib-x86_64-gcc.d \
+     crypto/async/arch/libcrypto-lib-async_win.d \
+     providers/implementations/encode_decode/libdefault-lib-ml_common_codecs.d \
+     test/helpers/quic_newcid_test-bin-noisydgrambio.d \
+     test/testutil/libtestutil-lib-tests.d \
+     crypto/rsa/libcrypto-shlib-rsa_mp.d \
+     crypto/comp/libcrypto-lib-comp_err.d \
+     crypto/ffc/libcrypto-lib-ffc_key_generate.d \
+     test/helpers/tls13ccstest-bin-ssltestlib.d \
+     test/x509_dup_cert_test-bin-x509_dup_cert_test.d \
+     crypto/evp/libcrypto-lib-bio_b64.d crypto/bn/libcrypto-lib-bn_depr.d \
+     crypto/ec/libcrypto-shlib-ec_kmeth.d \
+     test/asn1_decode_test-bin-asn1_decode_test.d \
+     test/modes_internal_test-bin-modes_internal_test.d \
+     crypto/ec/libcrypto-shlib-ec_asn1.d crypto/evp/libcrypto-lib-evp_lib.d \
+     crypto/engine/libcrypto-lib-eng_openssl.d \
+     test/wpackettest-bin-wpackettest.d \
+     crypto/x509/libcrypto-shlib-v3_soa_id.d \
+     crypto/engine/libcrypto-lib-tb_rsa.d \
+     crypto/evp/libcrypto-shlib-evp_rand.d \
+     crypto/err/libcrypto-lib-err_blocks.d \
+     providers/implementations/keymgmt/libdefault-lib-ec_kmgmt.d \
+     crypto/libcrypto-lib-deterministic_nonce.d \
+     crypto/ts/libcrypto-shlib-ts_rsp_verify.d \
+     crypto/asn1/libcrypto-lib-a_strnid.d \
+     test/buildtest_c_quic-bin-buildtest_quic.d \
+     crypto/x509/libcrypto-shlib-pcy_lib.d apps/openssl-bin-req.d \
+     crypto/evp/libcrypto-lib-evp_enc.d ssl/libssl-shlib-ssl_err_legacy.d \
+     ssl/quic/libssl-lib-quic_port.d crypto/crmf/libcrypto-lib-crmf_asn.d \
+     crypto/bn/libcrypto-shlib-bn_sm2.d crypto/bn/libcrypto-shlib-bn_blind.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_cbc_hmac_sha.d \
+     providers/common/der/libcommon-lib-der_ecx_gen.d \
+     crypto/asn1/libcrypto-lib-n_pkey.d apps/openssl-bin-dsaparam.d \
+     crypto/sha/libcrypto-lib-sha512.d \
+     crypto/cmp/libcrypto-shlib-cmp_server.d \
+     crypto/cms/libcrypto-shlib-cms_ess.d \
+     crypto/evp/libcrypto-shlib-bio_b64.d \
+     crypto/libcrypto-shlib-core_fetch.d \
+     crypto/srp/libcrypto-shlib-srp_lib.d \
+     providers/implementations/signature/libdefault-lib-ecdsa_sig.d \
+     crypto/evp/libcrypto-lib-evp_pkey.d \
+     test/ca_internals_test-bin-ca_internals_test.d \
+     crypto/thread/arch/libssl-shlib-thread_win.d crypto/legacy-dso-ctype.d \
+     crypto/evp/libcrypto-lib-exchange.d crypto/x509/libcrypto-lib-x509_lu.d \
+     engines/padlock-dso-e_padlock.d crypto/ess/libcrypto-shlib-ess_asn1.d \
+     crypto/libcrypto-shlib-comp_methods.d \
+     crypto/x509/libcrypto-lib-x509_cmp.d crypto/err/libcrypto-shlib-err.d \
+     test/buildtest_c_ec-bin-buildtest_ec.d \
+     crypto/err/libcrypto-lib-err_all.d \
+     ssl/record/libssl-shlib-rec_layer_s3.d \
+     crypto/x509/libcrypto-shlib-x509_ext.d \
+     test/evp_skey_test-bin-fake_cipherprov.d \
+     ssl/statem/libssl-lib-extensions.d crypto/conf/libcrypto-lib-conf_def.d \
+     crypto/evp/libcrypto-shlib-e_wbsm4_xiaolai.d \
+     crypto/dsa/libcrypto-lib-dsa_ossl.d \
+     crypto/libcrypto-lib-threads_pthread.d \
+     crypto/slh_dsa/libcrypto-lib-slh_adrs.d \
+     providers/libcrypto-shlib-prov_running.d \
+     ssl/quic/libssl-shlib-quic_tls.d crypto/x509/libcrypto-shlib-v3_aaa.d \
+     crypto/modes/libcrypto-lib-wrap128.d test/ectest-bin-ectest.d \
+     crypto/tls13secretstest-bin-packet.d \
+     crypto/engine/libcrypto-shlib-tb_rand.d \
+     providers/implementations/digests/libdefault-lib-md5_sha1_prov.d \
+     test/buildtest_c_tsapi-bin-buildtest_tsapi.d \
+     crypto/x509/libcrypto-shlib-x509_d2.d \
+     crypto/lhash/libcrypto-lib-lhash.d \
+     crypto/evp/libcrypto-lib-asymcipher.d ssl/libssl-lib-s3_enc.d \
+     fuzz/quic-rcidm-test-bin-test-corpus.d \
+     crypto/evp/libcrypto-lib-e_aes_cbc_hmac_sha1.d \
+     providers/evp_extra_test-bin-legacyprov.d \
+     crypto/rsa/libcrypto-lib-rsa_meth.d \
+     crypto/slh_dsa/libcrypto-shlib-slh_hash.d \
+     fuzz/x509-test-bin-test-corpus.d \
+     crypto/pkcs12/libcrypto-shlib-p12_attr.d \
+     crypto/x509/libcrypto-shlib-v3_pcons.d test/ecdsatest-bin-ecdsatest.d \
+     crypto/dsa/libcrypto-lib-dsa_lib.d crypto/libcrypto-shlib-quic_vlint.d \
+     fuzz/ct-test-bin-test-corpus.d ssl/quic/libssl-lib-quic_fifd.d \
+     crypto/libcrypto-lib-ex_data.d \
+     crypto/err/libcrypto-lib-err_all_legacy.d \
+     test/helpers/quic_newcid_test-bin-pktsplitbio.d \
+     crypto/ec/curve448/arch_64/libcrypto-lib-f_impl64.d \
+     crypto/asn1/libcrypto-lib-asn_pack.d \
+     test/buildtest_c_e_os2-bin-buildtest_e_os2.d \
+     crypto/asn1/libcrypto-lib-asn_mime.d \
+     test/tls13encryptiontest-bin-tls13encryptiontest.d \
+     test/testutil/libtestutil-lib-stanza.d \
+     providers/implementations/encode_decode/libdefault-lib-encode_key2ms.d \
+     apps/openssl-bin-dsa.d crypto/zuc/libcrypto-lib-zuc.d \
+     crypto/property/libcrypto-lib-property_string.d \
+     crypto/modes/libcrypto-lib-gcm128.d apps/openssl-bin-rand.d \
+     crypto/evp/libcrypto-lib-dh_ctrl.d \
+     providers/implementations/kdfs/libdefault-lib-x942kdf.d \
+     crypto/aes/libcrypto-shlib-aes_cfb.d crypto/libcrypto-lib-cryptlib.d \
+     crypto/x509/libcrypto-shlib-v3_tlsf.d apps/openssl-bin-s_server.d \
+     test/quic_multistream_test-bin-quic_multistream_test.d \
+     crypto/asn1/libcrypto-shlib-f_int.d crypto/ct/libcrypto-lib-ct_prn.d \
+     crypto/ec/libcrypto-lib-ec_kmeth.d crypto/bn/libcrypto-lib-bn_rand.d \
+     crypto/ec/libcrypto-lib-ecx_meth.d \
+     crypto/store/libcrypto-shlib-store_strings.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_ocb.d \
+     crypto/bn/libcrypto-lib-bn_word.d crypto/rand/libcrypto-lib-rand_meth.d \
+     crypto/sm2/libcrypto-lib-sm2_key.d \
+     crypto/engine/libcrypto-shlib-tb_rsa.d \
+     crypto/ui/libcrypto-shlib-ui_util.d test/upcallstest-bin-upcallstest.d \
+     apps/openssl-bin-version.d crypto/cmp/libcrypto-lib-cmp_genm.d \
+     test/rdcpu_sanitytest-bin-rdcpu_sanitytest.d \
+     crypto/rsa/libcrypto-shlib-rsa_oaep.d \
+     crypto/modes/libcrypto-shlib-wrap128.d \
+     test/buildtest_c_sha-bin-buildtest_sha.d \
+     crypto/evp/libcrypto-lib-keymgmt_lib.d \
+     test/evp_extra_test-bin-fake_rsaprov.d \
+     crypto/dso/libcrypto-lib-dso_lib.d crypto/evp/libcrypto-shlib-c_allc.d \
+     test/rand_status_test-bin-rand_status_test.d \
+     crypto/rsa/libcrypto-shlib-rsa_lib.d \
+     crypto/asn1/libcrypto-shlib-p8_pkey.d \
+     crypto/rsa/libcrypto-lib-rsa_crpt.d \
+     crypto/engine/libcrypto-lib-eng_dyn.d \
+     crypto/encode_decode/libcrypto-shlib-encoder_meth.d \
+     crypto/legacy-dso-cpuid.d crypto/rand/libcrypto-shlib-prov_seed.d \
+     crypto/ct/libcrypto-lib-ct_policy.d ssl/libssl-lib-t1_trce.d \
+     crypto/engine/libcrypto-shlib-tb_cipher.d \
+     test/quic_srtm_test-bin-quic_srtm_test.d \
+     crypto/bn/libcrypto-shlib-bn_exp2.d crypto/modes/libcrypto-lib-cfb128.d \
+     test/buildtest_c_sslerr_legacy-bin-buildtest_sslerr_legacy.d \
+     crypto/err/libcrypto-shlib-err_all.d test/igetest-bin-igetest.d \
+     test/quicfaultstest-bin-quicfaultstest.d \
+     crypto/cms/libcrypto-lib-cms_ec.d crypto/pem/libcrypto-shlib-pem_sign.d \
+     crypto/asn1/libcrypto-lib-tasn_prn.d \
+     crypto/x509/libcrypto-lib-x509aset.d crypto/dh/libcrypto-lib-dh_err.d \
+     crypto/x509/libcrypto-lib-v3_int.d crypto/evp/libcrypto-lib-bio_md.d \
+     crypto/x509/libcrypto-lib-v3_akeya.d \
+     crypto/dh/libcrypto-shlib-dh_asn1.d crypto/ts/libcrypto-shlib-ts_lib.d \
+     crypto/rand/libcrypto-shlib-rand_uniform.d \
+     crypto/libcrypto-lib-defaults.d fuzz/dtlsclient-test-bin-dtlsclient.d \
+     crypto/libcrypto-lib-cpuid.d crypto/asn1/libcrypto-lib-d2i_pr.d \
+     crypto/asn1/libcrypto-shlib-x_algor.d \
+     crypto/cmp/libcrypto-lib-cmp_hdr.d crypto/rsa/libcrypto-lib-rsa_lib.d \
+     crypto/bn/libcrypto-lib-bn_dh.d crypto/rand/libcrypto-lib-randfile.d \
+     apps/lib/ca_internals_test-bin-apps.d \
+     crypto/cmp/libcrypto-lib-cmp_vfy.d \
+     crypto/md5/libcrypto-shlib-md5_sha1.d crypto/evp/libcrypto-lib-e_rc5.d \
+     crypto/pem/libcrypto-lib-pem_pk8.d crypto/x509/libcrypto-lib-v3_aaa.d \
+     ssl/quic/libssl-shlib-quic_fifd.d ssl/libssl-lib-ssl_cert_comp.d \
+     crypto/dh/libcrypto-shlib-dh_rfc5114.d \
+     test/dtlsv1listentest-bin-dtlsv1listentest.d \
+     crypto/sha/libcrypto-shlib-sha512.d crypto/libcrypto-shlib-context.d \
+     crypto/asn1/libcrypto-shlib-asn1_lib.d \
+     crypto/x509/libcrypto-shlib-v3_extku.d \
+     test/cmp_ctx_test-bin-cmp_ctx_test.d crypto/hpke/libcrypto-lib-hpke.d \
+     test/quic_cc_test-bin-quic_cc_test.d crypto/libcrypto-shlib-getenv.d \
+     crypto/bn/libcrypto-shlib-rsaz_exp.d \
+     crypto/thread/arch/libcrypto-shlib-thread_none.d \
+     crypto/bn/libcrypto-shlib-bn_conv.d \
+     crypto/pem/libcrypto-shlib-pem_x509.d \
+     crypto/cms/libcrypto-shlib-cms_dd.d \
+     test/helpers/sslapitest-bin-ssltestlib.d \
+     test/endecoder_legacy_test-bin-endecoder_legacy_test.d \
+     test/asn1_internal_test-bin-asn1_internal_test.d \
+     ssl/tls13secretstest-bin-tls13_enc.d test/x509_test-bin-x509_test.d \
+     ssl/libssl-lib-priority_queue.d crypto/libcrypto-lib-passphrase.d \
+     crypto/engine/libcrypto-shlib-eng_rdrand.d \
+     crypto/asn1/libcrypto-lib-a_strex.d \
+     crypto/ocsp/libcrypto-shlib-ocsp_ext.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_hw.d \
+     crypto/pkcs12/libcrypto-lib-p12_mutl.d \
+     crypto/store/libcrypto-shlib-store_init.d \
+     test/x509_time_test-bin-x509_time_test.d \
+     crypto/ec/libcrypto-shlib-ec_backend.d \
+     test/buildtest_c_conftypes-bin-buildtest_conftypes.d \
+     crypto/rand/libcrypto-lib-rand_deprecated.d \
+     crypto/kdf/libcrypto-shlib-kdf_err.d apps/openssl-bin-kdf.d \
+     test/helpers/babasslapitest-bin-ssltestlib.d \
+     crypto/bn/libcrypto-lib-rsaz_exp.d crypto/libcrypto-shlib-packet.d \
+     providers/implementations/kdfs/libdefault-lib-pbkdf2_fips.d \
+     crypto/bio/libcrypto-lib-bf_readbuff.d \
+     test/helpers/quicapitest-bin-ssltestlib.d \
+     test/cmp_hdr_test-bin-cmp_hdr_test.d \
+     providers/implementations/kem/libdefault-lib-mlx_kem.d \
+     crypto/ts/libcrypto-shlib-ts_conf.d crypto/sha/libcrypto-lib-sha256.d \
+     crypto/evp/libcrypto-shlib-p_seal.d crypto/asn1/libcrypto-lib-t_pkey.d \
+     apps/lib/libapps-lib-tlssrp_depr.d test/d2i_test-bin-d2i_test.d \
+     providers/implementations/ciphers/libcommon-lib-ciphercommon_ccm_hw.d \
+     crypto/asn1/libcrypto-lib-a_gentm.d \
+     ssl/record/methods/libssl-shlib-ssl3_meth.d \
+     crypto/evp/libcrypto-shlib-p5_crpt2.d ssl/libssl-shlib-priority_queue.d \
+     apps/lib/libapps-lib-app_params.d \
+     crypto/bio/libcrypto-shlib-bss_dgram_pair.d apps/openssl-bin-crl.d \
+     crypto/cmp/libcrypto-lib-cmp_ctx.d crypto/ec/libcrypto-lib-ecdsa_vrf.d \
+     test/helpers/ssl_old_test-bin-predefined_dhparams.d \
+     crypto/x509/libcrypto-lib-v3_conf.d \
+     crypto/engine/libcrypto-lib-tb_cipher.d test/sha_test-bin-sha_test.d \
+     crypto/rsa/libcrypto-lib-rsa_schemes.d \
+     crypto/evp/libcrypto-shlib-e_rc5.d \
+     crypto/x509/libcrypto-shlib-v3_attrdesc.d \
+     crypto/store/libcrypto-lib-store_lib.d \
+     test/recordlentest-bin-recordlentest.d crypto/hmac/libcrypto-lib-hmac.d \
+     crypto/evp/libcrypto-shlib-pbe_scrypt.d \
+     crypto/asn1/libcrypto-lib-t_bitst.d crypto/evp/libcrypto-lib-ec_ctrl.d \
+     providers/implementations/encode_decode/libdefault-lib-decode_pvk2key.d \
+     apps/lib/libapps-lib-columns.d \
+     test/params_conversion_test-bin-params_conversion_test.d \
+     crypto/x509/libcrypto-shlib-by_dir.d \
+     test/helpers/ssl_handshake_rtt_test-bin-ssltestlib.d \
+     apps/openssl-bin-smime.d crypto/des/libcrypto-shlib-set_key.d \
+     crypto/bio/libcrypto-lib-bio_addr.d test/srptest-bin-srptest.d \
+     crypto/evp/libcrypto-lib-e_wbsm4_xiaolai.d \
+     crypto/engine/libcrypto-shlib-tb_dsa.d \
+     crypto/des/libcrypto-lib-cbc_enc.d \
+     crypto/ml_kem/libcrypto-shlib-ml_kem.d \
+     providers/common/der/libcommon-lib-der_slh_dsa_key.d \
+     crypto/modes/libcrypto-lib-ctr128.d crypto/ct/libcrypto-lib-ct_b64.d \
+     crypto/bn/libcrypto-shlib-bn_sqrt.d \
+     crypto/cmp/libcrypto-lib-cmp_protect.d \
+     crypto/des/libcrypto-shlib-cfb_enc.d \
+     crypto/bio/libcrypto-shlib-bio_sock2.d \
+     providers/common/der/libcommon-lib-der_ml_dsa_key.d \
+     test/helpers/asynciotest-bin-ssltestlib.d \
+     providers/common/der/libcommon-lib-der_dsa_sig.d \
+     crypto/evp/libcrypto-lib-skeymgmt_meth.d crypto/libcrypto-lib-o_init.d \
+     test/buildtest_c_conf_api-bin-buildtest_conf_api.d \
+     crypto/x509/libcrypto-shlib-t_crl.d apps/openssl-bin-nseq.d \
+     crypto/evp/libcrypto-shlib-e_aes.d \
+     crypto/x509/libcrypto-lib-v3_soa_id.d \
+     crypto/rsa/libcrypto-shlib-rsa_backend.d \
+     crypto/dsa/libcrypto-lib-dsa_vrf.d ssl/libssl-lib-ssl_ciph.d \
+     crypto/comp/libcrypto-lib-c_brotli.d \
+     crypto/pem/libcrypto-shlib-pem_xaux.d \
+     crypto/modes/libcrypto-shlib-siv128.d \
+     test/keymgmt_internal_test-bin-keymgmt_internal_test.d \
+     crypto/rsa/libcrypto-lib-rsa_sign.d \
+     crypto/ffc/libcrypto-lib-ffc_params_validate.d \
+     test/exdatatest-bin-exdatatest.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_null.d \
+     test/buildtest_c_bn-bin-buildtest_bn.d \
+     crypto/x509/libcrypto-shlib-v3_pmaps.d \
+     crypto/asn1/libcrypto-shlib-asn_mstbl.d \
+     crypto/rsa/libcrypto-lib-rsa_chk.d \
+     crypto/x509/libcrypto-lib-v3_no_ass.d \
+     crypto/des/libcrypto-shlib-ecb_enc.d \
+     crypto/x509/libcrypto-shlib-x509_att.d test/rpktest-bin-rpktest.d \
+     test/buildtest_c_encoder-bin-buildtest_encoder.d \
+     crypto/ocsp/libcrypto-lib-ocsp_vfy.d \
+     crypto/libcrypto-shlib-threads_win.d crypto/dh/libcrypto-lib-dh_pmeth.d \
+     crypto/bn/libcrypto-lib-bn_intern.d \
+     crypto/txt_db/libcrypto-shlib-txt_db.d \
+     crypto/ec/libcrypto-lib-ec2_smpl.d \
+     crypto/ec/libcrypto-shlib-ecdsa_vrf.d \
+     crypto/hmac/libcrypto-shlib-hmac.d crypto/cms/libcrypto-shlib-cms_dh.d \
+     crypto/x509/libcrypto-lib-x_exten.d crypto/evp/libcrypto-shlib-e_des3.d \
+     crypto/modes/libcrypto-shlib-cbc128.d fuzz/ct-test-bin-ct.d \
+     crypto/asn1/libcrypto-shlib-p5_scrypt.d \
+     crypto/dh/libcrypto-shlib-dh_meth.d \
+     test/shlibloadtest-bin-shlibloadtest.d \
+     crypto/pkcs7/libcrypto-lib-pkcs7err.d \
+     crypto/x509/libcrypto-shlib-v3_utl.d \
+     crypto/libcrypto-lib-core_algorithm.d test/secmemtest-bin-secmemtest.d \
+     providers/implementations/kdfs/libdefault-lib-hmacdrbg_kdf.d \
+     fuzz/ml-dsa-test-bin-ml-dsa.d \
+     crypto/engine/libcrypto-shlib-tb_ecpmeth.d \
+     crypto/bn/libcrypto-lib-bn_gcd.d \
+     crypto/libcrypto-shlib-deterministic_nonce.d apps/openssl-bin-dgst.d \
+     crypto/sm3/libcrypto-lib-legacy_sm3.d \
+     crypto/property/libcrypto-shlib-property_string.d \
+     fuzz/dtlsclient-test-bin-test-corpus.d \
+     ssl/record/methods/libssl-shlib-tls_common.d \
+     crypto/libcrypto-shlib-o_syslog.d crypto/x509/libcrypto-lib-v3_purp.d \
+     crypto/bio/libcrypto-lib-bss_file.d \
+     crypto/evp/libcrypto-lib-pmeth_lib.d \
+     test/asn1_time_test-bin-asn1_time_test.d \
+     crypto/x509/libcrypto-lib-v3_bitst.d \
+     ssl/quic/libssl-shlib-quic_sf_list.d \
+     ssl/quic/libssl-lib-quic_record_shared.d \
+     crypto/http/libcrypto-lib-http_client.d ssl/libssl-lib-ssl_rsa.d \
+     crypto/md5/libcrypto-lib-md5_one.d crypto/rsa/libcrypto-lib-rsa_oaep.d \
+     crypto/pem/libcrypto-lib-pem_info.d \
+     crypto/ocsp/libcrypto-shlib-ocsp_http.d \
+     crypto/asn1/libcrypto-lib-a_time.d crypto/asn1/libcrypto-lib-bio_ndef.d \
+     crypto/ffc/libcrypto-shlib-ffc_params_generate.d \
+     test/clienthellotest-bin-clienthellotest.d \
+     providers/libcrypto-lib-prov_running.d crypto/libcrypto-shlib-init.d \
+     apps/lib/openssl-bin-cmp_mock_srv.d crypto/evp/libcrypto-lib-p5_crpt.d \
+     crypto/des/libcrypto-lib-ecb_enc.d crypto/ml_kem/libcrypto-lib-ml_kem.d \
+     crypto/sdf/libcrypto-shlib-sdf_lib.d crypto/dsa/libcrypto-lib-dsa_err.d \
+     ssl/libssl-lib-ssl_cert.d ssl/quic/libssl-lib-quic_srt_gen.d \
+     crypto/evp/libcrypto-shlib-bio_md.d \
+     crypto/bn/libcrypto-lib-bn_rsa_fips186_4.d \
+     crypto/bn/libcrypto-lib-bn_srp.d fuzz/asn1-test-bin-fuzz_rand.d \
+     crypto/evp/libcrypto-lib-m_sigver.d \
+     fuzz/quic-srtm-test-bin-test-corpus.d \
+     test/helpers/quic_multistream_test-bin-pktsplitbio.d \
+     apps/openssl-bin-pkeyparam.d crypto/engine/libcrypto-lib-eng_rdrand.d \
+     crypto/engine/libcrypto-lib-eng_init.d \
+     crypto/bio/libcrypto-lib-bss_fd.d crypto/bn/libcrypto-shlib-bn_shift.d \
+     test/asn1_encode_test-bin-asn1_encode_test.d \
+     providers/liblegacy-lib-prov_running.d ssl/libssl-shlib-ssl_sess.d \
+     test/quic_newcid_test-bin-quic_newcid_test.d \
+     crypto/pkcs7/libcrypto-shlib-pk7_lib.d \
+     test/buildtest_c_async-bin-buildtest_async.d \
+     test/helpers/tls13groupselection_test-bin-ssltestlib.d \
+     crypto/bn/libcrypto-lib-bn_x931p.d crypto/libcrypto-lib-threads_none.d \
+     fuzz/cmp-test-bin-test-corpus.d test/cmp_vfy_test-bin-cmp_vfy_test.d \
+     providers/implementations/ciphers/libdefault-lib-cipher_aes_gcm_hw.d \
+     crypto/libcrypto-shlib-trace.d \
+     test/buildtest_c_rand-bin-buildtest_rand.d \
+     crypto/cmp/libcrypto-shlib-cmp_err.d crypto/x509/libcrypto-lib-t_req.d \
+     test/buildtest_c_core-bin-buildtest_core.d \
+     crypto/dsa/libcrypto-shlib-dsa_vrf.d \
+     crypto/ec/libcrypto-lib-ec_deprecated.d \
+     crypto/ocsp/libcrypto-lib-ocsp_http.d \
+     ssl/statem/libssl-lib-statem_srvr.d crypto/x509/libcrypto-lib-t_acert.d \
+     crypto/evp/libcrypto-lib-e_des.d \
+     crypto/x509/libcrypto-shlib-v3_no_ass.d \
+     crypto/property/libcrypto-shlib-property.d \
+     crypto/evp/libcrypto-lib-e_wbsm4_baiwu.d \
+     ssl/quic/libssl-lib-quic_tls_api.d crypto/libssl-shlib-getenv.d \
+     test/confdump-bin-confdump.d crypto/libcrypto-shlib-param_build_set.d \
+     crypto/evp/libcrypto-shlib-dh_support.d \
+     crypto/bio/libcrypto-shlib-bf_readbuff.d \
+     crypto/cms/libcrypto-lib-cms_err.d \
+     ssl/quic/libssl-shlib-quic_record_rx.d \
+     test/buildtest_c_decoder-bin-buildtest_decoder.d \
+     crypto/evp/libcrypto-shlib-evp_pkey.d \
+     test/helpers/quic_multistream_test-bin-quictestlib.d \
+     crypto/async/libcrypto-shlib-async_wait.d \
+     crypto/evp/libcrypto-lib-evp_key.d \
+     test/buildtest_c_prov_ssl-bin-buildtest_prov_ssl.d \
+     fuzz/conf-test-bin-conf.d crypto/ct/libcrypto-lib-ct_err.d \
+     crypto/x509/libcrypto-shlib-x509aset.d \
+     crypto/evp/libcrypto-lib-e_chacha20_poly1305.d \
+     apps/openssl-bin-passwd.d \
+     providers/common/der/libcommon-lib-der_wrap_gen.d \
+     providers/common/der/libcommon-lib-der_slh_dsa_gen.d \
+     crypto/rand/libcrypto-shlib-rand_pool.d \
+     crypto/bio/libcrypto-shlib-bio_dump.d \
+     providers/common/der/libcommon-lib-der_dsa_gen.d \
+     ssl/libssl-lib-s3_msg.d engines/ossltest-dso-e_ossltest.d \
+     crypto/des/libcrypto-lib-des_enc.d \
+     crypto/objects/libcrypto-shlib-o_names.d ssl/quic/libssl-lib-quic_obj.d \
+     providers/implementations/keymgmt/libdefault-lib-rsa_kmgmt.d \
+     apps/openssl-bin-list.d crypto/x509/libcrypto-shlib-x_x509.d \
+     crypto/evp/libcrypto-shlib-e_aes_cbc_hmac_sha1.d \
+     fuzz/slh-dsa-test-bin-test-corpus.d \
+     crypto/evp/libcrypto-shlib-evp_enc.d \
+     crypto/crmf/libcrypto-shlib-crmf_lib.d \
+     crypto/x509/libcrypto-shlib-x509_set.d \
+     crypto/evp/libcrypto-shlib-p_lib.d ssl/libssl-lib-tls_depr.d \
+     crypto/ec/libcrypto-shlib-ec2_smpl.d \
+     crypto/ts/libcrypto-shlib-ts_req_print.d
 
 GENERATED_MANDATORY=OpenSSLConfigVersion.cmake crypto/params_idx.c \
                     exporters/OpenSSLConfigVersion.cmake \
@@ -2332,7 +2327,7 @@ CXX=$(CROSS_COMPILE)g++
 CPPFLAGS=$(SYSTEM_CIPHERS_FILE_DEFINE)
 CFLAGS=-Wall -O3
 CXXFLAGS=-Wall -O3
-LDFLAGS= -Wl,-rpath,/code/platform_all_use/core/libs/bin/tongsuo/libs -Wl,-rpath,/tmp/core-stage1-test.qrUsQH/deploy/libs/tongsuo
+LDFLAGS= -Wl,-rpath,/code/platform_all_use/core/libs/bin/tongsuo/libs -Wl,-rpath,/opt/core/libs/tongsuo
 EX_LIBS= 
 OBJCOPY=objcopy
 

@@ -29,7 +29,7 @@
       </n-card>
     </n-space>
 
-    <!-- ============ 创建根 CA ============ -->
+    <!-- 创建根 CA -->
     <n-modal
       v-model:show="showCreate"
       preset="card"
@@ -37,11 +37,10 @@
       style="width: 720px"
     >
       <n-form :model="form" label-placement="left" label-width="120">
-        <n-form-item label="摘要算法">
+        <n-form-item label="算法">
           <n-select v-model:value="form.algorithm" :options="algorithmOptions" />
         </n-form-item>
 
-        <!-- 使用者 DN -->
         <n-form-item label="使用者 DN">
           <div class="dn-row">
             <n-input
@@ -147,7 +146,7 @@
       </template>
     </n-modal>
 
-    <!-- ============ 导入 CA ============ -->
+    <!-- 导入 CA -->
     <n-modal
       v-model:show="showImport"
       preset="card"
@@ -161,7 +160,6 @@
       </n-alert>
 
       <n-form label-placement="top">
-        <!-- CA 证书文件 -->
         <n-form-item label="CA 证书文件（PEM / CRT / CER，必填）">
           <div class="file-row">
             <input
@@ -179,8 +177,7 @@
           </div>
         </n-form-item>
 
-        <!-- CA 私钥文件 -->
-        <n-form-item label="CA 私钥文件（PEM，可选，不选则只导入证书）">
+        <n-form-item label="CA 私钥文件（PEM，可选）">
           <div class="file-row">
             <input
               ref="keyFileInputRef"
@@ -205,7 +202,6 @@
           </div>
         </n-form-item>
 
-        <!-- 私钥密码（常显，加密私钥才需填写） -->
         <n-form-item label="私钥密码（仅加密私钥需要填写）">
           <n-input
             v-model:value="importForm.key_password"
@@ -231,7 +227,7 @@
       </template>
     </n-modal>
 
-    <!-- ============ 导出 CA ============ -->
+    <!-- 导出 CA -->
     <n-modal
       v-model:show="showExport"
       preset="card"
@@ -287,7 +283,7 @@
       </template>
     </n-modal>
 
-    <!-- ============ CA 证书详情 ============ -->
+    <!-- CA 证书详情 -->
     <n-drawer v-model:show="showDetail" :width="760">
       <n-drawer-content title="CA 证书详情" closable>
         <n-spin :show="detailLoading">
@@ -451,9 +447,15 @@ const eccCurveOptions = [
   { label: 'P-384 / secp384r1', value: 'secp384r1' },
 ];
 
+// ============================================================================
+// 表格列（本次修改：去掉 “CA ID” 列，改为“使用者”）
+// ============================================================================
 const columns = [
-  { title: 'CA ID', key: 'ca_id' },
-  { title: '主题', key: 'subject_cn', ellipsis: { tooltip: true } },
+  {
+    title: '使用者',
+    key: 'subject_cn',
+    ellipsis: { tooltip: true },
+  },
   { title: '算法', key: 'algorithm' },
   { title: '序列号', key: 'serial', ellipsis: { tooltip: true } },
   { title: '状态', key: 'status' },
@@ -490,7 +492,7 @@ const columns = [
                   { default: () => '删除' }
                 ),
               default: () =>
-                `确认删除 CA「${row.ca_id}」？该操作不可恢复，且会写审计日志。`,
+                `确认删除 CA「${row.subject_cn || row.ca_id}」？该操作不可恢复，且会写审计日志。`,
             }
           ),
         ],
@@ -800,7 +802,6 @@ onMounted(fetchList);
   align-items: center;
   width: 100%;
 }
-
 .file-row {
   display: flex;
   align-items: center;
@@ -817,7 +818,6 @@ onMounted(fetchList);
   color: #9ca3af;
   font-size: 13px;
 }
-
 .truncated {
   display: inline-block;
   max-width: 100%;
