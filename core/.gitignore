@@ -93,7 +93,6 @@ desktop.ini
 *.bak
 *.orig
 *.rej
-core.*
 *.pid
 *.lock
 *.swp
