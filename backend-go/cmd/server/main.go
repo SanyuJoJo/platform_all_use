@@ -129,6 +129,11 @@ func main() {
 	// License 管理服务
 	licenseSvc := license.NewService(db, cfg)
 
+	log.Info().
+    Str("core_dispatch_path", cfg.CoreDispatchPath).
+    Int("core_timeout_ms", cfg.CoreTimeoutMs).
+    Int("core_max_concurrency", cfg.CoreMaxConcurrency).
+    Msg("core 调用配置")
 	// 密码操作服务（依赖 auditLogSvc 写审计，依赖 db 落库元数据）
 	cryptoSvc := crypto.NewService(cfg, auditLogSvc, db)
 

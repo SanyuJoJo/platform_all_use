@@ -1,0 +1,14 @@
+# 密钥与证书数据
+data/
+logs/
+*.key
+*.enc
+*.pem
+*.der
+
+# 编译产物
+bin/
+bin/
+
+# 其他
+*.tar.gz
