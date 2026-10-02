@@ -1,18 +1,21 @@
 package crypto
 
-// OperationRequest 密码操作请求（前端传入）。
+import "backend-go/internal/models"
+
+// =============================================================================
+// 通用密码操作请求 / 响应（C-04 契约）
+// =============================================================================
+
 type OperationRequest struct {
 	Params  map[string]interface{} `json:"params" binding:"required"`
 	Options *OperationOptions      `json:"options,omitempty"`
 }
 
-// OperationOptions 运行选项。
 type OperationOptions struct {
 	TimeoutMs *int  `json:"timeout_ms,omitempty"`
 	DryRun    *bool `json:"dry_run,omitempty"`
 }
 
-// CoreRequest core/sbin 请求 JSON 结构（C-04）。
 type CoreRequest struct {
 	SchemaVersion string                 `json:"schema_version"`
 	OperationID   string                 `json:"operation_id"`
@@ -23,19 +26,16 @@ type CoreRequest struct {
 	Options       *CoreOptions           `json:"options,omitempty"`
 }
 
-// CoreActor 执行者标识。
 type CoreActor struct {
 	Type string `json:"type"`
 	ID   string `json:"id"`
 }
 
-// CoreOptions core 运行选项。
 type CoreOptions struct {
 	TimeoutMs *int  `json:"timeout_ms,omitempty"`
 	DryRun    *bool `json:"dry_run,omitempty"`
 }
 
-// CoreResponse core/sbin 响应 JSON 结构（C-04）。
 type CoreResponse struct {
 	SchemaVersion string                 `json:"schema_version"`
 	Code          string                 `json:"code"`
@@ -48,7 +48,6 @@ type CoreResponse struct {
 	Audit         *CoreAudit             `json:"audit,omitempty"`
 }
 
-// CoreError core 错误详情。
 type CoreError struct {
 	Code      string                 `json:"code"`
 	Message   string                 `json:"message"`
@@ -56,7 +55,6 @@ type CoreError struct {
 	Retryable bool                   `json:"retryable"`
 }
 
-// CoreAudit core 审计摘要。
 type CoreAudit struct {
 	AuditID      string `json:"audit_id"`
 	ParamsDigest string `json:"params_digest"`
@@ -64,7 +62,6 @@ type CoreAudit struct {
 	DurationMs   int    `json:"duration_ms"`
 }
 
-// OperationResponse 平台响应（同步）。
 type OperationResponse struct {
 	Code        string                 `json:"code"`
 	Message     string                 `json:"message"`
@@ -76,7 +73,6 @@ type OperationResponse struct {
 	Audit       *PlatformAudit         `json:"audit,omitempty"`
 }
 
-// PlatformErrorDetail 平台错误详情。
 type PlatformErrorDetail struct {
 	Code      string                 `json:"code"`
 	Message   string                 `json:"message"`
@@ -84,7 +80,6 @@ type PlatformErrorDetail struct {
 	Retryable bool                   `json:"retryable"`
 }
 
-// PlatformAudit 平台审计摘要。
 type PlatformAudit struct {
 	AuditID      string `json:"audit_id"`
 	ParamsDigest string `json:"params_digest"`
@@ -92,7 +87,6 @@ type PlatformAudit struct {
 	DurationMs   int    `json:"duration_ms"`
 }
 
-// TaskResponse 任务状态响应。
 type TaskResponse struct {
 	TaskID       string  `json:"task_id"`
 	OperationID  string  `json:"operation_id"`
@@ -108,35 +102,35 @@ type TaskResponse struct {
 	TimeoutMs    *int    `json:"timeout_ms,omitempty"`
 }
 
-// -----------------------------------------------------------------------------
+// =============================================================================
 // 证书相关 DTO
-// -----------------------------------------------------------------------------
+// =============================================================================
 
-// SignCertRequest 申请/签发证书请求（无 CSR）。
-//
-// CA 来源：
-//   - local：使用平台已有本地 CA，仅需 ca_id；后端查表自动补全 cert_path + key_ref
-//   - manual：手动上传 CA 证书 PEM + 私钥 PEM + 可选私钥密码
-//
-// 证书类型支持多选：cert_types 允许组合，例如 ["server","client"]。
 type SignCertRequest struct {
-	// ---- CA 来源 ----
-	CASource      string `json:"ca_source" binding:"required"` // local | manual
-	CAID          string `json:"ca_id,omitempty"`              // local：只需 ca_id
-	CACertPEM     string `json:"ca_cert_pem,omitempty"`        // manual
-	CAKeyPEM      string `json:"ca_key_pem,omitempty"`         // manual
-	CAKeyPassword string `json:"ca_key_password,omitempty"`    // manual，可选
+	CASource      string `json:"ca_source" binding:"required"`
+	CAID          string `json:"ca_id,omitempty"`
+	CACertPEM     string `json:"ca_cert_pem,omitempty"`
+	CAKeyPEM      string `json:"ca_key_pem,omitempty"`
+	CAKeyPassword string `json:"ca_key_password,omitempty"`
 
-	// ---- 证书参数 ----
+	CSRSource      string `json:"csr_source,omitempty"`
+	CSRID          string `json:"csr_id,omitempty"`
+	CSRPEM         string `json:"csr_pem,omitempty"`
+	CSRKeyPEM      string `json:"csr_key_pem,omitempty"`
+	CSRKeyPassword string `json:"csr_key_password,omitempty"`
+
 	Algorithm    string                 `json:"algorithm,omitempty"`
 	KeyParams    map[string]interface{} `json:"key_params,omitempty"`
-	Subject      map[string]string      `json:"subject"`
+	Subject      map[string]string      `json:"subject,omitempty"`
 	SAN          []string               `json:"san,omitempty"`
-	CertTypes    []string               `json:"cert_types" binding:"required"`
+	CertTypes    []string               `json:"cert_types,omitempty"`
 	ValidityDays int                    `json:"validity_days"`
+	CertMode     string                 `json:"cert_mode,omitempty"`
+
+	ReturnKey         bool   `json:"return_key,omitempty"`
+	KeyExportPassword string `json:"key_export_password,omitempty"`
 }
 
-// ImportCertRequest 导入证书请求。
 type ImportCertRequest struct {
 	CertPEM     string `json:"cert_pem" binding:"required"`
 	KeyPEM      string `json:"key_pem,omitempty"`
@@ -144,8 +138,93 @@ type ImportCertRequest struct {
 	KeyRef      string `json:"key_ref,omitempty"`
 }
 
-// ExportCertRequest 导出证书请求。
 type ExportCertRequest struct {
-	Type     string `json:"type" binding:"required"` // cert | key | pkcs12
+	Type     string `json:"type" binding:"required"`
 	Password string `json:"password,omitempty"`
+}
+
+type ImportCsrRequest struct {
+	CSRPEM      string `json:"csr_pem" binding:"required"`
+	KeyPEM      string `json:"key_pem,omitempty"`
+	KeyPassword string `json:"key_password,omitempty"`
+}
+
+// =============================================================================
+// 内部数字信封结构
+// =============================================================================
+
+type envelopedKey struct {
+	Version             string `json:"version"`
+	Algorithm           string `json:"algorithm"`
+	SignCertID          string `json:"sign_cert_id,omitempty"`
+	EncCertID           string `json:"enc_cert_id,omitempty"`
+	SignAlg             string `json:"sign_alg"`
+	EncAlg              string `json:"enc_alg"`
+	SymmetricKeyCipher  string `json:"symmetric_key_cipher"`
+	IV                  string `json:"iv"`
+	EncryptedPrivateKey string `json:"encrypted_private_key"`
+}
+
+// =============================================================================
+// 签发证书返回结构
+// =============================================================================
+
+// SignCertResult 签发证书返回给前端的结果。
+//
+// 普通证书：
+//   - cert_pem ：证书 PEM
+//   - key_pem  ：私钥 PEM（可选）
+//
+// 国密双证：
+//   - sign_cert_pem      ：签名证书 PEM
+//   - enc_cert_pem       ：加密证书 PEM
+//   - encrypted_envelope ：加密的数字信封（单一 base64 字符串，用户需保存）
+type SignCertResult struct {
+	Certificate *models.Certificate `json:"certificate"`
+
+	// 普通证书
+	CertPEM string `json:"cert_pem,omitempty"`
+	KeyPEM  string `json:"key_pem,omitempty"`
+
+	// 国密双证
+	SignCertPEM       string `json:"sign_cert_pem,omitempty"`
+	EncCertPEM        string `json:"enc_cert_pem,omitempty"`
+	EncryptedEnvelope string `json:"encrypted_envelope,omitempty"`
+}
+
+// =============================================================================
+// 信封信息查询
+// =============================================================================
+
+// QueryEnvelopeRequest 查询信封信息请求。
+//
+// 两种模式：
+//   - mode=cert   ：从签名证书反查私钥。
+//                   若签名证书有 KeyRef（客户导入 P10 时上传过私钥），
+//                   从 core 导出私钥解密。
+//                   若签名证书没有 KeyRef，返回明确错误引导用 manual 模式。
+//   - mode=manual ：客户上传自己的 CSR 私钥 s_pri，Server B 临时解密。
+//
+// ★ 去掉 binding:"required"，允许不同模式下选择性传参；
+//   实际校验在 QueryEnvelope 方法内完成，错误提示更友好。
+type QueryEnvelopeRequest struct {
+	Format            string `json:"format"`             // pkcs10 | cfca
+	Mode              string `json:"mode,omitempty"`     // cert | manual，默认 cert
+	EncryptedEnvelope string `json:"encrypted_envelope"` // 两种模式都必填
+
+	// mode=cert
+	CertID string `json:"cert_id,omitempty"`
+
+	// mode=manual
+	SignKeyPEM      string `json:"sign_key_pem,omitempty"`
+	SignKeyPassword string `json:"sign_key_password,omitempty"`
+}
+
+type QueryEnvelopeResponse struct {
+	Format              string `json:"format"`
+	Mode                string `json:"mode"`
+	SymmetricKeyCipher  string `json:"symmetric_key_cipher"`
+	IV                  string `json:"iv"`
+	EncryptedPrivateKey string `json:"encrypted_private_key"`
+	DecryptedKeyPEM     string `json:"decrypted_key_pem,omitempty"`
 }

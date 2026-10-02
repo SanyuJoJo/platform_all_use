@@ -1,12 +1,9 @@
 package crypto
-
 import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
-
 	"backend-go/internal/config"
 )
-
 // MetaRegistry 集中管理所有元数据类 Service / Handler 的构造与注册。
 //
 // 装配顺序：
@@ -19,11 +16,9 @@ type MetaRegistry struct {
 	CRL  *CRLService
 	Key  *KeyService
 }
-
 // NewMetaRegistry 装配所有元数据类 Service。
 func NewMetaRegistry(db *gorm.DB, cfg *config.Config) *MetaRegistry {
 	coreRoot := coreRootOf(cfg.CoreDispatchPath)
-
 	adapter := NewCoreAdapter(
 		cfg.CoreDispatchPath,
 		cfg.CoreTimeoutMs,
@@ -33,16 +28,14 @@ func NewMetaRegistry(db *gorm.DB, cfg *config.Config) *MetaRegistry {
 	caller := NewCoreCaller(adapter, coreRoot, files)
 	parser := NewCertParser(coreRoot)
 	keys := NewKeyCrypto()
-
 	return &MetaRegistry{
 		CA:   NewCAService(db, caller, files, parser, keys),
 		Cert: NewCertService(db, caller, files, parser, keys),
-		CSR:  NewCSRService(db),
+		CSR:  NewCSRService(db, caller, files, parser, keys),
 		CRL:  NewCRLService(db),
 		Key:  NewKeyService(db),
 	}
 }
-
 // Register 注册所有元数据类路由。
 func (r *MetaRegistry) Register(g *gin.RouterGroup) {
 	NewCAHandler(r.CA).RegisterRoutes(g)

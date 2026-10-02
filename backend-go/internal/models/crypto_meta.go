@@ -28,12 +28,6 @@ type CA struct {
 func (CA) TableName() string { return "platform_ca" }
 
 // Certificate 终端证书元数据表。
-//
-// 本次扩展新增字段：
-//   - Subject / Issuer：完整 DN，便于列表与详情展示
-//   - Fingerprint：SHA-256 摘要值
-//   - PublicKeyAlgorithm / SignatureAlgorithm：算法标识
-//   - KeyRef：关联密钥引用（生成 CSR 时由 core 返回）
 type Certificate struct {
 	ID                 uint      `gorm:"primaryKey;autoIncrement" json:"-"`
 	CertID             string    `gorm:"size:64;not null;uniqueIndex" json:"cert_id"`
@@ -59,7 +53,7 @@ type Certificate struct {
 
 func (Certificate) TableName() string { return "platform_certificate" }
 
-// CSR CSR/P10 元数据表。
+// CSR P10 元数据表。
 type CSR struct {
 	ID        uint      `gorm:"primaryKey;autoIncrement" json:"-"`
 	CSRID     string    `gorm:"size:64;not null;uniqueIndex" json:"csr_id"`
@@ -105,6 +99,27 @@ type KeyMeta struct {
 
 func (KeyMeta) TableName() string { return "platform_key_meta" }
 
+// EnvelopedKeyRecord 数字信封记录表。
+//
+// 说明：国密双证签发时，完整信封（含对称密钥密文与 IV）保存在此表。
+// 签发结果只返回 encrypted_private_key；用户可通过"查看信封信息"接口
+// 按 cert_id + format 查询到完整字段。
+type EnvelopedKeyRecord struct {
+	ID                  uint      `gorm:"primaryKey;autoIncrement" json:"-"`
+	SignCertID          string    `gorm:"size:64;not null;index" json:"sign_cert_id"`
+	EncCertID           string    `gorm:"size:64;index" json:"enc_cert_id"`
+	Format              string    `gorm:"size:16;not null;default:pkcs10;index" json:"format"`
+	Algorithm           string    `gorm:"size:32;not null" json:"algorithm"`
+	SignAlg             string    `gorm:"size:32;not null" json:"sign_alg"`
+	EncAlg              string    `gorm:"size:32;not null" json:"enc_alg"`
+	SymmetricKeyCipher  string    `gorm:"type:text;not null" json:"symmetric_key_cipher"`
+	IV                  string    `gorm:"size:64;not null" json:"iv"`
+	EncryptedPrivateKey string    `gorm:"type:text;not null" json:"encrypted_private_key"`
+	CreatedAt           time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
+}
+
+func (EnvelopedKeyRecord) TableName() string { return "platform_enveloped_key" }
+
 // EnsureCryptoMetaTables 确保密码元数据表存在（仅供开发/测试使用）。
 func EnsureCryptoMetaTables(db *gorm.DB) error {
 	return db.AutoMigrate(
@@ -113,5 +128,6 @@ func EnsureCryptoMetaTables(db *gorm.DB) error {
 		&CSR{},
 		&CRL{},
 		&KeyMeta{},
+		&EnvelopedKeyRecord{},
 	)
 }
