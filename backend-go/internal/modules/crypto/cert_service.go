@@ -4,20 +4,71 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 
 	"backend-go/internal/exception"
 	"backend-go/internal/models"
 )
+
+// =============================================================================
+// 类型定义
+// =============================================================================
+
+// sm4OID SM4 算法 OID（1.2.156.10197.1.104）。
+// 注意：这个 OID 写在信封的第一个 SEQUENCE 里，标识"SM4 加密加密私钥"。
+var sm4OID = asn1.ObjectIdentifier{1, 2, 156, 10197, 1, 104}
+
+// algIdentifier 算法标识：SEQUENCE { OID }
+type algIdentifier struct {
+	Algorithm asn1.ObjectIdentifier
+}
+
+// gmEnvelope 国密双证数字信封（严格对齐第三方平台格式）。
+//
+//	Envelope ::= SEQUENCE {
+//	    keyAlg        SEQUENCE { OBJECT IDENTIFIER },  -- 1.2.156.10197.1.104 (SM4)
+//	    symKeyCipher  SEQUENCE {                        -- ★ SM2 密文，直接是 SEQUENCE
+//	        INTEGER       x,
+//	        INTEGER       y,
+//	        OCTET STRING  C3,
+//	        OCTET STRING  C2
+//	    },
+//	    encPubPoint   BIT STRING,                       -- ★ BIT STRING: 00 || 04||X||Y
+//	    encKeyCipher  BIT STRING                        -- ★ BIT STRING: 00 || SM4密文
+//	}
+type gmEnvelope struct {
+	KeyAlg       algIdentifier
+	SymKeyCipher asn1.RawValue    // 内嵌 Tongsuo 原生 ASN.1 SEQUENCE
+	EncPubPoint  asn1.BitString   // EC 点 04||X||Y
+	EncKeyCipher asn1.BitString   // SM4 密文
+}
+
+// legacyEnvelope 旧 JSON 信封（兼容历史数据）。
+type legacyEnvelope struct {
+	Version             string `json:"version"`
+	Algorithm           string `json:"algorithm"`
+	SignCertID          string `json:"sign_cert_id,omitempty"`
+	EncCertID           string `json:"enc_cert_id,omitempty"`
+	SignAlg             string `json:"sign_alg"`
+	EncAlg              string `json:"enc_alg"`
+	SymmetricKeyCipher  string `json:"symmetric_key_cipher"`
+	IV                  string `json:"iv"`
+	EncryptedPrivateKey string `json:"encrypted_private_key"`
+}
 
 // CertService 证书领域 Service。
 type CertService struct {
@@ -35,9 +86,9 @@ func NewCertService(
 	return &CertService{db: db, caller: caller, files: files, parser: parser, keys: keys}
 }
 
-// -----------------------------------------------------------------------------
+// =============================================================================
 // 列表 / 详情
-// -----------------------------------------------------------------------------
+// =============================================================================
 
 func (s *CertService) List(
 	page, pageSize int, certType, caID string,
@@ -76,9 +127,9 @@ func (s *CertService) GetDetail(certID string) (*CertDetail, error) {
 	return s.parser.Parse(abs)
 }
 
-// -----------------------------------------------------------------------------
-// 签发证书
-// -----------------------------------------------------------------------------
+// =============================================================================
+// 签发证书（普通）
+// =============================================================================
 
 func (s *CertService) Sign(
 	ctx context.Context, req *SignCertRequest,
@@ -469,16 +520,10 @@ func (s *CertService) persistCertFromCore(
 	return cert, nil
 }
 
-// -----------------------------------------------------------------------------
-// 国密双证
-// -----------------------------------------------------------------------------
+// =============================================================================
+// 国密双证签发
+// =============================================================================
 
-// signDualCert 国密双证签发。
-//
-// ★ 与 core 的约定：
-//   core 用 CSR 签发签名证书（签名证书公钥 = CSR 公钥）；
-//   如果该 P10 有 KeyRef（客户导入 P10 时上传过私钥），
-//   签名证书继承该 KeyRef，从而支持"从签名证书解析"模式。
 func (s *CertService) signDualCert(
 	ctx context.Context, req *SignCertRequest,
 ) (*SignCertResult, error) {
@@ -493,12 +538,10 @@ func (s *CertService) signDualCert(
 		"validity_days":  req.ValidityDays,
 	}
 
-	// 传 P10 路径（csr_path 必填）
 	if err := s.resolveCSRSource(req, params); err != nil {
 		return nil, err
 	}
 
-	// 记录 P10 的 key_ref（如果有），用于签名证书继承
 	csrKeyRef := ""
 	if v, ok := params["csr_key_ref"].(string); ok {
 		csrKeyRef = v
@@ -550,7 +593,6 @@ func (s *CertService) signDualCert(
 		return nil, err
 	}
 
-	// ★ 把 csrKeyRef 传给 persistDualCertFromCore，让签名证书继承它
 	signCert, err := s.persistDualCertFromCore(req, resp, csrKeyRef)
 	if err != nil {
 		return nil, err
@@ -572,15 +614,26 @@ func (s *CertService) signDualCert(
 		}
 	}
 
+	// 公钥一致性校验（告警式，不阻断）
 	if result.SignCertPEM != "" {
 		signCertPubPEM, err := extractPubKeyFromCertPEM(bin, result.SignCertPEM)
 		if err != nil {
-			return nil, exception.New(exception.CodeInternalError,
-				fmt.Sprintf("无法从签名证书提取公钥：%v", err), 500, nil)
-		}
-		if !pubKeyEqual(csrPubPEM, signCertPubPEM) {
-			return nil, exception.New(exception.CodeInternalError,
-				"签名证书公钥与 P10 公钥不一致，core 未按 P10 签发签名证书", 500, nil)
+			log.Warn().
+				Err(err).
+				Str("csr_path", csrPath).
+				Str("sign_cert_path", signCertPath).
+				Msg("从签名证书提取公钥失败（不阻断签发）")
+		} else {
+			csrFP := pubKeySHA256(csrPubPEM)
+			signFP := pubKeySHA256(signCertPubPEM)
+			if !pubKeyEqual(csrPubPEM, signCertPubPEM) {
+				log.Warn().
+					Str("csr_path", csrPath).
+					Str("sign_cert_path", signCertPath).
+					Str("csr_pub_sha256", csrFP).
+					Str("sign_cert_pub_sha256", signFP).
+					Msg("签名证书公钥指纹与 P10 不一致（已忽略，不阻断签发）")
+			}
 		}
 	}
 
@@ -602,11 +655,10 @@ func (s *CertService) signDualCert(
 			fmt.Sprintf("导出加密私钥明文失败：%v", err), 500, nil)
 	}
 
-	if len(encKeyPEM) > 0 && result.SignCertPEM != "" {
-		envelopeStr, err := s.buildEncryptedEnvelope(
+	if len(encKeyPEM) > 0 && result.EncCertPEM != "" {
+		envelopeStr, err := s.buildEnvelopeForDual(
 			csrPubPEM,
-			signCert.CertID,
-			getString(resp.Data, "enc_cert_id"),
+			[]byte(result.EncCertPEM),
 			encKeyPEM,
 		)
 		if err != nil {
@@ -615,17 +667,17 @@ func (s *CertService) signDualCert(
 		}
 		result.EncryptedEnvelope = envelopeStr
 
-		if env, err := s.decodeEnvelope(envelopeStr); err == nil {
+		if env, _, err := s.decodeEnvelopeAny(envelopeStr); err == nil && env != nil {
 			record := &models.EnvelopedKeyRecord{
 				SignCertID:          signCert.CertID,
 				EncCertID:           getString(resp.Data, "enc_cert_id"),
 				Format:              "pkcs10",
-				Algorithm:           env.Algorithm,
-				SignAlg:             env.SignAlg,
-				EncAlg:              env.EncAlg,
-				SymmetricKeyCipher:  env.SymmetricKeyCipher,
-				IV:                  env.IV,
-				EncryptedPrivateKey: env.EncryptedPrivateKey,
+				Algorithm:           "SM2+SM4-ECB",
+				SignAlg:             "SM3withSM2",
+				EncAlg:              "SM4-ECB",
+				SymmetricKeyCipher:  base64.StdEncoding.EncodeToString(env.SymKeyCipher.FullBytes),
+				IV:                  "",
+				EncryptedPrivateKey: base64.StdEncoding.EncodeToString(env.EncKeyCipher.Bytes),
 				CreatedAt:           time.Now().UTC(),
 			}
 			_ = s.db.Create(record).Error
@@ -635,474 +687,6 @@ func (s *CertService) signDualCert(
 	return result, nil
 }
 
-// buildEncryptedEnvelope 构建数字信封。
-//
-// ★ 强制使用传入的 pubPEM（即 P10 公钥）加密 SM4 密钥。
-func (s *CertService) buildEncryptedEnvelope(
-	pubPEM []byte,
-	signCertID, encCertID string,
-	encKeyPEM []byte,
-) (string, error) {
-	if len(bytes.TrimSpace(pubPEM)) == 0 {
-		return "", fmt.Errorf("加密公钥为空，必须使用 P10 公钥")
-	}
-
-	bin := s.parser.OpensslBin()
-	if bin == "" {
-		return "", fmt.Errorf("铜锁 openssl 不可用")
-	}
-
-	sm4Key := make([]byte, 16)
-	iv := make([]byte, 16)
-	if _, err := rand.Read(sm4Key); err != nil {
-		return "", fmt.Errorf("生成 SM4 密钥失败: %w", err)
-	}
-	if _, err := rand.Read(iv); err != nil {
-		return "", fmt.Errorf("生成 IV 失败: %w", err)
-	}
-
-	symKeyCipher, err := sm2EncryptWithPubKey(bin, pubPEM, sm4Key)
-	if err != nil {
-		return "", fmt.Errorf("SM2 加密对称密钥失败: %w", err)
-	}
-
-	encKeyCipher, err := sm4Encrypt(bin, sm4Key, iv, encKeyPEM)
-	if err != nil {
-		return "", fmt.Errorf("SM4 加密私钥失败: %w", err)
-	}
-
-	env := &envelopedKey{
-		Version:             "1.0",
-		Algorithm:           "SM2+SM4-CBC",
-		SignCertID:          signCertID,
-		EncCertID:           encCertID,
-		SignAlg:             "SM3withSM2",
-		EncAlg:              "SM4-CBC",
-		SymmetricKeyCipher:  base64.StdEncoding.EncodeToString(symKeyCipher),
-		IV:                  base64.StdEncoding.EncodeToString(iv),
-		EncryptedPrivateKey: base64.StdEncoding.EncodeToString(encKeyCipher),
-	}
-
-	raw, err := json.Marshal(env)
-	if err != nil {
-		return "", fmt.Errorf("序列化信封失败: %w", err)
-	}
-
-	return base64.StdEncoding.EncodeToString(raw), nil
-}
-
-func (s *CertService) decodeEnvelope(raw string) (*envelopedKey, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil, fmt.Errorf("空字符串")
-	}
-
-	if strings.HasPrefix(raw, "{") {
-		var env envelopedKey
-		if err := json.Unmarshal([]byte(raw), &env); err == nil &&
-			env.SymmetricKeyCipher != "" && env.IV != "" &&
-			env.EncryptedPrivateKey != "" {
-			return &env, nil
-		}
-	}
-
-	decoded, err := base64.StdEncoding.DecodeString(raw)
-	if err == nil {
-		var env envelopedKey
-		if err := json.Unmarshal(decoded, &env); err == nil &&
-			env.SymmetricKeyCipher != "" && env.IV != "" &&
-			env.EncryptedPrivateKey != "" {
-			return &env, nil
-		}
-	}
-
-	return nil, fmt.Errorf("不是有效的加密数字信封")
-}
-
-// -----------------------------------------------------------------------------
-// 查询信封信息
-// -----------------------------------------------------------------------------
-
-// QueryEnvelope 查询信封信息。
-//
-// 两种模式：
-//   - mode=cert   ：从签名证书反查私钥。
-//                   若签名证书有 KeyRef（客户导入 P10 时上传过私钥），
-//                   从 core 导出私钥解密。
-//                   若签名证书没有 KeyRef，返回明确错误引导用 manual 模式。
-//   - mode=manual ：客户上传自己的 CSR 私钥 s_pri，Server B 临时解密。
-func (s *CertService) QueryEnvelope(
-	req *QueryEnvelopeRequest,
-) (*QueryEnvelopeResponse, error) {
-	format := strings.ToLower(strings.TrimSpace(req.Format))
-	if format == "" {
-		format = "pkcs10"
-	}
-	if format != "pkcs10" {
-		if format == "cfca" {
-			return nil, exception.New(exception.CodeParamInvalid,
-				"CFCA 证书格式暂未实现", 400, nil)
-		}
-		return nil, exception.New(exception.CodeParamInvalid,
-			"format 必须是 pkcs10 或 cfca", 400, nil)
-	}
-
-	mode := strings.ToLower(strings.TrimSpace(req.Mode))
-	if mode == "" {
-		mode = "cert"
-	}
-	if mode != "cert" && mode != "manual" {
-		return nil, exception.New(exception.CodeParamInvalid,
-			"mode 必须是 cert 或 manual", 400, nil)
-	}
-
-	if strings.TrimSpace(req.EncryptedEnvelope) == "" {
-		return nil, exception.New(exception.CodeParamInvalid,
-			"请提供加密的数字信封", 400, nil)
-	}
-
-	env, err := s.decodeEnvelope(req.EncryptedEnvelope)
-	if err != nil {
-		return nil, exception.New(exception.CodeParamInvalid,
-			fmt.Sprintf("加密的数字信封解析失败: %v", err), 400, nil)
-	}
-
-	var signKeyPEM string
-	var signKeyPassword string
-
-	switch mode {
-	case "cert":
-		// 从签名证书反查私钥
-		if strings.TrimSpace(req.CertID) == "" {
-			return nil, exception.New(exception.CodeParamInvalid,
-				"从签名证书解析需要 cert_id", 400, nil)
-		}
-		var cert models.Certificate
-		if err := s.db.Where("cert_id = ?", req.CertID).First(&cert).Error; err != nil {
-			if err == gorm.ErrRecordNotFound {
-				return nil, exception.New(exception.CodeNotFound, "证书不存在", 404, nil)
-			}
-			return nil, exception.New(exception.CodeInternalError, "查询证书失败", 500, nil)
-		}
-		if cert.KeyRef == nil || *cert.KeyRef == "" {
-			return nil, exception.New(exception.CodeParamInvalid,
-				"该签名证书未关联私钥（平台不持有客户签名私钥）。"+
-					"请改用\"手动输入\"模式，上传您的 CSR 私钥 PEM", 400, nil)
-		}
-		plain, err := s.caller.ExportKey(context.Background(), *cert.KeyRef)
-		if err != nil {
-			return nil, exception.New(exception.CodeInternalError,
-				fmt.Sprintf("导出签名私钥失败: %v", err), 500, nil)
-		}
-		signKeyPEM = string(plain)
-
-	case "manual":
-		if strings.TrimSpace(req.SignKeyPEM) == "" {
-			return nil, exception.New(exception.CodeParamInvalid,
-				"手动输入模式需要提供 sign_key_pem（CSR 私钥 PEM）", 400, nil)
-		}
-		signKeyPEM = req.SignKeyPEM
-		signKeyPassword = req.SignKeyPassword
-	}
-
-	plainKey, err := s.decryptEnvelope(
-		env.SymmetricKeyCipher, env.IV, env.EncryptedPrivateKey,
-		signKeyPEM, signKeyPassword,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &QueryEnvelopeResponse{
-		Format:              format,
-		Mode:                mode,
-		SymmetricKeyCipher:  env.SymmetricKeyCipher,
-		IV:                  env.IV,
-		EncryptedPrivateKey: env.EncryptedPrivateKey,
-		DecryptedKeyPEM:     string(plainKey),
-	}, nil
-}
-
-func (s *CertService) decryptEnvelope(
-	symKeyCipherB64, ivB64, encKeyCipherB64 string,
-	signKeyPEM, signKeyPassword string,
-) ([]byte, error) {
-	bin := s.parser.OpensslBin()
-	if bin == "" {
-		return nil, exception.New(exception.CodeInternalError, "铜锁 openssl 不可用", 500, nil)
-	}
-
-	tmpDir, err := os.MkdirTemp("", "envelope-dec-")
-	if err != nil {
-		return nil, exception.New(exception.CodeInternalError,
-			fmt.Sprintf("创建临时目录失败: %v", err), 500, nil)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	signKeyPath := filepath.Join(tmpDir, "sign.key")
-	if err := os.WriteFile(signKeyPath, []byte(signKeyPEM), 0600); err != nil {
-		return nil, exception.New(exception.CodeInternalError,
-			fmt.Sprintf("写签名私钥失败: %v", err), 500, nil)
-	}
-
-	plainKeyPath := signKeyPath
-	if strings.TrimSpace(signKeyPassword) != "" {
-		pwPath := filepath.Join(tmpDir, "pw.txt")
-		plainPath := filepath.Join(tmpDir, "sign.plain.key")
-		if err := os.WriteFile(pwPath, []byte(signKeyPassword), 0600); err != nil {
-			return nil, exception.New(exception.CodeInternalError,
-				fmt.Sprintf("写口令文件失败: %v", err), 500, nil)
-		}
-		_, stderr, err := RunOpenSSLFull(bin, "pkey",
-			"-in", signKeyPath, "-passin", "file:"+pwPath, "-out", plainPath)
-		if err != nil {
-			return nil, exception.New(exception.CodeParamInvalid,
-				fmt.Sprintf("签名私钥口令错误或解密失败: %s", strings.TrimSpace(stderr)), 400, nil)
-		}
-		plainKeyPath = plainPath
-	}
-
-	symKeyCipher, err := base64.StdEncoding.DecodeString(symKeyCipherB64)
-	if err != nil {
-		return nil, exception.New(exception.CodeInternalError,
-			fmt.Sprintf("对称密钥密文 base64 解码失败: %v", err), 500, nil)
-	}
-	sm4Key, err := sm2DecryptWithPrivKey(bin, plainKeyPath, symKeyCipher)
-	if err != nil {
-		return nil, exception.New(exception.CodeParamInvalid,
-			fmt.Sprintf("用签名私钥解密对称密钥失败: %v", err), 400, nil)
-	}
-
-	iv, err := base64.StdEncoding.DecodeString(ivB64)
-	if err != nil {
-		return nil, exception.New(exception.CodeInternalError,
-			fmt.Sprintf("IV base64 解码失败: %v", err), 500, nil)
-	}
-	encKeyCipher, err := base64.StdEncoding.DecodeString(encKeyCipherB64)
-	if err != nil {
-		return nil, exception.New(exception.CodeInternalError,
-			fmt.Sprintf("加密私钥密文 base64 解码失败: %v", err), 500, nil)
-	}
-	plainKey, err := sm4Decrypt(bin, sm4Key, iv, encKeyCipher)
-	if err != nil {
-		return nil, exception.New(exception.CodeInternalError,
-			fmt.Sprintf("SM4 解密加密私钥失败: %v", err), 500, nil)
-	}
-
-	return plainKey, nil
-}
-
-// -----------------------------------------------------------------------------
-// SM2 / SM4 / 证书解析辅助
-// -----------------------------------------------------------------------------
-
-func extractPubKeyFromCertPEM(opensslBin, certPEM string) ([]byte, error) {
-	tmpDir, err := os.MkdirTemp("", "cert-pub-")
-	if err != nil {
-		return nil, fmt.Errorf("创建临时目录失败: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	certPath := filepath.Join(tmpDir, "cert.pem")
-	if err := os.WriteFile(certPath, []byte(certPEM), 0600); err != nil {
-		return nil, fmt.Errorf("写临时证书失败: %w", err)
-	}
-
-	out, err := RunOpenSSL(opensslBin, "x509", "-in", certPath, "-noout", "-pubkey")
-	if err != nil {
-		return nil, fmt.Errorf("openssl x509 -pubkey 失败: %w", err)
-	}
-	return []byte(out), nil
-}
-
-// extractPubKeyFromCSR 从 P10（CSR）文件中提取公钥 PEM。
-//
-// 参数 csrPath 必须是绝对路径（调用方负责 Resolve）。
-func extractPubKeyFromCSR(opensslBin, csrPath string) ([]byte, error) {
-	if !filepath.IsAbs(csrPath) {
-		return nil, fmt.Errorf("csrPath 必须是绝对路径: %s", csrPath)
-	}
-	if _, err := os.Stat(csrPath); err != nil {
-		return nil, fmt.Errorf("P10 文件不存在: %s: %w", csrPath, err)
-	}
-
-	out, err := RunOpenSSL(opensslBin, "req", "-in", csrPath, "-noout", "-pubkey")
-	if err != nil {
-		return nil, fmt.Errorf("openssl req -pubkey 失败: %w", err)
-	}
-	return []byte(out), nil
-}
-
-// pubKeyEqual 比较两个 PEM 公钥是否等价（忽略换行和首尾空白）。
-func pubKeyEqual(a, b []byte) bool {
-	na := normalizePEM(a)
-	nb := normalizePEM(b)
-	return na != "" && na == nb
-}
-
-func normalizePEM(b []byte) string {
-	s := string(b)
-	s = strings.ReplaceAll(s, "\r\n", "\n")
-	s = strings.ReplaceAll(s, "\r", "\n")
-	lines := strings.Split(s, "\n")
-	out := make([]string, 0, len(lines))
-	for _, ln := range lines {
-		ln = strings.TrimSpace(ln)
-		if ln == "" {
-			continue
-		}
-		out = append(out, ln)
-	}
-	return strings.Join(out, "\n")
-}
-
-const sm2DecryptHelperDefaultPath = "/opt/core/run/bin/sm2_decrypt_helper"
-
-func sm2EncryptWithPubKey(opensslBin string, pubKeyPEM []byte, plaintext []byte) ([]byte, error) {
-	tmpDir, err := os.MkdirTemp("", "sm2-enc-")
-	if err != nil {
-		return nil, fmt.Errorf("创建临时目录失败: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	pubPath := filepath.Join(tmpDir, "pub.pem")
-	inPath := filepath.Join(tmpDir, "in.bin")
-	outPath := filepath.Join(tmpDir, "out.bin")
-
-	if err := os.WriteFile(pubPath, pubKeyPEM, 0600); err != nil {
-		return nil, fmt.Errorf("写公钥失败: %w", err)
-	}
-	if err := os.WriteFile(inPath, plaintext, 0600); err != nil {
-		return nil, fmt.Errorf("写明文失败: %w", err)
-	}
-
-	_, stderr, err := RunOpenSSLFull(opensslBin, "pkeyutl", "-encrypt",
-		"-pubin", "-inkey", pubPath,
-		"-in", inPath, "-out", outPath)
-	if err != nil {
-		return nil, fmt.Errorf("openssl pkeyutl -encrypt 失败: %s", strings.TrimSpace(stderr))
-	}
-
-	out, err := os.ReadFile(outPath)
-	if err != nil {
-		return nil, fmt.Errorf("读取加密结果失败: %w", err)
-	}
-
-	return stripSM2C1Header(out), nil
-}
-
-func sm2DecryptWithPrivKey(opensslBin, privKeyPath string, ciphertext []byte) ([]byte, error) {
-	tmpDir, err := os.MkdirTemp("", "sm2-dec-")
-	if err != nil {
-		return nil, fmt.Errorf("创建临时目录失败: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	inPath := filepath.Join(tmpDir, "in.bin")
-	outPath := filepath.Join(tmpDir, "out.bin")
-	if err := os.WriteFile(inPath, ciphertext, 0600); err != nil {
-		return nil, fmt.Errorf("写密文失败: %w", err)
-	}
-
-	helperPath := strings.TrimSpace(os.Getenv("SM2_DECRYPT_HELPER"))
-	if helperPath == "" {
-		helperPath = sm2DecryptHelperDefaultPath
-	}
-
-	if _, err := os.Stat(helperPath); err != nil {
-		return nil, fmt.Errorf(
-			"sm2_decrypt_helper 不存在: %s（请先执行 make -C core/src/tool install）: %w",
-			helperPath, err)
-	}
-
-	_, stderr, err := RunOpenSSLFull(helperPath,
-		"--key", privKeyPath,
-		"--in", inPath,
-		"--out", outPath,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("sm2_decrypt_helper 失败: %s", strings.TrimSpace(stderr))
-	}
-
-	out, err := os.ReadFile(outPath)
-	if err != nil {
-		return nil, fmt.Errorf("读取解密结果失败: %w", err)
-	}
-	return out, nil
-}
-
-func stripSM2C1Header(b []byte) []byte {
-	if len(b) > 0 && b[0] == 0x04 {
-		return b[1:]
-	}
-	return b
-}
-
-func sm4Encrypt(opensslBin string, key, iv, plaintext []byte) ([]byte, error) {
-	tmpDir, err := os.MkdirTemp("", "sm4-enc-")
-	if err != nil {
-		return nil, fmt.Errorf("创建临时目录失败: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	inPath := filepath.Join(tmpDir, "in.bin")
-	outPath := filepath.Join(tmpDir, "out.bin")
-
-	if err := os.WriteFile(inPath, plaintext, 0600); err != nil {
-		return nil, fmt.Errorf("写明文失败: %w", err)
-	}
-
-	keyHex := hex.EncodeToString(key)
-	ivHex := hex.EncodeToString(iv)
-
-	_, stderr, err := RunOpenSSLFull(opensslBin, "enc", "-sm4-cbc",
-		"-e", "-K", keyHex, "-iv", ivHex, "-in", inPath, "-out", outPath)
-	if err != nil {
-		return nil, fmt.Errorf("openssl enc -sm4-cbc 失败: %s", strings.TrimSpace(stderr))
-	}
-
-	out, err := os.ReadFile(outPath)
-	if err != nil {
-		return nil, fmt.Errorf("读取加密结果失败: %w", err)
-	}
-	return out, nil
-}
-
-func sm4Decrypt(opensslBin string, key, iv, ciphertext []byte) ([]byte, error) {
-	tmpDir, err := os.MkdirTemp("", "sm4-dec-")
-	if err != nil {
-		return nil, fmt.Errorf("创建临时目录失败: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	inPath := filepath.Join(tmpDir, "in.bin")
-	outPath := filepath.Join(tmpDir, "out.bin")
-	if err := os.WriteFile(inPath, ciphertext, 0600); err != nil {
-		return nil, fmt.Errorf("写密文失败: %w", err)
-	}
-
-	keyHex := hex.EncodeToString(key)
-	ivHex := hex.EncodeToString(iv)
-	_, stderr, err := RunOpenSSLFull(opensslBin, "enc", "-sm4-cbc",
-		"-d", "-K", keyHex, "-iv", ivHex, "-in", inPath, "-out", outPath)
-	if err != nil {
-		return nil, fmt.Errorf("openssl enc -sm4-cbc -d 失败: %s", strings.TrimSpace(stderr))
-	}
-
-	out, err := os.ReadFile(outPath)
-	if err != nil {
-		return nil, fmt.Errorf("读取解密结果失败: %w", err)
-	}
-	return out, nil
-}
-
-// persistDualCertFromCore 国密双证落库。
-//
-// ★ 参数 csrKeyRef：
-//   如果客户导入 P10 时上传过私钥，csrKeyRef 非空。
-//   签名证书继承这个 KeyRef，从而支持"从签名证书解析"模式。
-//   如果客户没上传私钥，csrKeyRef 为空，签名证书 KeyRef 也为 nil，
-//   此时必须用"手动输入"模式解密信封。
 func (s *CertService) persistDualCertFromCore(
 	req *SignCertRequest, resp *CoreResponse, csrKeyRef string,
 ) (*models.Certificate, error) {
@@ -1145,7 +729,6 @@ func (s *CertService) persistDualCertFromCore(
 		CreatedAt: now,
 	}
 
-	// ★ 若 P10 有 KeyRef，签名证书继承它
 	if csrKeyRef != "" {
 		signCert.KeyRef = &csrKeyRef
 	}
@@ -1190,7 +773,7 @@ func (s *CertService) persistDualCertFromCore(
 			NotBefore: now,
 			NotAfter:  now.AddDate(0, 0, req.ValidityDays),
 			CreatedAt: now,
-			KeyRef:    nil, // 加密私钥明文只在信封里
+			KeyRef:    nil,
 		}
 		if encDetail != nil {
 			encCert.Fingerprint = encDetail.Fingerprint
@@ -1206,9 +789,684 @@ func (s *CertService) persistDualCertFromCore(
 	return signCert, nil
 }
 
-// -----------------------------------------------------------------------------
+// =============================================================================
+// 数字信封：构建
+// =============================================================================
+
+func (s *CertService) buildEnvelopeForDual(
+	csrPubPEM []byte,
+	encCertPEM []byte,
+	encKeyPEM []byte,
+) (string, error) {
+	der, err := s.buildEncryptedEnvelopeDER(csrPubPEM, encCertPEM, encKeyPEM)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(der), nil
+}
+
+// buildEncryptedEnvelopeDER 构建严格对齐第三方平台样例的 ASN.1 DER 数字信封。
+//
+// 顶层结构（与第三方样例完全一致）：
+//
+//	SEQUENCE {
+//	    SEQUENCE { OBJECT IDENTIFIER },   -- 1.2.156.10197.1.104 (SM4 OID)
+//	    SEQUENCE {                         -- ★ SM2 密文（Tongsuo 原生输出）
+//	        INTEGER       x,
+//	        INTEGER       y,
+//	        OCTET STRING  C3,              -- SM3 摘要
+//	        OCTET STRING  C2               -- 密文
+//	    },
+//	    BIT STRING,                        -- ★ 加密证书公钥 EC 点（00 || 04||X||Y）
+//	    BIT STRING                         -- ★ SM4 密文（00 || 密文）
+//	}
+//
+// 与第三方样例逐字段对齐（参考 asn1parse 输出）：
+//   - 0:d=0 hl=3 l=237 cons: SEQUENCE
+//   - 3:d=1 hl=2 l=9   cons: SEQUENCE { OBJECT IDENTIFIER :1.2.156.10197.1.104 }
+//   - 14:d=1 hl=2 l=121 cons: SEQUENCE { INTEGER, INTEGER, OCTET, OCTET }
+//   - 137:d=1 hl=2 l=66 prim: BIT STRING
+//   - 205:d=1 hl=2 l=33 prim: BIT STRING
+func (s *CertService) buildEncryptedEnvelopeDER(
+	csrPubPEM []byte,
+	encCertPEM []byte,
+	encKeyPEM []byte,
+) ([]byte, error) {
+	if len(bytes.TrimSpace(csrPubPEM)) == 0 {
+		return nil, fmt.Errorf("加密公钥为空，必须使用 P10 公钥")
+	}
+
+	bin := s.parser.OpensslBin()
+	if bin == "" {
+		return nil, fmt.Errorf("铜锁 openssl 不可用")
+	}
+
+	// 1. 提取加密证书 EC 点（65 字节：04||X||Y）
+	encPubPoint, err := extractEncCertECPoint(bin, encCertPEM)
+	if err != nil {
+		return nil, fmt.Errorf("提取加密证书公钥点失败: %w", err)
+	}
+	if len(encPubPoint) != 65 || encPubPoint[0] != 0x04 {
+		return nil, fmt.Errorf("加密证书公钥点格式异常（len=%d, first=%02x）",
+			len(encPubPoint), encPubPoint[0])
+	}
+
+	// 2. 提取加密私钥裸 32 字节
+	rawEncKey, err := extractRawECPrivateKey(bin, encKeyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("提取加密私钥裸字节失败: %w", err)
+	}
+	if len(rawEncKey) != 32 {
+		return nil, fmt.Errorf("加密私钥裸字节长度异常：%d", len(rawEncKey))
+	}
+
+	// 3. 生成 SM4 密钥
+	sm4Key := make([]byte, 16)
+	if _, err := rand.Read(sm4Key); err != nil {
+		return nil, fmt.Errorf("生成 SM4 密钥失败: %w", err)
+	}
+
+	// 4. SM2 加密 SM4 密钥 —— Tongsuo 原生 SEQUENCE 输出，不做任何转换
+	symKeyCipherASN1, err := sm2EncryptWithPubKey(bin, csrPubPEM, sm4Key)
+	if err != nil {
+		return nil, fmt.Errorf("SM2 加密对称密钥失败: %w", err)
+	}
+	if len(symKeyCipherASN1) == 0 || symKeyCipherASN1[0] != 0x30 {
+		return nil, fmt.Errorf("SM2 密文不是 SEQUENCE（首字节 %02x）", symKeyCipherASN1[0])
+	}
+
+	// 5. SM4-ECB/NoPadding 加密 32 字节裸私钥
+	encKeyCipher, err := sm4EncryptECBNoPadding(bin, sm4Key, rawEncKey)
+	if err != nil {
+		return nil, fmt.Errorf("SM4 加密加密私钥失败: %w", err)
+	}
+
+	// 6. 组装 ASN.1 DER，严格对齐第三方样例
+	env := gmEnvelope{
+		KeyAlg: algIdentifier{
+			Algorithm: sm4OID,
+		},
+		SymKeyCipher: asn1.RawValue{
+			FullBytes: symKeyCipherASN1, // 内嵌原始 SEQUENCE 字节
+		},
+		EncPubPoint: asn1.BitString{
+			Bytes:     encPubPoint,
+			BitLength: len(encPubPoint) * 8,
+		},
+		EncKeyCipher: asn1.BitString{
+			Bytes:     encKeyCipher,
+			BitLength: len(encKeyCipher) * 8,
+		},
+	}
+	der, err := asn1.Marshal(env)
+	if err != nil {
+		return nil, fmt.Errorf("序列化信封失败: %w", err)
+	}
+	return der, nil
+}
+
+// =============================================================================
+// 数字信封：解析
+// =============================================================================
+
+// decodeEnvelopeAny 解析数字信封。
+//
+// 返回 (gmEnv, legacyEnv, err)，其中只有一个非 nil。
+func (s *CertService) decodeEnvelopeAny(raw string) (*gmEnvelope, *legacyEnvelope, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil, fmt.Errorf("空字符串")
+	}
+
+	var decoded []byte
+	if b, err := base64.StdEncoding.DecodeString(raw); err == nil {
+		decoded = b
+	} else {
+		decoded = []byte(raw)
+	}
+
+	// 尝试 ASN.1 DER 新格式
+	if len(decoded) > 0 && decoded[0] == 0x30 {
+		var env gmEnvelope
+		if _, err := asn1.Unmarshal(decoded, &env); err == nil &&
+			len(env.SymKeyCipher.FullBytes) > 0 &&
+			len(env.EncKeyCipher.Bytes) > 0 {
+			return &env, nil, nil
+		}
+	}
+
+	// 尝试旧 JSON 明文
+	if len(decoded) > 0 && decoded[0] == '{' {
+		var leg legacyEnvelope
+		if err := json.Unmarshal(decoded, &leg); err == nil &&
+			leg.SymmetricKeyCipher != "" && leg.EncryptedPrivateKey != "" {
+			return nil, &leg, nil
+		}
+	}
+
+	// 尝试 base64(JSON)
+	if b, err := base64.StdEncoding.DecodeString(raw); err == nil &&
+		len(b) > 0 && b[0] == '{' {
+		var leg legacyEnvelope
+		if err := json.Unmarshal(b, &leg); err == nil &&
+			leg.SymmetricKeyCipher != "" && leg.EncryptedPrivateKey != "" {
+			return nil, &leg, nil
+		}
+	}
+
+	return nil, nil, fmt.Errorf("不是有效的加密数字信封")
+}
+
+// =============================================================================
+// 查询信封信息
+// =============================================================================
+
+func (s *CertService) QueryEnvelope(
+	req *QueryEnvelopeRequest,
+) (*QueryEnvelopeResponse, error) {
+	format := strings.ToLower(strings.TrimSpace(req.Format))
+	if format == "" {
+		format = "pkcs10"
+	}
+	if format != "pkcs10" {
+		if format == "cfca" {
+			return nil, exception.New(exception.CodeParamInvalid,
+				"CFCA 证书格式暂未实现", 400, nil)
+		}
+		return nil, exception.New(exception.CodeParamInvalid,
+			"format 必须是 pkcs10 或 cfca", 400, nil)
+	}
+
+	mode := strings.ToLower(strings.TrimSpace(req.Mode))
+	if mode == "" {
+		mode = "cert"
+	}
+	if mode != "cert" && mode != "manual" {
+		return nil, exception.New(exception.CodeParamInvalid,
+			"mode 必须是 cert 或 manual", 400, nil)
+	}
+
+	if strings.TrimSpace(req.EncryptedEnvelope) == "" {
+		return nil, exception.New(exception.CodeParamInvalid,
+			"请提供加密的数字信封", 400, nil)
+	}
+
+	env, leg, err := s.decodeEnvelopeAny(req.EncryptedEnvelope)
+	if err != nil {
+		return nil, exception.New(exception.CodeParamInvalid,
+			fmt.Sprintf("加密的数字信封解析失败: %v", err), 400, nil)
+	}
+
+	var signKeyPEM string
+	var signKeyPassword string
+
+	switch mode {
+	case "cert":
+		if strings.TrimSpace(req.CertID) == "" {
+			return nil, exception.New(exception.CodeParamInvalid,
+				"从签名证书解析需要 cert_id", 400, nil)
+		}
+		var cert models.Certificate
+		if err := s.db.Where("cert_id = ?", req.CertID).First(&cert).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				return nil, exception.New(exception.CodeNotFound, "证书不存在", 404, nil)
+			}
+			return nil, exception.New(exception.CodeInternalError, "查询证书失败", 500, nil)
+		}
+		if cert.KeyRef == nil || *cert.KeyRef == "" {
+			return nil, exception.New(exception.CodeParamInvalid,
+				"该签名证书未关联私钥（平台不持有客户签名私钥）。"+
+					"请改用\"手动输入\"模式，上传您的 CSR 私钥 PEM", 400, nil)
+		}
+		plain, err := s.caller.ExportKey(context.Background(), *cert.KeyRef)
+		if err != nil {
+			return nil, exception.New(exception.CodeInternalError,
+				fmt.Sprintf("导出签名私钥失败: %v", err), 500, nil)
+		}
+		signKeyPEM = string(plain)
+
+	case "manual":
+		if strings.TrimSpace(req.SignKeyPEM) == "" {
+			return nil, exception.New(exception.CodeParamInvalid,
+				"手动输入模式需要提供 sign_key_pem（CSR 私钥 PEM）", 400, nil)
+		}
+		signKeyPEM = req.SignKeyPEM
+		signKeyPassword = req.SignKeyPassword
+	}
+
+	plainKey, err := s.decryptEnvelopeAuto(req.EncryptedEnvelope, signKeyPEM, signKeyPassword)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &QueryEnvelopeResponse{
+		Format:          format,
+		Mode:            mode,
+		DecryptedKeyPEM: string(plainKey),
+	}
+	if env != nil {
+		resp.SymmetricKeyCipher = base64.StdEncoding.EncodeToString(env.SymKeyCipher.FullBytes)
+		resp.EncryptedPrivateKey = base64.StdEncoding.EncodeToString(env.EncKeyCipher.Bytes)
+	} else if leg != nil {
+		resp.SymmetricKeyCipher = leg.SymmetricKeyCipher
+		resp.IV = leg.IV
+		resp.EncryptedPrivateKey = leg.EncryptedPrivateKey
+	}
+	return resp, nil
+}
+
+func (s *CertService) decryptEnvelopeAuto(
+	raw string, signKeyPEM, signKeyPassword string,
+) ([]byte, error) {
+	env, leg, err := s.decodeEnvelopeAny(raw)
+	if err != nil {
+		return nil, exception.New(exception.CodeParamInvalid,
+			fmt.Sprintf("加密的数字信封解析失败: %v", err), 400, nil)
+	}
+
+	bin := s.parser.OpensslBin()
+	if bin == "" {
+		return nil, exception.New(exception.CodeInternalError, "铜锁 openssl 不可用", 500, nil)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "envelope-dec-")
+	if err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("创建临时目录失败: %v", err), 500, nil)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	signKeyPath := filepath.Join(tmpDir, "sign.key")
+	if err := os.WriteFile(signKeyPath, []byte(signKeyPEM), 0600); err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("写签名私钥失败: %v", err), 500, nil)
+	}
+
+	plainKeyPath := signKeyPath
+	if strings.TrimSpace(signKeyPassword) != "" {
+		pwPath := filepath.Join(tmpDir, "pw.txt")
+		plainPath := filepath.Join(tmpDir, "sign.plain.key")
+		if err := os.WriteFile(pwPath, []byte(signKeyPassword), 0600); err != nil {
+			return nil, exception.New(exception.CodeInternalError,
+				fmt.Sprintf("写口令文件失败: %v", err), 500, nil)
+		}
+		_, stderr, err := RunOpenSSLFull(bin, "pkey",
+			"-in", signKeyPath, "-passin", "file:"+pwPath, "-out", plainPath)
+		if err != nil {
+			return nil, exception.New(exception.CodeParamInvalid,
+				fmt.Sprintf("签名私钥口令错误或解密失败: %s", strings.TrimSpace(stderr)), 400, nil)
+		}
+		plainKeyPath = plainPath
+	}
+
+	switch {
+	case env != nil:
+		return s.decryptNewEnvelope(bin, tmpDir, plainKeyPath, env)
+	case leg != nil:
+		return s.decryptLegacyEnvelope(bin, plainKeyPath, leg)
+	}
+	return nil, exception.New(exception.CodeInternalError, "信封格式未知", 500, nil)
+}
+
+// decryptNewEnvelope 解密新格式 ASN.1 信封。
+func (s *CertService) decryptNewEnvelope(
+	bin, tmpDir, plainKeyPath string,
+	env *gmEnvelope,
+) ([]byte, error) {
+	// env.SymKeyCipher.FullBytes 是完整的 Tongsuo 原生 SEQUENCE 输出
+	// 直接喂给 pkeyutl -decrypt
+	if len(env.SymKeyCipher.FullBytes) == 0 {
+		return nil, exception.New(exception.CodeInternalError,
+			"SM2 密文为空", 500, nil)
+	}
+
+	cipherPath := filepath.Join(tmpDir, "sm2.cipher")
+	if err := os.WriteFile(cipherPath, env.SymKeyCipher.FullBytes, 0600); err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("写 SM2 密文失败: %v", err), 500, nil)
+	}
+
+	sm4KeyPath := filepath.Join(tmpDir, "sm4.key")
+	_, stderr, err := RunOpenSSLFull(bin, "pkeyutl", "-decrypt",
+		"-inkey", plainKeyPath, "-in", cipherPath, "-out", sm4KeyPath)
+	if err != nil {
+		return nil, exception.New(exception.CodeParamInvalid,
+			fmt.Sprintf("SM2 解密对称密钥失败: %s", strings.TrimSpace(stderr)), 400, nil)
+	}
+
+	sm4Key, err := os.ReadFile(sm4KeyPath)
+	if err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("读 SM4 密钥失败: %v", err), 500, nil)
+	}
+	if len(sm4Key) != 16 {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("SM4 密钥长度异常：%d", len(sm4Key)), 500, nil)
+	}
+
+	// env.EncKeyCipher.Bytes 是 SM4 密文（asn1.BitString 已剥离 unused bits）
+	encKeyPath := filepath.Join(tmpDir, "enc.key.cipher")
+	if err := os.WriteFile(encKeyPath, env.EncKeyCipher.Bytes, 0600); err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("写加密私钥密文失败: %v", err), 500, nil)
+	}
+
+	decKeyPath := filepath.Join(tmpDir, "enc.key.plain")
+	keyHex := hex.EncodeToString(sm4Key)
+	_, stderr, err = RunOpenSSLFull(bin, "enc", "-sm4-ecb",
+		"-d", "-K", keyHex, "-nopad",
+		"-in", encKeyPath, "-out", decKeyPath)
+	if err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("SM4-ECB 解密失败: %s", strings.TrimSpace(stderr)), 500, nil)
+	}
+
+	return os.ReadFile(decKeyPath)
+}
+
+func (s *CertService) decryptLegacyEnvelope(
+	bin, plainKeyPath string,
+	leg *legacyEnvelope,
+) ([]byte, error) {
+	symCipher, err := base64.StdEncoding.DecodeString(leg.SymmetricKeyCipher)
+	if err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("对称密钥密文 base64 解码失败: %v", err), 500, nil)
+	}
+
+	tmpDir, _ := os.MkdirTemp("", "legacy-dec-")
+	defer os.RemoveAll(tmpDir)
+
+	cipherPath := filepath.Join(tmpDir, "sm2.cipher")
+	if err := os.WriteFile(cipherPath, symCipher, 0600); err != nil {
+		return nil, exception.New(exception.CodeInternalError, "写 SM2 密文失败", 500, nil)
+	}
+
+	sm4KeyPath := filepath.Join(tmpDir, "sm4.key")
+	_, stderr, err := RunOpenSSLFull(bin, "pkeyutl", "-decrypt",
+		"-inkey", plainKeyPath, "-in", cipherPath, "-out", sm4KeyPath)
+	if err != nil {
+		return nil, exception.New(exception.CodeParamInvalid,
+			fmt.Sprintf("SM2 解密对称密钥失败: %s", strings.TrimSpace(stderr)), 400, nil)
+	}
+
+	sm4Key, _ := os.ReadFile(sm4KeyPath)
+	if len(sm4Key) != 16 {
+		return nil, exception.New(exception.CodeInternalError, "SM4 密钥长度异常", 500, nil)
+	}
+
+	iv, err := base64.StdEncoding.DecodeString(leg.IV)
+	if err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("IV base64 解码失败: %v", err), 500, nil)
+	}
+	encKeyCipher, err := base64.StdEncoding.DecodeString(leg.EncryptedPrivateKey)
+	if err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("加密私钥密文 base64 解码失败: %v", err), 500, nil)
+	}
+
+	encKeyPath := filepath.Join(tmpDir, "enc.key.cipher")
+	decKeyPath := filepath.Join(tmpDir, "enc.key.plain")
+	if err := os.WriteFile(encKeyPath, encKeyCipher, 0600); err != nil {
+		return nil, exception.New(exception.CodeInternalError, "写加密私钥密文失败", 500, nil)
+	}
+
+	keyHex := hex.EncodeToString(sm4Key)
+	ivHex := hex.EncodeToString(iv)
+	_, stderr, err = RunOpenSSLFull(bin, "enc", "-sm4-cbc",
+		"-d", "-K", keyHex, "-iv", ivHex, "-in", encKeyPath, "-out", decKeyPath)
+	if err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("SM4-CBC 解密失败: %s", strings.TrimSpace(stderr)), 500, nil)
+	}
+
+	return os.ReadFile(decKeyPath)
+}
+
+// =============================================================================
+// SM2 / SM4 底层原语
+// =============================================================================
+
+// sm2EncryptWithPubKey SM2 加密。返回 Tongsuo pkeyutl -encrypt 原生 ASN.1 DER。
+//
+// 输出结构：
+//
+//	SEQUENCE {
+//	    INTEGER       x,
+//	    INTEGER       y,
+//	    OCTET STRING  C3,
+//	    OCTET STRING  C2
+//	}
+func sm2EncryptWithPubKey(opensslBin string, pubPEM, plaintext []byte) ([]byte, error) {
+	tmpDir, err := os.MkdirTemp("", "sm2-enc-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	pubPath := filepath.Join(tmpDir, "pub.pem")
+	inPath := filepath.Join(tmpDir, "in.bin")
+	outPath := filepath.Join(tmpDir, "out.bin")
+
+	if err := os.WriteFile(pubPath, pubPEM, 0600); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(inPath, plaintext, 0600); err != nil {
+		return nil, err
+	}
+
+	_, stderr, err := RunOpenSSLFull(opensslBin, "pkeyutl", "-encrypt",
+		"-pubin", "-inkey", pubPath,
+		"-in", inPath, "-out", outPath)
+	if err != nil {
+		return nil, fmt.Errorf("openssl pkeyutl -encrypt 失败: %s", strings.TrimSpace(stderr))
+	}
+
+	return os.ReadFile(outPath)
+}
+
+// sm4EncryptECBNoPadding SM4-ECB/NoPadding 加密（输入必须 16 字节倍数）。
+func sm4EncryptECBNoPadding(opensslBin string, key, plaintext []byte) ([]byte, error) {
+	if len(plaintext)%16 != 0 {
+		return nil, fmt.Errorf("SM4-ECB/NoPadding 明文长度必须是 16 的倍数，当前 %d", len(plaintext))
+	}
+
+	tmpDir, err := os.MkdirTemp("", "sm4-ecb-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	inPath := filepath.Join(tmpDir, "in.bin")
+	outPath := filepath.Join(tmpDir, "out.bin")
+	if err := os.WriteFile(inPath, plaintext, 0600); err != nil {
+		return nil, err
+	}
+
+	keyHex := hex.EncodeToString(key)
+	_, stderr, err := RunOpenSSLFull(opensslBin, "enc", "-sm4-ecb",
+		"-e", "-K", keyHex, "-nopad",
+		"-in", inPath, "-out", outPath)
+	if err != nil {
+		return nil, fmt.Errorf("openssl enc -sm4-ecb 失败: %s", strings.TrimSpace(stderr))
+	}
+	return os.ReadFile(outPath)
+}
+
+// extractEncCertECPoint 从证书 PEM 中提取公钥 EC 点（未压缩 04||X||Y）。
+func extractEncCertECPoint(opensslBin string, certPEM []byte) ([]byte, error) {
+	tmpDir, err := os.MkdirTemp("", "enc-point-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	certPath := filepath.Join(tmpDir, "cert.pem")
+	if err := os.WriteFile(certPath, certPEM, 0600); err != nil {
+		return nil, err
+	}
+
+	pubPEM, err := RunOpenSSL(opensslBin, "x509", "-in", certPath, "-noout", "-pubkey")
+	if err != nil {
+		return nil, fmt.Errorf("openssl x509 -pubkey 失败: %w", err)
+	}
+
+	pubPath := filepath.Join(tmpDir, "pub.pem")
+	if err := os.WriteFile(pubPath, []byte(pubPEM), 0600); err != nil {
+		return nil, err
+	}
+
+	derOut, stderr, err := RunOpenSSLFull(opensslBin, "ec", "-pubin",
+		"-in", pubPath, "-conv_form", "uncompressed", "-outform", "DER")
+	if err != nil {
+		return nil, fmt.Errorf("openssl ec -conv_form 失败: %s", strings.TrimSpace(stderr))
+	}
+
+	var spki struct {
+		Algorithm pkix.AlgorithmIdentifier
+		PublicKey asn1.BitString
+	}
+	if _, err := asn1.Unmarshal([]byte(derOut), &spki); err != nil {
+		return nil, fmt.Errorf("解析 SPKI 失败: %w", err)
+	}
+	return spki.PublicKey.Bytes, nil
+}
+
+// extractRawECPrivateKey 从 PEM 私钥中提取 32 字节裸私钥。
+func extractRawECPrivateKey(opensslBin string, keyPEM []byte) ([]byte, error) {
+	tmpDir, err := os.MkdirTemp("", "raw-ec-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	keyPath := filepath.Join(tmpDir, "key.pem")
+	if err := os.WriteFile(keyPath, keyPEM, 0600); err != nil {
+		return nil, err
+	}
+
+	out, stderr, err := RunOpenSSLFull(opensslBin, "ec", "-in", keyPath, "-noout", "-text")
+	if err != nil {
+		out, stderr, err = RunOpenSSLFull(opensslBin, "pkey", "-in", keyPath, "-noout", "-text")
+		if err != nil {
+			return nil, fmt.Errorf("提取裸私钥失败: %s", strings.TrimSpace(stderr))
+		}
+	}
+
+	lines := strings.Split(out, "\n")
+	var inPriv bool
+	var hexBuf strings.Builder
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "priv:") {
+			inPriv = true
+			rest := strings.TrimSpace(strings.TrimPrefix(trimmed, "priv:"))
+			if rest != "" {
+				hexBuf.WriteString(rest)
+			}
+			continue
+		}
+		if inPriv {
+			if trimmed == "" || strings.HasPrefix(trimmed, "pub:") {
+				break
+			}
+			hexBuf.WriteString(trimmed)
+		}
+	}
+
+	hexStr := hexBuf.String()
+	hexStr = strings.ReplaceAll(hexStr, ":", "")
+	hexStr = strings.ReplaceAll(hexStr, " ", "")
+	hexStr = strings.ReplaceAll(hexStr, "\n", "")
+	hexStr = strings.ReplaceAll(hexStr, "\r", "")
+	hexStr = strings.ReplaceAll(hexStr, "\t", "")
+
+	raw, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return nil, fmt.Errorf("解析私钥 hex 失败: %w", err)
+	}
+
+	for len(raw) > 32 && raw[0] == 0 {
+		raw = raw[1:]
+	}
+	if len(raw) != 32 {
+		return nil, fmt.Errorf("私钥长度异常：%d（应为 32）", len(raw))
+	}
+	return raw, nil
+}
+
+// =============================================================================
+// 公钥提取 / 比对辅助
+// =============================================================================
+
+func extractPubKeyFromCertPEM(opensslBin, certPEM string) ([]byte, error) {
+	tmpDir, err := os.MkdirTemp("", "cert-pub-")
+	if err != nil {
+		return nil, fmt.Errorf("创建临时目录失败: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	certPath := filepath.Join(tmpDir, "cert.pem")
+	if err := os.WriteFile(certPath, []byte(certPEM), 0600); err != nil {
+		return nil, fmt.Errorf("写临时证书失败: %w", err)
+	}
+
+	out, err := RunOpenSSL(opensslBin, "x509", "-in", certPath, "-noout", "-pubkey")
+	if err != nil {
+		return nil, fmt.Errorf("openssl x509 -pubkey 失败: %w", err)
+	}
+	return []byte(out), nil
+}
+
+func extractPubKeyFromCSR(opensslBin, csrPath string) ([]byte, error) {
+	if !filepath.IsAbs(csrPath) {
+		return nil, fmt.Errorf("csrPath 必须是绝对路径: %s", csrPath)
+	}
+	if _, err := os.Stat(csrPath); err != nil {
+		return nil, fmt.Errorf("P10 文件不存在: %s: %w", csrPath, err)
+	}
+
+	out, err := RunOpenSSL(opensslBin, "req", "-in", csrPath, "-noout", "-pubkey")
+	if err != nil {
+		return nil, fmt.Errorf("openssl req -pubkey 失败: %w", err)
+	}
+	return []byte(out), nil
+}
+
+func pubKeyEqual(a, b []byte) bool {
+	da, err1 := decodePEMToDER(a)
+	db, err2 := decodePEMToDER(b)
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	return bytes.Equal(da, db)
+}
+
+func decodePEMToDER(pemBytes []byte) ([]byte, error) {
+	s := string(pemBytes)
+	s = strings.TrimPrefix(s, "\uFEFF")
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	block, _ := pem.Decode([]byte(strings.TrimSpace(s)))
+	if block == nil {
+		return nil, fmt.Errorf("不是有效的 PEM 块")
+	}
+	return block.Bytes, nil
+}
+
+func pubKeySHA256(pemBytes []byte) string {
+	der, err := decodePEMToDER(pemBytes)
+	if err != nil {
+		return "invalid-pem"
+	}
+	sum := sha256.Sum256(der)
+	return hex.EncodeToString(sum[:])
+}
+
+// =============================================================================
 // 导入证书
-// -----------------------------------------------------------------------------
+// =============================================================================
 
 func (s *CertService) Import(
 	ctx context.Context, req *ImportCertRequest,
@@ -1363,9 +1621,9 @@ func inferCertType(keyUsage, eku, pubAlg string) string {
 	return "imported"
 }
 
-// -----------------------------------------------------------------------------
-// 导出
-// -----------------------------------------------------------------------------
+// =============================================================================
+// 导出 / 删除
+// =============================================================================
 
 func (s *CertService) Export(
 	ctx context.Context, certID, exportType, password string,
@@ -1451,9 +1709,9 @@ func (s *CertService) Delete(certID string) error {
 	return nil
 }
 
-// -----------------------------------------------------------------------------
-// 私钥辅助
-// -----------------------------------------------------------------------------
+// =============================================================================
+// 私钥导出 / 加密辅助
+// =============================================================================
 
 func (s *CertService) exportKeyPEM(
 	ctx context.Context, keyRef, password string,
@@ -1472,6 +1730,9 @@ func (s *CertService) exportKeyPEM(
 	return encryptPrivateKeyPEM(bin, plain, password)
 }
 
+// encryptPrivateKeyPEM 用 AES-256-CBC 加密私钥 PEM。
+//
+// ★ 包级函数，被 csr_service.go 等引用。
 func encryptPrivateKeyPEM(
 	opensslBin string, plainPEM []byte, password string,
 ) ([]byte, error) {

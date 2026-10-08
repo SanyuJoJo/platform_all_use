@@ -179,14 +179,45 @@
 
         <template v-else>
           <n-form-item label="CSR PEM">
-            <n-input v-model:value="signForm.csr_pem" type="textarea" :autosize="{ minRows: 4, maxRows: 8 }" placeholder="-----BEGIN CERTIFICATE REQUEST-----" />
+            <n-input
+              v-model:value="signForm.csr_pem"
+              type="textarea"
+              :autosize="{ minRows: 4, maxRows: 8 }"
+              placeholder="-----BEGIN CERTIFICATE REQUEST-----"
+            />
           </n-form-item>
-          <n-form-item label="私钥 PEM">
-            <n-input v-model:value="signForm.csr_key_pem" type="textarea" :autosize="{ minRows: 4, maxRows: 8 }" placeholder="-----BEGIN PRIVATE KEY-----" />
+
+          <!-- ★ 是否提供私钥（开关） -->
+          <n-form-item label="提供私钥">
+            <n-space align="center">
+              <n-switch v-model:value="signForm.with_key">
+                <template #checked>提供</template>
+                <template #unchecked>不提供</template>
+              </n-switch>
+              <span class="hint-text">
+                仅当需要平台代为解密数字信封、或从签名证书查询信封信息时，才需要提供
+              </span>
+            </n-space>
           </n-form-item>
-          <n-form-item label="私钥密码">
-            <n-input v-model:value="signForm.csr_key_password" type="password" show-password-on="click" placeholder="私钥未加密可留空" />
-          </n-form-item>
+
+          <template v-if="signForm.with_key">
+            <n-form-item label="私钥 PEM">
+              <n-input
+                v-model:value="signForm.csr_key_pem"
+                type="textarea"
+                :autosize="{ minRows: 4, maxRows: 8 }"
+                placeholder="-----BEGIN PRIVATE KEY-----"
+              />
+            </n-form-item>
+            <n-form-item label="私钥密码">
+              <n-input
+                v-model:value="signForm.csr_key_password"
+                type="password"
+                show-password-on="click"
+                placeholder="私钥未加密可留空"
+              />
+            </n-form-item>
+          </template>
         </template>
 
         <!-- ★ 使用者 DN（可选，留空则用 P10 里的 DN） -->
@@ -648,7 +679,12 @@ const importForm = reactive({
 // ---------------------------------------------------------------------------
 const signForm = reactive({
   csr_source: 'existing' as 'existing' | 'upload',
-  csr_id: '', csr_pem: '', csr_key_pem: '', csr_key_password: '',
+  csr_id: '',
+  csr_pem: '',
+  // ★ 是否提供 CSR 私钥（开关控制）
+  with_key: false,
+  csr_key_pem: '',
+  csr_key_password: '',
   // ★ 使用者 DN（可选）
   dn: '', dnSeparator: DEFAULT_DN_SEPARATOR,
   cert_mode: 'normal' as 'normal' | 'dual',
@@ -774,7 +810,13 @@ const caOptions = computed(() =>
 
 const signDisabled = computed(() => {
   if (signForm.csr_source === 'existing' && !signForm.csr_id) return true;
-  if (signForm.csr_source === 'upload' && (!signForm.csr_pem.trim() || !signForm.csr_key_pem.trim())) return true;
+
+  if (signForm.csr_source === 'upload') {
+    if (!signForm.csr_pem.trim()) return true;
+    // ★ 只有开关打开时才要求私钥
+    if (signForm.with_key && !signForm.csr_key_pem.trim()) return true;
+  }
+
   if (signForm.dn.trim() && signDnPreview.value.errors.length > 0) return true;
   if (signForm.cert_mode === 'normal' && signForm.cert_types.length === 0) return true;
   if (signForm.ca_source === 'local' && !signForm.ca_id) return true;
@@ -968,6 +1010,7 @@ function openSignCert() {
   signForm.csr_source = 'existing';
   signForm.csr_id = '';
   signForm.csr_pem = '';
+  signForm.with_key = false;          // ★ 重置私钥开关
   signForm.csr_key_pem = '';
   signForm.csr_key_password = '';
   signForm.dn = '';
@@ -1014,9 +1057,12 @@ async function handleSignCert() {
       payload.csr_id = signForm.csr_id;
     } else {
       payload.csr_pem = signForm.csr_pem;
-      payload.csr_key_pem = signForm.csr_key_pem;
-      if (signForm.csr_key_password) {
-        payload.csr_key_password = signForm.csr_key_password;
+      // ★ 仅当开关打开且私钥非空时才提交，避免后端收到空字段
+      if (signForm.with_key && signForm.csr_key_pem.trim()) {
+        payload.csr_key_pem = signForm.csr_key_pem;
+        if (signForm.csr_key_password) {
+          payload.csr_key_password = signForm.csr_key_password;
+        }
       }
     }
 
