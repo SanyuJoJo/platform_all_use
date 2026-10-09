@@ -1,4 +1,5 @@
 package module_manager
+
 import (
 	"errors"
 	"fmt"
@@ -8,32 +9,55 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
+
 	"backend-go/internal/config"
 	"backend-go/internal/exception"
+	"backend-go/internal/menus"
 	"backend-go/internal/models"
 	"backend-go/internal/modules/auth"
 )
+
 // Service 模块管理服务。
 type Service struct {
 	db     *gorm.DB
 	cfg    *config.Config
 	loader *Loader // P1-NEW-02：可选注入
+
+	// frontendCfg 前端菜单与资源入口配置（v1.3 新增）。
+	//
+	// 来源：configs/frontend.yaml，由 main.go 在启动时通过 SetFrontendConfig 注入。
+	// 为 nil 时（未配置或文件不存在），ListModules 行为与原有版本完全一致。
+	frontendCfg *menus.FrontendConfig
 }
+
 // NewService 创建模块管理服务。
 func NewService(db *gorm.DB, cfg *config.Config) *Service {
 	return &Service{db: db, cfg: cfg}
 }
+
 // SetLoader 注入 Loader（P1-NEW-02）。
 //
 // 单元测试场景可不注入；此时所有 MarkLoaded/UnmarkLoaded 调用被忽略。
 func (s *Service) SetLoader(loader *Loader) {
 	s.loader = loader
 }
+
+// SetFrontendConfig 注入前端菜单与资源入口配置（v1.3 新增）。
+//
+// 由 main.go 在启动时调用。未注入时（nil）ListModules 行为与原有版本完全一致。
+// 注入后，ListModules 会在返回前对 platform 模块的菜单及核心模块的 entry_frontend
+// 应用覆盖，实现"通过配置文件动态修改菜单与前端资源入口"。
+func (s *Service) SetFrontendConfig(cfg *menus.FrontendConfig) {
+	s.frontendCfg = cfg
+}
+
 // ---------------------------------------------------------------------------
 // 工具函数
 // ---------------------------------------------------------------------------
+
 func (s *Service) moduleRoot() string {
 	root := s.cfg.ModulesDir
 	if root == "" {
@@ -45,6 +69,7 @@ func (s *Service) moduleRoot() string {
 	}
 	return abs
 }
+
 func (s *Service) uploadRoot() string {
 	root := s.cfg.ModuleUploadDir
 	if root == "" {
@@ -56,9 +81,11 @@ func (s *Service) uploadRoot() string {
 	}
 	return abs
 }
+
 func (s *Service) getModuleDir(moduleID string) string {
 	return filepath.Join(s.moduleRoot(), "module_"+moduleID)
 }
+
 func safeRmtreeQuiet(path string) {
 	if path == "" {
 		return
@@ -70,10 +97,12 @@ func safeRmtreeQuiet(path string) {
 		log.Warn().Err(err).Str("path", path).Msg("清理目录失败（忽略）")
 	}
 }
+
 func (s *Service) isCoreModule(moduleID string) bool {
 	_, ok := CORE_MODULE_IDS[moduleID]
 	return ok
 }
+
 func (s *Service) loadModuleWithDeps(tx *gorm.DB, moduleID string) (*models.Module, error) {
 	var m models.Module
 	err := tx.Preload("Dependencies").First(&m, "id = ?", moduleID).Error
@@ -82,6 +111,7 @@ func (s *Service) loadModuleWithDeps(tx *gorm.DB, moduleID string) (*models.Modu
 	}
 	return &m, nil
 }
+
 func (s *Service) checkDependencies(tx *gorm.DB, dependencies []string) error {
 	for _, dep := range dependencies {
 		var m models.Module
@@ -100,6 +130,7 @@ func (s *Service) checkDependencies(tx *gorm.DB, dependencies []string) error {
 	}
 	return nil
 }
+
 // strPtrOrNil 空字符串转 nil，非空返回指针。
 func strPtrOrNil(s string) *string {
 	if s == "" {
@@ -107,17 +138,21 @@ func strPtrOrNil(s string) *string {
 	}
 	return &s
 }
+
 // intPtr 返回 int 指针。
 func intPtr(v int) *int { return &v }
+
 // ---------------------------------------------------------------------------
 // 序列化
 // ---------------------------------------------------------------------------
+
 func serializeModule(m *models.Module) *ModuleOut {
 	deps := make([]string, 0, len(m.Dependencies))
 	for _, d := range m.Dependencies {
 		deps = append(deps, d.DependencyID)
 	}
 	sort.Strings(deps)
+
 	menus := make([]MenuItem, 0)
 	if m.Manifest != nil {
 		if rawMenus, ok := m.Manifest["menus"].([]interface{}); ok {
@@ -146,10 +181,12 @@ func serializeModule(m *models.Module) *ModuleOut {
 			}
 		}
 	}
+
 	config := map[string]interface{}{}
 	if m.Config != nil {
 		config = m.Config
 	}
+
 	return &ModuleOut{
 		ID:            m.ID,
 		Name:          m.Name,
@@ -167,6 +204,7 @@ func serializeModule(m *models.Module) *ModuleOut {
 		UpdatedAt:     formatDateTime(m.UpdatedAt),
 	}
 }
+
 func toString(v interface{}) string {
 	if v == nil {
 		return ""
@@ -176,6 +214,7 @@ func toString(v interface{}) string {
 	}
 	return fmt.Sprintf("%v", v)
 }
+
 func toInt(v interface{}) int {
 	switch t := v.(type) {
 	case int:
@@ -187,15 +226,18 @@ func toInt(v interface{}) int {
 	}
 	return 0
 }
+
 // filterMenusByPermission 按权限递归过滤菜单。
 func filterMenusByPermission(menus []MenuItem, userPerms map[string]struct{}) []MenuItem {
 	if len(menus) == 0 {
 		return menus
 	}
+
 	byID := make(map[string]MenuItem, len(menus))
 	for _, m := range menus {
 		byID[m.ID] = m
 	}
+
 	children := make(map[string][]MenuItem)
 	var roots []MenuItem
 	for _, m := range menus {
@@ -207,6 +249,7 @@ func filterMenusByPermission(menus []MenuItem, userPerms map[string]struct{}) []
 		}
 		roots = append(roots, m)
 	}
+
 	allowed := make(map[string]struct{})
 	var visit func(node MenuItem)
 	visit = func(node MenuItem) {
@@ -223,6 +266,7 @@ func filterMenusByPermission(menus []MenuItem, userPerms map[string]struct{}) []
 	for _, root := range roots {
 		visit(root)
 	}
+
 	result := make([]MenuItem, 0, len(menus))
 	for _, m := range menus {
 		if _, ok := allowed[m.ID]; ok {
@@ -231,10 +275,126 @@ func filterMenusByPermission(menus []MenuItem, userPerms map[string]struct{}) []
 	}
 	return result
 }
+
+// applyFrontendOverrides 将配置文件中的菜单与资源入口覆盖到模块响应上。
+//
+// 菜单三级优先级（从高到低）：
+//  1. menus_hidden：显式隐藏 → 强制清空菜单；
+//  2. module_menus：显式覆盖 → 使用配置的菜单；
+//  3. 未提及的模块：保留 DB manifest 菜单（自动加载，向后兼容）。
+//
+// entry_frontend 覆盖：命中才覆盖，未命中保留 DB 值。
+//
+// frontendCfg 为 nil 时不做任何修改（完全保留旧行为）。
+func (s *Service) applyFrontendOverrides(item *ModuleOut) {
+	if s.frontendCfg == nil || item == nil {
+		return
+	}
+
+	// 1. 菜单：三级优先级
+	if isHidden(s.frontendCfg.MenusHidden, item.ID) {
+		// 优先级 1：显式隐藏
+		item.Menus = []MenuItem{}
+	} else if rawMenus, ok := s.frontendCfg.ModuleMenus[item.ID]; ok {
+		// 优先级 2：显式覆盖
+		item.Menus = convertMenusToItems(rawMenus)
+	}
+	// 优先级 3：未提及 → 保留 DB manifest 菜单（自动加载）
+
+	// 2. entry_frontend：命中才覆盖
+	if entry, ok := s.frontendCfg.EntryFrontendOverrides[item.ID]; ok && entry != "" {
+		e := entry
+		item.EntryFrontend = &e
+	}
+}
+
+// isHidden 判断模块 ID 是否在隐藏列表中。
+func isHidden(hidden []string, moduleID string) bool {
+	for _, id := range hidden {
+		if id == moduleID {
+			return true
+		}
+	}
+	return false
+}
+
+// convertMenusToItems 将配置文件中的嵌套菜单结构转换为 []MenuItem。
+//
+// 嵌套（children）→ 扁平（ParentID 指针）。
+// 父节点先入队，子节点递归入队，父 ID 自动作为子节点的 parent_id。
+func convertMenusToItems(raw []interface{}) []MenuItem {
+	result := make([]MenuItem, 0)
+	for _, r := range raw {
+		m, ok := r.(map[string]interface{})
+		if !ok {
+			// YAML 解析可能产生 map[interface{}]interface{}
+			if m2, ok2 := r.(map[interface{}]interface{}); ok2 {
+				m = make(map[string]interface{}, len(m2))
+				for k, v := range m2 {
+					m[fmt.Sprintf("%v", k)] = v
+				}
+			} else {
+				continue
+			}
+		}
+		convertOneMenu(m, "", &result)
+	}
+	return result
+}
+
+// convertOneMenu 递归转换单个菜单项。
+func convertOneMenu(m map[string]interface{}, parentID string, out *[]MenuItem) {
+	item := MenuItem{
+		ID:        toString(m["id"]),
+		Title:     toString(m["title"]),
+		Path:      toString(m["path"]),
+		Component: toString(m["component"]),
+		Order:     toInt(m["order"]),
+	}
+
+	// parent_id：显式优先，否则继承传入的 parentID
+	if v, ok := m["parent_id"].(string); ok && v != "" {
+		item.ParentID = &v
+	} else if parentID != "" {
+		pid := parentID
+		item.ParentID = &pid
+	}
+
+	if v, ok := m["icon"].(string); ok && v != "" {
+		item.Icon = &v
+	}
+	if v, ok := m["permission"].(string); ok && v != "" {
+		item.Permission = &v
+	}
+
+	*out = append(*out, item)
+
+	// 递归子节点
+	if children, ok := m["children"].([]interface{}); ok && len(children) > 0 {
+		for _, c := range children {
+			childMap, ok := c.(map[string]interface{})
+			if !ok {
+				if m2, ok2 := c.(map[interface{}]interface{}); ok2 {
+					childMap = make(map[string]interface{}, len(m2))
+					for k, v := range m2 {
+						childMap[fmt.Sprintf("%v", k)] = v
+					}
+				} else {
+					continue
+				}
+			}
+			convertOneMenu(childMap, item.ID, out)
+		}
+	}
+}
 // ---------------------------------------------------------------------------
 // 列表
 // ---------------------------------------------------------------------------
+
 // ListModules 查询模块列表。
+//
+// v1.3：在序列化阶段应用前端配置覆盖（platform 菜单 + entry_frontend）。
+// 覆盖对权限过滤无影响：先覆盖再过滤，保证过滤针对最终菜单结构。
 func (s *Service) ListModules(query ModuleListQuery, userPerms []string) (map[string]interface{}, error) {
 	q := s.db.Model(&models.Module{})
 	if query.Status != "" {
@@ -244,10 +404,12 @@ func (s *Service) ListModules(query ModuleListQuery, userPerms []string) (map[st
 		like := "%" + query.Keyword + "%"
 		q = q.Where("id LIKE ? OR name LIKE ?", like, like)
 	}
+
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		return nil, exception.New(exception.CodeInternalError, "查询模块失败", 500, nil)
 	}
+
 	var modules []models.Module
 	if err := q.Preload("Dependencies").
 		Order("installed_at ASC").
@@ -256,9 +418,14 @@ func (s *Service) ListModules(query ModuleListQuery, userPerms []string) (map[st
 		Find(&modules).Error; err != nil {
 		return nil, exception.New(exception.CodeInternalError, "查询模块失败", 500, nil)
 	}
+
 	items := make([]*ModuleOut, 0, len(modules))
 	for i := range modules {
 		item := serializeModule(&modules[i])
+
+		// ★ v1.3：应用前端配置覆盖（在权限过滤之前）
+		s.applyFrontendOverrides(item)
+
 		if query.FilterMenus {
 			permSet := make(map[string]struct{}, len(userPerms))
 			for _, p := range userPerms {
@@ -268,10 +435,12 @@ func (s *Service) ListModules(query ModuleListQuery, userPerms []string) (map[st
 		}
 		items = append(items, item)
 	}
+
 	pages := 0
 	if query.PageSize > 0 {
 		pages = int((total + int64(query.PageSize) - 1) / int64(query.PageSize))
 	}
+
 	return map[string]interface{}{
 		"items":     items,
 		"total":     total,
@@ -280,9 +449,11 @@ func (s *Service) ListModules(query ModuleListQuery, userPerms []string) (map[st
 		"pages":     pages,
 	}, nil
 }
+
 // ---------------------------------------------------------------------------
 // FS 三工具函数
 // ---------------------------------------------------------------------------
+
 func (s *Service) prepareNewDir(source, target string) (string, error) {
 	newDir := target + ".new"
 	safeRmtreeQuiet(newDir)
@@ -298,11 +469,14 @@ func (s *Service) prepareNewDir(source, target string) (string, error) {
 	}
 	return newDir, nil
 }
+
 func (s *Service) swapNewToTarget(newDir, target string) (string, error) {
 	oldBackup := target + ".old"
 	safeRmtreeQuiet(oldBackup)
+
 	_, statErr := os.Stat(target)
 	targetExisted := statErr == nil
+
 	if targetExisted {
 		if err := os.Rename(target, oldBackup); err != nil {
 			safeRmtreeQuiet(newDir)
@@ -323,11 +497,13 @@ func (s *Service) swapNewToTarget(newDir, target string) (string, error) {
 	}
 	return "", nil
 }
+
 func (s *Service) finalizeSwap(oldBackup string) {
 	if oldBackup != "" {
 		safeRmtreeQuiet(oldBackup)
 	}
 }
+
 func (s *Service) rollbackSwap(target, oldBackup string) {
 	safeRmtreeQuiet(target)
 	if oldBackup != "" {
@@ -338,6 +514,7 @@ func (s *Service) rollbackSwap(target, oldBackup string) {
 		}
 	}
 }
+
 // copyDir 复制目录，忽略 CopyIgnorePatterns 中的模式。
 func copyDir(src, dst string) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
@@ -369,6 +546,7 @@ func copyDir(src, dst string) error {
 		return copyFile(path, targetPath)
 	})
 }
+
 func copyFile(src, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
@@ -378,19 +556,23 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	defer in.Close()
+
 	out, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
 	defer out.Close()
+
 	if _, err := out.ReadFrom(in); err != nil {
 		return err
 	}
 	return nil
 }
+
 // ---------------------------------------------------------------------------
 // 路径校验
 // ---------------------------------------------------------------------------
+
 func (s *Service) validateSourcePath(sourcePath string) (string, error) {
 	raw := sourcePath
 	if !filepath.IsAbs(raw) {
@@ -404,6 +586,7 @@ func (s *Service) validateSourcePath(sourcePath string) (string, error) {
 	if err != nil {
 		resolved = raw
 	}
+
 	uploadRoot, _ := filepath.EvalSymlinks(s.uploadRoot())
 	if uploadRoot == "" {
 		uploadRoot = s.uploadRoot()
@@ -413,6 +596,7 @@ func (s *Service) validateSourcePath(sourcePath string) (string, error) {
 		return "", exception.New(exception.CodeParamInvalid,
 			fmt.Sprintf("source_path 必须位于 %s 下", s.uploadRoot()), 400, nil)
 	}
+
 	info, err := os.Stat(resolved)
 	if err != nil || !info.IsDir() {
 		return "", exception.New(exception.CodeParamInvalid,
@@ -420,9 +604,11 @@ func (s *Service) validateSourcePath(sourcePath string) (string, error) {
 	}
 	return resolved, nil
 }
+
 // ---------------------------------------------------------------------------
 // 安装
 // ---------------------------------------------------------------------------
+
 // InstallModule 安装模块（延迟提交）。
 func (s *Service) InstallModule(
 	installType, filePath, sourcePath string,
@@ -433,10 +619,12 @@ func (s *Service) InstallModule(
 		return nil, exception.New(exception.CodeInternalError, "创建临时目录失败", 500, nil)
 	}
 	defer os.RemoveAll(tempDir)
+
 	var moduleID string
 	var targetDir, newDir, oldBackup string
 	fsSwapped := false
 	zipCleaned := false
+
 	cleanupZip := func() {
 		if zipCleaned {
 			return
@@ -452,6 +640,7 @@ func (s *Service) InstallModule(
 		}
 		cleanupZip()
 	}()
+
 	// ---- 阶段 1：staging 与校验 ----
 	sourceRoot, err := s.resolveModuleSource(installType, filePath, sourcePath, tempDir)
 	if err != nil {
@@ -466,35 +655,42 @@ func (s *Service) InstallModule(
 		return nil, err
 	}
 	moduleID = manifest.ID
+
 	if s.isCoreModule(moduleID) {
 		return nil, exception.New(exception.CodeModuleExists,
 			"模块 ID 与核心模块冲突", 409, nil)
 	}
+
 	var existing models.Module
 	if err := s.db.First(&existing, "id = ?", moduleID).Error; err == nil {
 		return nil, exception.New(exception.CodeModuleExists, "模块已存在", 409, nil)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, exception.New(exception.CodeInternalError, "查询模块失败", 500, nil)
 	}
+
 	if err := s.checkDependencies(s.db, manifest.Dependencies); err != nil {
 		return nil, err
 	}
+
 	targetDir = s.getModuleDir(moduleID)
 	if _, err := os.Stat(targetDir); err == nil {
 		return nil, exception.New(exception.CodeModuleExists,
 			fmt.Sprintf("模块目录已存在但无 DB 记录：%s", targetDir), 409, nil)
 	}
+
 	// ---- 阶段 2：准备 new_dir ----
 	newDir, err = s.prepareNewDir(sourceRoot, targetDir)
 	if err != nil {
 		return nil, err
 	}
+
 	// ---- 阶段 3：FS 替换 ----
 	oldBackup, err = s.swapNewToTarget(newDir, targetDir)
 	if err != nil {
 		return nil, err
 	}
 	fsSwapped = true
+
 	// ---- 阶段 4：DB 修改 ----
 	txErr := s.db.Transaction(func(tx *gorm.DB) error {
 		module := models.Module{
@@ -546,18 +742,22 @@ func (s *Service) InstallModule(
 			intPtr(errCode(txErr)), "", "", fmt.Sprintf("安装模块失败：%v", txErr))
 		return nil, txErr
 	}
+
 	// ---- 阶段 5：finalize ----
 	s.finalizeSwap(oldBackup)
 	fsSwapped = false
 	cleanupZip()
+
 	full, err := s.loadModuleWithDeps(s.db, moduleID)
 	if err != nil {
 		return nil, exception.New(exception.CodeInternalError, "加载模块失败", 500, nil)
 	}
+
 	auth.LogAuthEvent("module_install", &operatorID, operatorName, "success", nil,
 		"", "", fmt.Sprintf("安装模块 %s v%s", moduleID, manifest.Version))
 	return serializeModule(full), nil
 }
+
 func (s *Service) resolveModuleSource(
 	installType, filePath, sourcePath, tempDir string,
 ) (string, error) {
@@ -597,16 +797,19 @@ func (s *Service) resolveModuleSource(
 			return "", err
 		}
 		return filepath.Dir(manifestPath), nil
+
 	case "path":
 		if sourcePath == "" {
 			return "", exception.New(exception.CodeParamInvalid, "source_path 不能为空", 400, nil)
 		}
 		return s.validateSourcePath(sourcePath)
+
 	default:
 		return "", exception.New(exception.CodeParamInvalid,
 			"install_type 必须为 zip 或 path", 400, nil)
 	}
 }
+
 func findUniqueManifest(root string) (string, error) {
 	var found []string
 	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
@@ -624,6 +827,7 @@ func findUniqueManifest(root string) (string, error) {
 	}
 	return found[0], nil
 }
+
 func (s *Service) cleanupUploadedZip(filePath string) {
 	if filePath == "" {
 		return
@@ -649,9 +853,11 @@ func (s *Service) cleanupUploadedZip(filePath string) {
 		log.Warn().Err(err).Str("path", resolved).Msg("清理上传 ZIP 失败")
 	}
 }
+
 // ---------------------------------------------------------------------------
 // 升级
 // ---------------------------------------------------------------------------
+
 // UpgradeModule 升级模块（延迟提交）。
 func (s *Service) UpgradeModule(
 	moduleID, installType, filePath, sourcePath string,
@@ -665,11 +871,13 @@ func (s *Service) UpgradeModule(
 	if err != nil {
 		return nil, exception.New(exception.CodeModuleNotFound, "模块不存在", 404, nil)
 	}
+
 	tempDir, err := os.MkdirTemp("", "module_upgrade_")
 	if err != nil {
 		return nil, exception.New(exception.CodeInternalError, "创建临时目录失败", 500, nil)
 	}
 	defer os.RemoveAll(tempDir)
+
 	var targetDir, newDir, oldBackup string
 	fsSwapped := false
 	defer func() {
@@ -677,6 +885,7 @@ func (s *Service) UpgradeModule(
 			safeRmtreeQuiet(newDir)
 		}
 	}()
+
 	// ---- 阶段 1：staging 与校验 ----
 	sourceRoot, err := s.resolveModuleSource(installType, filePath, sourcePath, tempDir)
 	if err != nil {
@@ -702,17 +911,20 @@ func (s *Service) UpgradeModule(
 		return nil, err
 	}
 	targetDir = s.getModuleDir(moduleID)
+
 	// ---- 阶段 2：准备 new_dir ----
 	newDir, err = s.prepareNewDir(sourceRoot, targetDir)
 	if err != nil {
 		return nil, err
 	}
+
 	// ---- 阶段 3：FS 替换 ----
 	oldBackup, err = s.swapNewToTarget(newDir, targetDir)
 	if err != nil {
 		return nil, err
 	}
 	fsSwapped = true
+
 	// ---- 阶段 4：DB 修改 ----
 	txErr := s.db.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]interface{}{
@@ -730,6 +942,7 @@ func (s *Service) UpgradeModule(
 			Where("id = ?", moduleID).Updates(updates).Error; err != nil {
 			return err
 		}
+
 		if err := tx.Where("module_id = ?", moduleID).
 			Delete(&models.ModuleDependency{}).Error; err != nil {
 			return err
@@ -742,6 +955,7 @@ func (s *Service) UpgradeModule(
 				return err
 			}
 		}
+
 		if len(manifest.Permissions) > 0 {
 			items := make([]auth.PermissionRegisterItem, 0, len(manifest.Permissions))
 			for _, p := range manifest.Permissions {
@@ -766,21 +980,26 @@ func (s *Service) UpgradeModule(
 			intPtr(errCode(txErr)), "", "", fmt.Sprintf("升级模块失败：%v", txErr))
 		return nil, txErr
 	}
+
 	// ---- 阶段 5：finalize ----
 	s.finalizeSwap(oldBackup)
 	fsSwapped = false
+
 	full, err := s.loadModuleWithDeps(s.db, moduleID)
 	if err != nil {
 		return nil, exception.New(exception.CodeInternalError, "加载模块失败", 500, nil)
 	}
+
 	auth.LogAuthEvent("module_upgrade", &operatorID, operatorName, "success", nil,
 		"", "", fmt.Sprintf("升级模块 %s：%s → %s", moduleID, module.Version, manifest.Version))
 	return serializeModule(full), nil
 }
+
 // compareVersion 语义化版本比较（含 pre-release 点分语义）。
 func compareVersion(a, b string) int {
 	pa := parseVersion(a)
 	pb := parseVersion(b)
+
 	if pa.major != pb.major {
 		return sign(pa.major - pb.major)
 	}
@@ -792,6 +1011,7 @@ func compareVersion(a, b string) int {
 	}
 	return comparePreRelease(pa.pre, pb.pre)
 }
+
 func comparePreRelease(a, b string) int {
 	if a == "" && b == "" {
 		return 0
@@ -802,6 +1022,7 @@ func comparePreRelease(a, b string) int {
 	if b == "" {
 		return -1
 	}
+
 	partsA := strings.Split(a, ".")
 	partsB := strings.Split(b, ".")
 	maxLen := len(partsA)
@@ -819,6 +1040,7 @@ func comparePreRelease(a, b string) int {
 		segB := partsB[i]
 		numA, isNumA := strconv.Atoi(segA)
 		numB, isNumB := strconv.Atoi(segB)
+
 		switch {
 		case isNumA == nil && isNumB == nil:
 			if numA != numB {
@@ -836,10 +1058,12 @@ func comparePreRelease(a, b string) int {
 	}
 	return 0
 }
+
 type parsedVersion struct {
 	major, minor, patch int
 	pre                 string
 }
+
 func parseVersion(v string) parsedVersion {
 	var p parsedVersion
 	if idx := strings.Index(v, "+"); idx >= 0 {
@@ -861,6 +1085,7 @@ func parseVersion(v string) parsedVersion {
 	}
 	return p
 }
+
 func atoi(s string) int {
 	n := 0
 	for _, c := range s {
@@ -871,6 +1096,7 @@ func atoi(s string) int {
 	}
 	return n
 }
+
 func sign(v int) int {
 	if v < 0 {
 		return -1
@@ -880,9 +1106,11 @@ func sign(v int) int {
 	}
 	return 0
 }
+
 // ---------------------------------------------------------------------------
 // 卸载
 // ---------------------------------------------------------------------------
+
 // UninstallModule 卸载模块。
 func (s *Service) UninstallModule(
 	moduleID string, force, dropTables bool,
@@ -900,6 +1128,7 @@ func (s *Service) UninstallModule(
 		return exception.New(exception.CodeModuleInUse,
 			"模块正在运行，请先停用", 409, nil)
 	}
+
 	if !force {
 		var count int64
 		if err := s.db.Model(&models.ModuleDependency{}).
@@ -914,10 +1143,12 @@ func (s *Service) UninstallModule(
 				"模块被 active 模块依赖", 400, nil)
 		}
 	}
+
 	txErr := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := auth.UnregisterPermissionsTx(tx, moduleID); err != nil {
 			return err
 		}
+
 		if dropTables && module.Manifest != nil {
 			tables := extractStringList(module.Manifest["database_tables"])
 			for _, tableName := range tables {
@@ -937,6 +1168,7 @@ func (s *Service) UninstallModule(
 				}
 			}
 		}
+
 		if err := tx.Where("module_id = ?", moduleID).
 			Delete(&models.ModuleDependency{}).Error; err != nil {
 			return err
@@ -949,14 +1181,17 @@ func (s *Service) UninstallModule(
 	if txErr != nil {
 		return txErr
 	}
+
 	safeRmtreeQuiet(s.getModuleDir(moduleID))
 	if s.loader != nil {
 		s.loader.UnmarkLoaded(moduleID)
 	}
+
 	auth.LogAuthEvent("module_uninstall", &operatorID, operatorName, "success", nil,
 		"", "", fmt.Sprintf("卸载模块 %s", moduleID))
 	return nil
 }
+
 // extractStringList 兼容 []interface{} / []string。
 func extractStringList(v interface{}) []string {
 	switch t := v.(type) {
@@ -973,9 +1208,11 @@ func extractStringList(v interface{}) []string {
 	}
 	return nil
 }
+
 // ---------------------------------------------------------------------------
 // 启用 / 停用
 // ---------------------------------------------------------------------------
+
 // EnableModule 启用模块。
 func (s *Service) EnableModule(
 	moduleID string, operatorID uint, operatorName string,
@@ -991,6 +1228,7 @@ func (s *Service) EnableModule(
 	if module.Status == "active" {
 		return serializeModule(module), nil
 	}
+
 	var deps []string
 	for _, d := range module.Dependencies {
 		deps = append(deps, d.DependencyID)
@@ -998,6 +1236,7 @@ func (s *Service) EnableModule(
 	if err := s.checkDependencies(s.db, deps); err != nil {
 		return nil, err
 	}
+
 	if err := s.db.Model(&models.Module{}).
 		Where("id = ?", moduleID).
 		Updates(map[string]interface{}{
@@ -1006,17 +1245,21 @@ func (s *Service) EnableModule(
 		}).Error; err != nil {
 		return nil, exception.New(exception.CodeInternalError, "更新状态失败", 500, nil)
 	}
+
 	if s.loader != nil {
 		s.loader.MarkLoaded(moduleID)
 	}
+
 	full, err := s.loadModuleWithDeps(s.db, moduleID)
 	if err != nil {
 		return nil, exception.New(exception.CodeInternalError, "加载模块失败", 500, nil)
 	}
+
 	auth.LogAuthEvent("module_enable", &operatorID, operatorName, "success", nil,
 		"", "", fmt.Sprintf("启用模块 %s", moduleID))
 	return serializeModule(full), nil
 }
+
 // DisableModule 停用模块。
 func (s *Service) DisableModule(
 	moduleID string, operatorID uint, operatorName string,
@@ -1032,6 +1275,7 @@ func (s *Service) DisableModule(
 	if module.Status == "inactive" {
 		return serializeModule(module), nil
 	}
+
 	var count int64
 	if err := s.db.Model(&models.ModuleDependency{}).
 		Joins("JOIN module_manager_module ON module_manager_module.id = module_manager_dependency.module_id").
@@ -1044,6 +1288,7 @@ func (s *Service) DisableModule(
 		return nil, exception.New(exception.CodeModuleDependencyConflict,
 			"模块被其他 active 模块依赖，无法停用", 400, nil)
 	}
+
 	if err := s.db.Model(&models.Module{}).
 		Where("id = ?", moduleID).
 		Updates(map[string]interface{}{
@@ -1052,20 +1297,25 @@ func (s *Service) DisableModule(
 		}).Error; err != nil {
 		return nil, exception.New(exception.CodeInternalError, "更新状态失败", 500, nil)
 	}
+
 	if s.loader != nil {
 		s.loader.UnmarkLoaded(moduleID)
 	}
+
 	full, err := s.loadModuleWithDeps(s.db, moduleID)
 	if err != nil {
 		return nil, exception.New(exception.CodeInternalError, "加载模块失败", 500, nil)
 	}
+
 	auth.LogAuthEvent("module_disable", &operatorID, operatorName, "success", nil,
 		"", "", fmt.Sprintf("停用模块 %s", moduleID))
 	return serializeModule(full), nil
 }
+
 // ---------------------------------------------------------------------------
 // 配置
 // ---------------------------------------------------------------------------
+
 // GetModuleConfig 获取模块配置。
 func (s *Service) GetModuleConfig(moduleID string) (map[string]interface{}, error) {
 	var module models.Module
@@ -1077,6 +1327,7 @@ func (s *Service) GetModuleConfig(moduleID string) (map[string]interface{}, erro
 	}
 	return module.Config, nil
 }
+
 // UpdateModuleConfig 更新模块配置（全量覆盖）。
 func (s *Service) UpdateModuleConfig(
 	moduleID string, config map[string]interface{},
@@ -1086,9 +1337,11 @@ func (s *Service) UpdateModuleConfig(
 	if err := s.db.First(&module, "id = ?", moduleID).Error; err != nil {
 		return nil, exception.New(exception.CodeModuleNotFound, "模块不存在", 404, nil)
 	}
+
 	if err := validateConfig(module.Manifest, config); err != nil {
 		return nil, err
 	}
+
 	if err := s.db.Model(&models.Module{}).
 		Where("id = ?", moduleID).
 		Updates(map[string]interface{}{
@@ -1097,10 +1350,12 @@ func (s *Service) UpdateModuleConfig(
 		}).Error; err != nil {
 		return nil, exception.New(exception.CodeInternalError, "更新配置失败", 500, nil)
 	}
+
 	auth.LogAuthEvent("module_config_update", &operatorID, operatorName, "success", nil,
 		"", "", fmt.Sprintf("更新模块 %s 配置", moduleID))
 	return config, nil
 }
+
 // validateConfig 按 manifest 中的 config_schema 校验配置。
 func validateConfig(manifest models.JSONMap, config map[string]interface{}) error {
 	if manifest == nil {
@@ -1114,6 +1369,7 @@ func validateConfig(manifest models.JSONMap, config map[string]interface{}) erro
 	if !ok || len(schema) == 0 {
 		return nil
 	}
+
 	for _, field := range extractStringList(schema["required"]) {
 		if field == "" {
 			continue
@@ -1123,6 +1379,7 @@ func validateConfig(manifest models.JSONMap, config map[string]interface{}) erro
 				fmt.Sprintf("配置缺少必填字段：%s", field), 400, nil)
 		}
 	}
+
 	properties, ok := schema["properties"].(map[string]interface{})
 	if !ok {
 		return nil
@@ -1143,6 +1400,7 @@ func validateConfig(manifest models.JSONMap, config map[string]interface{}) erro
 	}
 	return nil
 }
+
 func checkType(value interface{}, expected string) bool {
 	switch expected {
 	case "boolean":
@@ -1174,6 +1432,7 @@ func checkType(value interface{}, expected string) bool {
 	}
 	return true
 }
+
 // SaveUploadedZip 保存上传的 ZIP 到 MODULE_UPLOAD_DIR，返回保存路径。
 func (s *Service) SaveUploadedZip(fileName string, content []byte) (string, error) {
 	if !strings.HasSuffix(strings.ToLower(fileName), ".zip") {
@@ -1187,16 +1446,19 @@ func (s *Service) SaveUploadedZip(fileName string, content []byte) (string, erro
 		return "", exception.New(exception.CodeModuleZipInvalid,
 			fmt.Sprintf("ZIP 文件大小超过上限 %d", maxSize), 400, nil)
 	}
+
 	root := s.uploadRoot()
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return "", exception.New(exception.CodeInternalError, "创建上传目录失败", 500, nil)
 	}
+
 	target := filepath.Join(root, fmt.Sprintf("%d_%s", time.Now().UnixNano(), fileName))
 	if err := os.WriteFile(target, content, 0o644); err != nil {
 		return "", exception.New(exception.CodeInternalError, "保存 ZIP 失败", 500, nil)
 	}
 	return target, nil
 }
+
 // errCode 从 error 中提取错误码（支持 PlatformError）。
 func errCode(err error) int {
 	var pe *exception.PlatformError

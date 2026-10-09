@@ -13,22 +13,47 @@ import (
 )
 
 // Handler 密码操作 HTTP 处理器。
+//
+// 职责：
+//  1. 通过 MetaRegistry 聚合各领域子 Handler（CA / Cert / CSR / CRL / Key）的路由；
+//  2. 承载通用密码操作（/crypto/operations/:operation_id）与任务（/tasks/:task_id）路由。
+//
+// v1.3 修复：
+//   - 此前 RegisterRoutes 遗漏对各子 Handler 的调用，导致 /api/v1/cas 等路由 404；
+//   - 现改为通过 MetaRegistry 统一装配（MetaRegistry 已正确创建各子 Service）。
 type Handler struct {
-	svc *Service
+	svc  *Service
+	meta *MetaRegistry
 }
 
 // NewHandler 创建密码操作处理器。
+//
+// 复用 Service 已持有的 db / cfg，构造 MetaRegistry，
+// 避免在 main.go 中重复装配各子 Service。
 func NewHandler(svc *Service) *Handler {
-	return &Handler{svc: svc}
+	return &Handler{
+		svc:  svc,
+		meta: NewMetaRegistry(svc.db, svc.cfg),
+	}
 }
 
 // RegisterRoutes 注册密码操作路由（受保护）。
 //
-// 路由：
-//   POST /api/v1/crypto/operations/:operation_id  执行密码操作
-//   GET  /api/v1/tasks/:task_id                    查询任务状态
-//   POST /api/v1/tasks/:task_id/cancel             取消任务
+// 路由清单：
+//
+//	CA 管理：       /api/v1/cas/*
+//	证书管理：      /api/v1/certs/*
+//	CSR 管理：      /api/v1/csrs/*
+//	CRL 管理：      /api/v1/crls/*
+//	密钥管理：      /api/v1/keys/*
+//	通用密码操作：   /api/v1/crypto/operations/:operation_id
+//	任务：          /api/v1/tasks/:task_id
+//	                /api/v1/tasks/:task_id/cancel
 func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
+	// ---- 各领域子路由（通过 MetaRegistry 统一注册）----
+	h.meta.Register(r)
+
+	// ---- 通用密码操作路由 ----
 	crypto := r.Group("/crypto")
 	{
 		crypto.POST("/operations/:operation_id",
@@ -36,6 +61,8 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
 			h.Execute,
 		)
 	}
+
+	// ---- 任务路由 ----
 	tasks := r.Group("/tasks")
 	{
 		tasks.GET("/:task_id",
@@ -110,7 +137,6 @@ func (h *Handler) GetTask(c *gin.Context) {
 		return
 	}
 	// 注意：实际实现中应调用 TaskScheduler 查询任务
-	// 此处为示例
 	response.Success(c, gin.H{
 		"task_id": taskID,
 		"status":  "RUNNING",

@@ -1,0 +1,74 @@
+# ============================================================
+# 前端菜单与资源入口配置
+#
+# 菜单来源（三级）：
+#   1. menus_hidden：显式隐藏，优先级最高（模块菜单清空）
+#   2. module_menus：显式覆盖（使用配置的菜单）
+#   3. 未提及的模块：自动加载 DB manifest 里的菜单
+#
+# entry_frontend_overrides：
+#   按模块 ID 覆盖子应用入口；未提及的模块保留 DB 值。
+# ============================================================
+version: "1.0"
+
+# ---------------- 显式隐藏菜单 ----------------
+# 列在此处的模块：菜单强制清空（即使 DB manifest 中有菜单）
+# 典型场景：通过模块管理上传了模块，但暂时不想在侧边栏展示
+menus_hidden:
+#  - crypto_console
+
+# ---------------- 显式覆盖菜单 ----------------
+# 列在此处的模块：使用配置的菜单替换 DB manifest
+# 未列出的模块：保留 DB manifest 菜单（自动加载）
+module_menus:
+  platform:
+    - id: platform:dashboard
+      title: 仪表盘
+      icon: Dashboard
+      path: /dashboard
+      component: views/dashboard/index.vue
+      permission: platform:dashboard:view
+      order: 0
+
+  auth:
+    - id: auth:root
+      title: 认证授权
+      icon: Lock
+      path: /auth
+      component: views/dashboard/index.vue
+      permission: auth:user:view
+      order: 10
+      children:
+        - id: auth:users
+          title: 用户管理
+          icon: Person
+          path: /users
+          component: views/users/index.vue
+          permission: auth:user:view
+          order: 10
+        - id: auth:roles
+          title: 角色管理
+          icon: Shield
+          path: /roles
+          component: views/roles/index.vue
+          permission: auth:role:view
+          order: 20
+        - id: auth:permissions
+          title: 权限管理
+          icon: List
+          path: /permissions
+          component: views/permissions/index.vue
+          permission: auth:permission:view
+          order: 30
+
+  # 说明：module_manager / audit_log / license 未列出，
+  #      将自动加载 DB manifest 里的菜单。
+
+# ---------------- 覆盖 entry_frontend ----------------
+# 未列出的模块保留 DB manifest 的 entry_frontend
+entry_frontend_overrides:
+  auth: /sub-apps/auth/
+  module_manager: /sub-apps/module-manager/
+  audit_log: /sub-apps/audit-log/
+  license: /sub-apps/license/
+  crypto_console: /sub-apps/crypto-console/

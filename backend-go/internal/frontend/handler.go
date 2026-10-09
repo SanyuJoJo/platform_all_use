@@ -1,15 +1,19 @@
 package frontend
+
 import (
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
+
 	"backend-go/internal/config"
 	"backend-go/internal/exception"
 )
+
 // Handler 前端静态资源自托管处理器。
 //
 // 约定：
@@ -25,6 +29,10 @@ import (
 //   - P1-1：NewHandler 启动检查 assets / sub-apps 目录并 WARN；
 //   - P1-2：删除冗余的 .. 判断，路径穿越防护完全依赖 tryServeFile；
 //   - P1-4：新增 noListFileSystem，禁止目录列表。
+//
+// v1.2 增强：
+//   - N-1：NewHandler 在 FRONTEND_DEPLOY_DIR 未配置时自动探测常见位置；
+//   - N-2：新增 HandleDisabled，未启用前端托管时 "/" 返回友好提示页。
 type Handler struct {
 	enabled    bool
 	deployDir  string
@@ -32,32 +40,43 @@ type Handler struct {
 	subAppsDir string
 	indexPath  string
 }
+
 // NewHandler 根据配置创建前端托管处理器。
 //
-// 若未配置 FRONTEND_DEPLOY_DIR 或 main-app/index.html 不存在，
-// 则返回未启用状态，保持后端默认 JSON 404 行为。
+// 目录解析优先级：
+//  1. cfg.FrontendDeployDir 显式配置（非空时使用）；
+//  2. 自动探测 ../frontend/deploy（从 backend-go 启动时的标准位置）；
+//  3. 自动探测 ./frontend/deploy。
 //
-// v1.1（P1-1）：启动时检查 assets / sub-apps 目录，缺失时打印 WARN，
-// 便于运维/开发快速定位。
+// 若仍未找到 main-app/index.html，则返回未启用状态，
+// 由调用方（main.go）使用 HandleDisabled 处理 "/" 请求。
+//
+// v1.1（P1-1）：启动时检查 assets / sub-apps 目录，缺失时打印 WARN。
+// v1.2（N-1）：新增自动探测逻辑，开发环境无需配置即可生效。
 func NewHandler(cfg *config.Config) *Handler {
-	deployDir := strings.TrimSpace(cfg.FrontendDeployDir)
+	deployDir := resolveDeployDir(cfg.FrontendDeployDir)
 	if deployDir == "" {
 		return &Handler{enabled: false}
 	}
+
 	abs, err := filepath.Abs(deployDir)
 	if err != nil {
-		log.Warn().Err(err).Str("dir", deployDir).Msg("前端部署目录解析失败，前端静态托管已禁用")
+		log.Warn().Err(err).Str("dir", deployDir).
+			Msg("前端部署目录解析失败，前端静态托管已禁用")
 		return &Handler{enabled: false}
 	}
+
 	mainAppDir := filepath.Join(abs, "main-app")
 	subAppsDir := filepath.Join(abs, "sub-apps")
 	indexPath := filepath.Join(mainAppDir, "index.html")
+
 	if _, err := os.Stat(indexPath); err != nil {
 		log.Warn().
 			Str("index", indexPath).
 			Msg("前端主应用 index.html 不存在，前端静态托管已禁用")
 		return &Handler{enabled: false}
 	}
+
 	// v1.1（P1-1）：启动检查 assets / sub-apps 目录
 	assetsDir := filepath.Join(mainAppDir, "assets")
 	if _, err := os.Stat(assetsDir); err != nil {
@@ -70,11 +89,13 @@ func NewHandler(cfg *config.Config) *Handler {
 			Str("sub_apps", subAppsDir).
 			Msg("前端子应用目录不存在，/sub-apps/* 子应用可能无法加载")
 	}
+
 	log.Info().
 		Str("deploy_dir", abs).
 		Str("main_app", mainAppDir).
 		Str("sub_apps", subAppsDir).
 		Msg("前端静态资源自托管已初始化")
+
 	return &Handler{
 		enabled:    true,
 		deployDir:  abs,
@@ -83,10 +104,40 @@ func NewHandler(cfg *config.Config) *Handler {
 		indexPath:  indexPath,
 	}
 }
+
+// resolveDeployDir 解析前端部署目录。
+//
+// v1.2（N-1）新增：
+//   - 配置非空：直接返回；
+//   - 配置为空：按顺序探测候选目录，返回第一个含 main-app/index.html 的位置；
+//   - 全部未命中：返回空字符串。
+func resolveDeployDir(configured string) string {
+	if s := strings.TrimSpace(configured); s != "" {
+		return s
+	}
+
+	candidates := []string{
+		"../frontend/deploy",
+		"./frontend/deploy",
+	}
+	for _, c := range candidates {
+		abs, err := filepath.Abs(c)
+		if err != nil {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(abs, "main-app", "index.html")); err == nil {
+			log.Info().Str("dir", abs).Msg("自动探测到前端产物目录")
+			return abs
+		}
+	}
+	return ""
+}
+
 // Enabled 返回是否启用前端托管。
 func (h *Handler) Enabled() bool {
 	return h != nil && h.enabled
 }
+
 // Register 注册静态资源路由，并覆盖 NoRoute 实现 SPA fallback。
 //
 // 调用时机：必须在所有 API 路由注册完成之后调用。
@@ -101,6 +152,7 @@ func (h *Handler) Register(r *gin.Engine) {
 	if !h.Enabled() {
 		return
 	}
+
 	// 主应用 assets 目录（禁止目录列表）
 	assetsDir := filepath.Join(h.mainAppDir, "assets")
 	if _, err := os.Stat(assetsDir); err == nil {
@@ -110,6 +162,7 @@ func (h *Handler) Register(r *gin.Engine) {
 			Str("assets", assetsDir).
 			Msg("前端主应用 assets 目录不存在，/assets/* 静态资源可能 404")
 	}
+
 	// 说明：不注册 /sub-apps 的 Static 路由。
 	// 子应用入口（含 404）统一由 NoRoute 处理，保证：
 	//   1. 缺失子应用时返回统一 JSON 404，不会回退到主应用 index.html；
@@ -118,11 +171,14 @@ func (h *Handler) Register(r *gin.Engine) {
 	if _, err := os.Stat(favicon); err == nil {
 		r.StaticFile("/favicon.ico", favicon)
 	}
+
 	r.NoRoute(h.NoRoute)
+
 	log.Info().
 		Str("deploy_dir", h.deployDir).
 		Msg("前端静态资源自托管已启用")
 }
+
 // NoRoute 处理未匹配路由。
 //
 // 规则：
@@ -137,29 +193,36 @@ func (h *Handler) Register(r *gin.Engine) {
 //   - P1-2：删除冗余的 .. 判断（path.Clean 后恒为 false）。
 func (h *Handler) NoRoute(c *gin.Context) {
 	reqPath := c.Request.URL.Path
+
 	// API 路径返回 JSON 404
 	if strings.HasPrefix(reqPath, "/api/") || reqPath == "/api" {
 		exception.NoRoute(c)
 		return
 	}
+
 	// 仅处理 GET/HEAD
 	if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
 		exception.NoMethod(c)
 		return
 	}
+
 	cleanPath := path.Clean("/" + reqPath)
+
 	// 子应用路径：严格处理，缺失时返回 404，不 fallback 到主应用
 	if cleanPath == "/sub-apps" || strings.HasPrefix(cleanPath, "/sub-apps/") {
 		h.serveSubAppOr404(c, cleanPath)
 		return
 	}
+
 	// 主应用真实文件
 	if h.tryServeFile(c, h.mainAppDir, cleanPath) {
 		return
 	}
+
 	// SPA fallback 到主应用 index.html
 	c.File(h.indexPath)
 }
+
 // serveSubAppOr404 尝试从 subAppsDir 提供文件，失败时返回统一 JSON 404。
 //
 // v1.1（P0-2）新增：保证 qiankun 加载子应用入口时，
@@ -171,6 +234,7 @@ func (h *Handler) serveSubAppOr404(c *gin.Context, cleanPath string) {
 		exception.NoRoute(c)
 		return
 	}
+
 	// 尝试精确文件（如 /sub-apps/auth/assets/index.js）
 	if h.tryServeFile(c, h.subAppsDir, subPath) {
 		return
@@ -179,9 +243,11 @@ func (h *Handler) serveSubAppOr404(c *gin.Context, cleanPath string) {
 	if h.tryServeFile(c, h.subAppsDir, subPath+"/index.html") {
 		return
 	}
+
 	// 子应用资源缺失，返回统一 JSON 404
 	exception.NoRoute(c)
 }
+
 // tryServeFile 尝试返回 root 下的文件。
 //
 // 路径穿越防护：使用 filepath.Rel 校验 absFull 是否在 absRoot 内部。
@@ -192,6 +258,7 @@ func (h *Handler) tryServeFile(c *gin.Context, root, urlPath string) bool {
 		return false
 	}
 	full := filepath.Join(root, filepath.FromSlash(rel))
+
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
 		return false
@@ -208,6 +275,7 @@ func (h *Handler) tryServeFile(c *gin.Context, root, urlPath string) bool {
 		strings.HasPrefix(relToRoot, ".."+string(os.PathSeparator)) {
 		return false
 	}
+
 	info, err := os.Stat(absFull)
 	if err != nil || info.IsDir() {
 		return false
@@ -215,6 +283,7 @@ func (h *Handler) tryServeFile(c *gin.Context, root, urlPath string) bool {
 	c.File(absFull)
 	return true
 }
+
 // noListFileSystem 包装 http.FileSystem，禁止目录列表。
 //
 // v1.1（P1-4）新增：当请求为目录时，仅当该目录下存在 index.html
@@ -222,6 +291,7 @@ func (h *Handler) tryServeFile(c *gin.Context, root, urlPath string) bool {
 type noListFileSystem struct {
 	root http.FileSystem
 }
+
 func (n noListFileSystem) Open(name string) (http.File, error) {
 	f, err := n.root.Open(name)
 	if err != nil {
@@ -243,4 +313,37 @@ func (n noListFileSystem) Open(name string) (http.File, error) {
 		_ = indexFile.Close()
 	}
 	return f, nil
+}
+
+// HandleDisabled 前端托管未启用时的 NoRoute 处理。
+//
+// v1.2（N-2）新增：
+//   - "/" 与 "/index.html" 返回 200 + 友好 JSON 提示，引导运维配置前端；
+//   - 其他未匹配路径保持 404 JSON（与 exception.NoRoute 语义一致）。
+//
+// 目的：避免访问根路径时出现空白 404，让用户一眼看出问题所在。
+func HandleDisabled(c *gin.Context) {
+	reqPath := c.Request.URL.Path
+
+	if reqPath == "/" || reqPath == "/index.html" {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    0,
+			"message": "后端服务已启动（前端资源未部署）",
+			"data": gin.H{
+				"status":  "ok",
+				"message": "前端资源未部署。请设置 FRONTEND_DEPLOY_DIR 指向前端产物目录，或将前端独立启动后访问。",
+				"hint": gin.H{
+					"frontend_dev":  "cd frontend && pnpm dev:all（访问 http://localhost:3000）",
+					"backend_serve": "在 .env 中设置 FRONTEND_DEPLOY_DIR=../frontend/deploy 后重启",
+					"health":        "/health",
+					"api_base":      "/api/v1",
+				},
+			},
+			"requestId": c.GetString("request_id"),
+		})
+		return
+	}
+
+	// 其他未匹配路径仍返回标准 404
+	exception.NoRoute(c)
 }
