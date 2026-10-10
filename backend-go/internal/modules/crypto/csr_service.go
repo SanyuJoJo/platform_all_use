@@ -3,6 +3,8 @@ package crypto
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,38 +16,45 @@ import (
 
 // CSRService P10 领域 Service。
 type CSRService struct {
-	db     *gorm.DB
-	caller *CoreCaller
-	files  *FileStore
-	parser *CertParser
-	keys   *KeyCrypto
+	db       *gorm.DB
+	caller   *CoreCaller
+	files    *FileStore
+	parser   *CertParser
+	keys     *KeyCrypto
+	layout   *PathLayout
+	whitebox *WhiteboxClient
 }
 
-// NewCSRService 创建 P10 Service。
 func NewCSRService(
 	db *gorm.DB,
 	caller *CoreCaller,
 	files *FileStore,
 	parser *CertParser,
 	keys *KeyCrypto,
+	layout *PathLayout,
+	whitebox *WhiteboxClient,
 ) *CSRService {
 	return &CSRService{
-		db:     db,
-		caller: caller,
-		files:  files,
-		parser: parser,
-		keys:   keys,
+		db:       db,
+		caller:   caller,
+		files:    files,
+		parser:   parser,
+		keys:     keys,
+		layout:   layout,
+		whitebox: whitebox,
 	}
 }
 
-// List P10 列表。
+// =============================================================================
+// 列表 / 详情
+// =============================================================================
+
 func (s *CSRService) List(page, pageSize int) (map[string]interface{}, error) {
 	var csrs []models.CSR
 	q := s.db.Model(&models.CSR{}).Where("status <> ?", "DELETED")
 	return paginateQuery(q, &csrs, page, pageSize)
 }
 
-// Get P10 元数据。
 func (s *CSRService) Get(csrID string) (*models.CSR, error) {
 	var csr models.CSR
 	if err := s.db.Where("csr_id = ?", csrID).First(&csr).Error; err != nil {
@@ -57,16 +66,17 @@ func (s *CSRService) Get(csrID string) (*models.CSR, error) {
 	return &csr, nil
 }
 
+// =============================================================================
+// 导入 P10
+// =============================================================================
+
 // Import 导入 P10。
 //
-// ★ 支持带私钥导入：
-//   如果客户上传了 CSR 私钥（KeyPEM），平台会把私钥加密保存到 core，
-//   并把 key_ref 记录在 platform_csr 表里。
-//   之后签发的签名证书会继承这个 key_ref，从而支持"从签名证书解析"模式。
-//
-// 使用场景：
-//   1. 客户只上传 CSR（不带私钥）→ KeyRef = nil，只能用手动输入模式
-//   2. 客户上传 CSR + 私钥 → KeyRef 非空，支持从签名证书自动解密
+// ★ 证书路径改造：
+//   - 分配 server/<dir_no>/ 目录；
+//   - CSR 落 server/<dir_no>/<csr_pubkey_sm3>.req.csr（0640）；
+//   - 私钥（若有）白盒加密落 server/<dir_no>/<csr_pubkey_sm3>.key.pem（0600）
+//     （密钥内嵌二进制，无 .pass）。
 func (s *CSRService) Import(
 	ctx context.Context, req *ImportCsrRequest,
 ) (*models.CSR, error) {
@@ -77,27 +87,60 @@ func (s *CSRService) Import(
 		)
 	}
 
-	id := newShortID()
-	csrID := "csr-" + id
-	csrRel := fmt.Sprintf("data/csr/imported-%s.csr", id)
+	bin := s.parser.OpensslBin()
+	if bin == "" {
+		return nil, exception.New(
+			exception.CodeInternalError, "铜锁 openssl 不可用", 500, nil,
+		)
+	}
 
-	if err := s.files.WriteCoreFile(csrRel, []byte(csrPEM), 0640); err != nil {
-		return nil, err
+	// 1. 分配 server 目录
+	dirNo, err := s.layout.AllocServerDir()
+	if err != nil {
+		return nil, exception.New(
+			exception.CodeInternalError,
+			fmt.Sprintf("分配 server 目录失败：%v", err), 500, nil,
+		)
+	}
+	dir, err := s.layout.ServerDir(dirNo)
+	if err != nil {
+		return nil, exception.New(
+			exception.CodeInternalError,
+			fmt.Sprintf("server 目录非法：%v", err), 500, nil,
+		)
+	}
+
+	// 2. 计算 CSR 公钥 SM3
+	pubSM3, err := PubkeySM3FromCSRPEM(bin, csrPEM)
+	if err != nil {
+		return nil, exception.New(
+			exception.CodeParamInvalid,
+			fmt.Sprintf("计算 CSR 公钥 SM3 失败：%v", err), 400, nil,
+		)
+	}
+
+	// 3. 写 CSR 到规范路径
+	csrAbs := filepath.Join(dir, pubSM3+".req.csr")
+	if err := os.WriteFile(csrAbs, []byte(csrPEM), 0640); err != nil {
+		return nil, exception.New(
+			exception.CodeInternalError,
+			fmt.Sprintf("写 P10 失败：%v", err), 500, nil,
+		)
 	}
 	success := false
 	defer func() {
 		if !success {
-			_ = s.files.SafeRemove(csrRel)
+			_ = os.Remove(csrAbs)
 		}
 	}()
 
-	subject, algorithm, err := s.parseCSRInfo(csrRel)
+	// 4. 解析主题 / 算法
+	subject, algorithm, err := s.parseCSRInfo(csrAbs)
 	if err != nil {
 		return nil, err
 	}
 
-	// ★ 私钥处理：如果客户上传了私钥，加密保存到 core 并记录 key_ref
-	var keyRef *string
+	// 5. 私钥处理：白盒加密落盘（无 .pass）
 	if strings.TrimSpace(req.KeyPEM) != "" {
 		if !strings.Contains(req.KeyPEM, "-----BEGIN") {
 			return nil, exception.New(
@@ -105,66 +148,82 @@ func (s *CSRService) Import(
 			)
 		}
 
-		keyRel := fmt.Sprintf("tmp/import-csr-key-%s.pem", id)
-		if err := s.files.WriteCoreFile(keyRel, []byte(req.KeyPEM), 0600); err != nil {
-			return nil, err
-		}
-		defer s.files.SafeRemove(keyRel)
+		plainKeyPEM := []byte(req.KeyPEM)
 
-		keyAbs, _ := s.files.guard.Resolve(keyRel, "key_path")
+		// 5.1 若私钥已加密，先解密到明文
+		if s.keys != nil {
+			tmpDir, _ := os.MkdirTemp("", "import-csr-key-")
+			defer os.RemoveAll(tmpDir)
 
-		// 若私钥加密，先解密到明文
-		if bin := s.parser.OpensslBin(); bin != "" {
-			encrypted, _ := s.keys.IsEncrypted(bin, keyAbs)
-			if encrypted {
+			tmpKey := filepath.Join(tmpDir, "key.pem")
+			if err := os.WriteFile(tmpKey, []byte(req.KeyPEM), 0600); err != nil {
+				return nil, exception.New(
+					exception.CodeInternalError,
+					fmt.Sprintf("写临时私钥失败：%v", err), 500, nil,
+				)
+			}
+
+			if encrypted, _ := s.keys.IsEncrypted(bin, tmpKey); encrypted {
 				if strings.TrimSpace(req.KeyPassword) == "" {
 					return nil, exception.New(
 						exception.CodeParamInvalid,
 						"私钥已加密，请提供私钥密码", 400, nil,
 					)
 				}
-				pwRel := fmt.Sprintf("tmp/import-csr-pass-%s", id)
-				plainRel := fmt.Sprintf("tmp/import-csr-plain-%s.pem", id)
-				if err := s.files.WriteCoreFile(pwRel, []byte(req.KeyPassword), 0600); err != nil {
-					return nil, err
+				pwPath := filepath.Join(tmpDir, "pw.txt")
+				plainPath := filepath.Join(tmpDir, "plain.key")
+				if err := os.WriteFile(pwPath, []byte(req.KeyPassword), 0600); err != nil {
+					return nil, exception.New(
+						exception.CodeInternalError,
+						fmt.Sprintf("写口令文件失败：%v", err), 500, nil,
+					)
 				}
-				defer s.files.SafeRemove(pwRel)
-				defer s.files.SafeRemove(plainRel)
-
-				pwAbs, _ := s.files.guard.Resolve(pwRel, "path")
-				plainAbs, _ := s.files.guard.Resolve(plainRel, "path")
-
-				if err := s.keys.DecryptWithPasswordFile(bin, keyAbs, pwAbs, plainAbs); err != nil {
+				if err := s.keys.DecryptWithPasswordFile(bin, tmpKey, pwPath, plainPath); err != nil {
 					return nil, exception.New(
 						exception.CodeParamInvalid,
 						"私钥密码错误或解密失败", 400, nil,
 					)
 				}
-				plainData, err := s.files.ReadCoreFile(plainRel)
+				data, err := os.ReadFile(plainPath)
 				if err != nil {
-					return nil, err
+					return nil, exception.New(
+						exception.CodeInternalError,
+						fmt.Sprintf("读解密私钥失败：%v", err), 500, nil,
+					)
 				}
-				if err := s.files.WriteCoreFile(keyRel, plainData, 0600); err != nil {
-					return nil, err
-				}
+				plainKeyPEM = data
 			}
 		}
 
-		// 调 core key.manage import 加密保存
-		ref, err := s.caller.ImportKey(ctx, keyRel, algorithm)
-		if err != nil {
-			return nil, err
+		// 5.2 白盒加密落盘（无 .pass）
+		keyAbs := filepath.Join(dir, pubSM3+".key.pem")
+
+		plainTmp := filepath.Join(dir, ".import.csr.key.plain.tmp")
+		if err := os.WriteFile(plainTmp, plainKeyPEM, 0600); err != nil {
+			return nil, exception.New(
+				exception.CodeInternalError,
+				fmt.Sprintf("写临时私钥失败：%v", err), 500, nil,
+			)
 		}
-		keyRef = &ref
+		defer os.Remove(plainTmp)
+
+		if err := s.whitebox.EncryptFile(ctx, plainTmp, keyAbs); err != nil {
+			return nil, exception.New(
+				exception.CodeInternalError,
+				fmt.Sprintf("白盒加密私钥失败：%v", err), 500, nil,
+			)
+		}
+		_ = os.Chmod(keyAbs, 0600)
 	}
 
+	// 6. 落库
 	now := time.Now().UTC()
 	csr := &models.CSR{
-		CSRID:     csrID,
+		CSRID:     "csr-" + dirNo + "-" + pubSM3[:12],
 		SubjectCN: extractCNFromSubject(subject),
 		Algorithm: algorithm,
-		CSRPath:   csrRel,
-		KeyRef:    keyRef,
+		CSRPath:   csrAbs,
+		KeyRef:    nil,
 		Status:    "NEW",
 		CreatedAt: now,
 	}
@@ -179,19 +238,21 @@ func (s *CSRService) Import(
 }
 
 // parseCSRInfo 解析 CSR 主题与公钥算法。
-func (s *CSRService) parseCSRInfo(csrRel string) (string, string, error) {
+func (s *CSRService) parseCSRInfo(csrAbs string) (string, string, error) {
 	bin := s.parser.OpensslBin()
 	if bin == "" {
 		return "", "", exception.New(
 			exception.CodeInternalError, "铜锁 openssl 不可用", 500, nil,
 		)
 	}
-	abs, err := s.files.guard.Resolve(csrRel, "csr_path")
-	if err != nil {
-		return "", "", err
+	if _, err := os.Stat(csrAbs); err != nil {
+		return "", "", exception.New(
+			exception.CodeNotFound,
+			fmt.Sprintf("P10 文件不存在：%s", csrAbs), 404, nil,
+		)
 	}
 
-	subjOut, err := RunOpenSSL(bin, "req", "-in", abs, "-noout", "-subject", "-nameopt", "RFC2253")
+	subjOut, err := RunOpenSSL(bin, "req", "-in", csrAbs, "-noout", "-subject", "-nameopt", "RFC2253")
 	if err != nil {
 		return "", "", exception.New(
 			exception.CodeParamInvalid, "CSR 解析失败", 400, nil,
@@ -199,7 +260,7 @@ func (s *CSRService) parseCSRInfo(csrRel string) (string, string, error) {
 	}
 	subject := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(subjOut), "subject="))
 
-	textOut, _ := RunOpenSSL(bin, "req", "-in", abs, "-noout", "-text")
+	textOut, _ := RunOpenSSL(bin, "req", "-in", csrAbs, "-noout", "-text")
 	algorithm := ""
 	switch {
 	case strings.Contains(textOut, "SM2"):
@@ -215,16 +276,28 @@ func (s *CSRService) parseCSRInfo(csrRel string) (string, string, error) {
 	return subject, algorithm, nil
 }
 
-// Download 下载 P10 文件。
+// =============================================================================
+// 下载
+// =============================================================================
+
 func (s *CSRService) Download(csrID string) ([]byte, error) {
 	csr, err := s.Get(csrID)
 	if err != nil {
 		return nil, err
 	}
-	return s.files.ReadCoreFile(csr.CSRPath)
+	data, err := os.ReadFile(csr.CSRPath)
+	if err != nil {
+		return nil, exception.New(
+			exception.CodeInternalError,
+			fmt.Sprintf("读取 P10 文件失败：%v", err), 500, nil,
+		)
+	}
+	return data, nil
 }
 
 // DownloadKey 下载 P10 对应的私钥，可选 AES-256-CBC 口令加密。
+//
+// ★ 无 .pass：白盒密钥内嵌二进制，直接解密/重加密。
 func (s *CSRService) DownloadKey(
 	csrID string, encrypt bool, password string,
 ) ([]byte, error) {
@@ -232,15 +305,34 @@ func (s *CSRService) DownloadKey(
 	if err != nil {
 		return nil, err
 	}
-	if csr.KeyRef == nil || *csr.KeyRef == "" {
+
+	keyAbs, err := s.deriveWhiteboxKeyPath(csr)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := os.Stat(keyAbs); err != nil {
 		return nil, exception.New(
 			exception.CodeParamInvalid, "该 P10 未关联私钥", 400, nil,
 		)
 	}
 
-	plain, err := s.caller.ExportKey(context.Background(), *csr.KeyRef)
+	// ★ 无 pass 参数
+	plainTmp, err := s.whitebox.DecryptToTemp(context.Background(), keyAbs, s.layout.TmpDir)
 	if err != nil {
 		return nil, err
+	}
+	defer func() {
+		_ = s.whitebox.ReEncrypt(context.Background(), plainTmp, keyAbs)
+		_ = os.Remove(plainTmp)
+	}()
+
+	plain, err := os.ReadFile(plainTmp)
+	if err != nil {
+		return nil, exception.New(
+			exception.CodeInternalError,
+			fmt.Sprintf("读取解密私钥失败：%v", err), 500, nil,
+		)
 	}
 
 	if !encrypt {
@@ -268,7 +360,30 @@ func (s *CSRService) DownloadKey(
 	return encrypted, nil
 }
 
-// Delete 删除 P10（硬删除）。
+// deriveWhiteboxKeyPath 从 CSR 路径推导白盒私钥路径（无 .pass）。
+func (s *CSRService) deriveWhiteboxKeyPath(csr *models.CSR) (string, error) {
+	if csr == nil || csr.CSRPath == "" {
+		return "", exception.New(
+			exception.CodeInternalError, "P10 路径为空", 500, nil,
+		)
+	}
+	dir := filepath.Dir(csr.CSRPath)
+	base := filepath.Base(csr.CSRPath)
+	if !strings.HasSuffix(base, ".req.csr") {
+		return "", exception.New(
+			exception.CodeInternalError,
+			fmt.Sprintf("P10 文件名不符合规范：%s", base), 500, nil,
+		)
+	}
+	pubSM3 := strings.TrimSuffix(base, ".req.csr")
+	return filepath.Join(dir, pubSM3+".key.pem"), nil
+}
+
+// =============================================================================
+// 删除
+// =============================================================================
+
+// Delete 删除 P10（硬删除），同时清理白盒私钥（无 .pass）。
 func (s *CSRService) Delete(csrID string) error {
 	if strings.TrimSpace(csrID) == "" {
 		return exception.New(exception.CodeParamInvalid, "csr_id 不能为空", 400, nil)
@@ -296,8 +411,12 @@ func (s *CSRService) Delete(csrID string) error {
 		return exception.New(exception.CodeNotFound, "P10 不存在或已删除", 404, nil)
 	}
 
+	// 清理磁盘文件：CSR + 白盒私钥
 	if csr.CSRPath != "" {
-		_ = s.files.SafeRemove(csr.CSRPath)
+		_ = os.Remove(csr.CSRPath)
+		if keyAbs, err := s.deriveWhiteboxKeyPath(&csr); err == nil {
+			_ = os.Remove(keyAbs)
+		}
 	}
 	return nil
 }

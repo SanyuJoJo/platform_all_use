@@ -1,33 +1,31 @@
 #!/usr/bin/env bash
 # =============================================================================
-# core 临时部署脚本
+# core 临时部署脚本（Go 化改造后）
 #
 # 用途：
-#   将开发目录（默认 /code/platform_all_use/core）临时部署到默认安装目录
-#   （默认 /opt/core），使平台后端无需修改 .env 即可直接调用：
-#       /opt/core/sbin/dispatch.sh --op ... --in ... --out ...
+#   把开发目录的「铜锁 openssl + C 工具」部署到 CoreRoot 下对应位置：
+#     <root>/core/bin/keycrypt
+#     <root>/core/bin/whitebox_sm4
+#     <root>/core/libs/tongsuo/bin/openssl
 #
-# 模式：
-#   - link（默认）：/opt/core → 源目录 的软链接，零拷贝、实时同步；
-#   - copy：rsync 复制到 /opt/core，独立副本，改动需重新执行本脚本。
+# ★ 部署结构说明：
+#   CoreRoot = <root>/core  （与 core.yaml 中 core.* 相对路径基准一致）
+#   - C 工具 → <CoreRoot>/bin/           （与 core 二进制同目录）
+#   - 铜锁   → <CoreRoot>/libs/tongsuo/  （与 core.yaml 中 "libs/tongsuo" 一致）
+#
+#   C 工具 RPATH = $ORIGIN/../libs/tongsuo/libs
+#     $ORIGIN = <CoreRoot>/bin
+#     库      = <CoreRoot>/libs/tongsuo/libs/
+#
+# ★ 关键规则：
+#   - C 工具必须真拷贝（不能软链），否则 $ORIGIN 会解析到开发目录
 #
 # 用法：
-#   sudo ./scripts/deploy-tmp.sh                 # 默认 link 模式
-#   sudo ./scripts/deploy-tmp.sh --mode copy     # 使用 rsync 复制
-#   sudo ./scripts/deploy-tmp.sh --force         # 目标已存在时强制覆盖
-#   sudo ./scripts/deploy-tmp.sh --target /srv/core  # 自定义目标
-#   sudo ./scripts/deploy-tmp.sh --uninstall     # 卸载（删除 /opt/core）
-#
-# 参数：
-#   --source <path>   源目录，默认脚本所在目录的上级（core 根）
-#   --target <path>   目标目录，默认 /opt/core
-#   --mode <link|copy>  部署模式，默认 link
-#   --force           目标已存在时强制覆盖
-#   --uninstall       卸载（删除目标，仅当目标是软链接或本脚本创建时）
-#   -h, --help        显示帮助
-#
-# 退出码：
-#   0 成功；1 参数错误；2 环境问题；3 部署失败
+#   sudo ./tests/deploy_tmp.sh
+#   sudo ./tests/deploy_tmp.sh --mode copy
+#   sudo ./tests/deploy_tmp.sh --no-build
+#   sudo ./tests/deploy_tmp.sh --force
+#   sudo ./tests/deploy_tmp.sh --uninstall
 # =============================================================================
 set -euo pipefail
 
@@ -48,18 +46,16 @@ info() { echo -e "${CYAN}[deploy]${NC} $*"; }
 # 默认参数
 # -----------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEFAULT_SOURCE="$(cd "$SCRIPT_DIR/.." && pwd)"   # scripts/ 的上级即 core 根
+DEFAULT_SOURCE="$(cd "$SCRIPT_DIR/.." && pwd)"
 SOURCE="$DEFAULT_SOURCE"
-TARGET="/opt/core"
+TARGET="/opt/plats_tool"
 MODE="link"
 FORCE=0
 UNINSTALL=0
+DO_BUILD=1
 
-# -----------------------------------------------------------------------------
-# 参数解析
-# -----------------------------------------------------------------------------
 usage() {
-  sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
@@ -68,6 +64,7 @@ while [ $# -gt 0 ]; do
     --source)    SOURCE="${2:-}"; shift 2 ;;
     --target)    TARGET="${2:-}"; shift 2 ;;
     --mode)      MODE="${2:-}"; shift 2 ;;
+    --no-build)  DO_BUILD=0; shift ;;
     --force)     FORCE=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
     -h|--help)   usage ;;
@@ -79,45 +76,69 @@ done
 # 参数校验
 # -----------------------------------------------------------------------------
 if [ ! -d "$SOURCE" ]; then
-  err "源目录不存在：$SOURCE"
-  exit 1
+  err "源目录不存在：$SOURCE"; exit 1
 fi
-if [ ! -f "$SOURCE/sbin/dispatch.sh" ]; then
-  err "源目录不是有效的 core 根（缺少 sbin/dispatch.sh）：$SOURCE"
-  err "提示：--source 应指向包含 sbin/、libs/、conf/ 的 core 根目录"
-  exit 1
+if [ ! -d "$SOURCE/src/tool" ]; then
+  err "源目录缺少 src/tool：$SOURCE/src/tool"; exit 1
 fi
-
 case "$MODE" in
   link|copy) ;;
   *) err "--mode 必须是 link 或 copy，实际：$MODE"; exit 1 ;;
 esac
 
-# 绝对化
 SOURCE="$(cd "$SOURCE" && pwd)"
+case "$TARGET" in
+  /*) : ;;
+  *)  TARGET="$(cd "$(dirname "$TARGET")" 2>/dev/null && pwd)/$(basename "$TARGET")" ;;
+esac
+TARGET="${TARGET%/}"
 
 # -----------------------------------------------------------------------------
-# 卸载分支
+# ★ 目标路径（与 core.yaml 相对路径基准严格对齐）
+# -----------------------------------------------------------------------------
+# CoreRoot = <root>/core
+TARGET_CORE_ROOT="$TARGET/core"
+TARGET_CORE_BIN="$TARGET_CORE_ROOT/bin"
+TARGET_CORE_LIBS="$TARGET_CORE_ROOT/libs"
+TARGET_TONGSUO="$TARGET_CORE_LIBS/tongsuo"
+TARGET_OPENSSL="$TARGET_TONGSUO/bin/openssl"
+
+# 源路径
+SOURCE_TOOL_DIR="$SOURCE/src/tool"
+SOURCE_TOOL_BIN="$SOURCE_TOOL_DIR/bin"
+SOURCE_TONGSUO="$SOURCE/libs/bin/tongsuo"
+
+# -----------------------------------------------------------------------------
+# 卸载
 # -----------------------------------------------------------------------------
 if [ "$UNINSTALL" -eq 1 ]; then
-  if [ ! -e "$TARGET" ]; then
-    log "目标不存在，无需卸载：$TARGET"
-    exit 0
+  log "开始卸载：$TARGET"
+  removed=0
+
+  if [ -d "$TARGET_CORE_BIN" ]; then
+    shopt -s nullglob
+    for f in "$TARGET_CORE_BIN"/*; do
+      base="$(basename "$f")"
+      case "$base" in
+        core|core.exe) continue ;;  # 不动 core 二进制
+      esac
+      log "  移除工具：$f"
+      rm -f "$f"
+      removed=$((removed+1))
+    done
+    shopt -u nullglob
   fi
-  if [ -L "$TARGET" ]; then
-    log "删除软链接：$TARGET"
-    rm -f "$TARGET"
-    log "✅ 卸载完成"
-    exit 0
+
+  if [ -L "$TARGET_TONGSUO" ]; then
+    log "  移除铜锁链接：$TARGET_TONGSUO"
+    rm -f "$TARGET_TONGSUO"
+    removed=$((removed+1))
+  elif [ -d "$TARGET_TONGSUO" ]; then
+    warn "  铜锁是真实目录，未自动删除：$TARGET_TONGSUO"
   fi
-  if [ -d "$TARGET" ]; then
-    warn "目标是真实目录：$TARGET"
-    warn "为避免误删，本脚本不会自动删除真实目录。"
-    warn "如确认要删除，请手动执行：sudo rm -rf $TARGET"
-    exit 0
-  fi
-  err "目标既不是软链接也不是目录：$TARGET"
-  exit 2
+
+  log "✅ 卸载完成（共移除 $removed 项）"
+  exit 0
 fi
 
 # -----------------------------------------------------------------------------
@@ -134,155 +155,194 @@ if [ "$need_root" -eq 1 ] && [ "$(id -u)" != "0" ]; then
 fi
 
 # -----------------------------------------------------------------------------
-# 处理已存在的目标
+# 编译 C 工具
 # -----------------------------------------------------------------------------
-if [ -e "$TARGET" ] || [ -L "$TARGET" ]; then
-  if [ "$FORCE" -ne 1 ]; then
-    err "目标已存在：$TARGET"
-    err "如需覆盖，请加 --force（谨慎：link 模式会替换原目录/链接；copy 模式会清空目标后重写）"
-    exit 3
-  fi
-  if [ -L "$TARGET" ]; then
-    log "移除已有软链接：$TARGET"
-    rm -f "$TARGET"
-  elif [ -d "$TARGET" ]; then
-    warn "目标是真实目录，--force 将删除整个目录：$TARGET"
-    rm -rf "$TARGET"
+if [ "$DO_BUILD" -eq 1 ]; then
+  info "编译 C 工具（$SOURCE_TOOL_DIR）..."
+  if make -C "$SOURCE_TOOL_DIR" all >/dev/null 2>&1; then
+    log "  ✅ C 工具编译完成"
   else
-    err "目标既不是软链接也不是目录，拒绝删除：$TARGET"
-    exit 3
+    warn "  make 失败（或未安装编译器），尝试使用已有 bin/"
   fi
-fi
-
-# -----------------------------------------------------------------------------
-# 部署
-# -----------------------------------------------------------------------------
-TARGET_PARENT="$(dirname "$TARGET")"
-mkdir -p "$TARGET_PARENT"
-
-info "部署模式：$MODE"
-info "源目录：  $SOURCE"
-info "目标目录：$TARGET"
-
-if [ "$MODE" = "link" ]; then
-  ln -s "$SOURCE" "$TARGET"
-  log "✅ 已创建软链接：$TARGET → $SOURCE"
 else
-  if ! command -v rsync >/dev/null 2>&1; then
-    err "copy 模式需要 rsync，请先安装：apt install rsync / yum install rsync"
-    exit 2
-  fi
-  mkdir -p "$TARGET"
-  rsync -a --delete \
-    --exclude='logs/*' \
-    --exclude='tmp/*' \
-    --exclude='data/keys/*.key.enc' \
-    "$SOURCE/" "$TARGET/"
-  log "✅ 已复制目录：$SOURCE → $TARGET"
+  info "跳过 C 工具编译（--no-build）"
 fi
 
-# -----------------------------------------------------------------------------
-# 修正关键权限（C-08 要求）
-# -----------------------------------------------------------------------------
-info "修正目录与文件权限..."
+if [ ! -d "$SOURCE_TOOL_BIN" ]; then
+  err "未找到 C 工具产物目录：$SOURCE_TOOL_BIN"
+  err "请先执行：make -C $SOURCE_TOOL_DIR"
+  exit 3
+fi
 
-# 目录
-for d in \
-  "$TARGET" \
-  "$TARGET/libs" "$TARGET/libs/src" "$TARGET/libs/bin" \
-  "$TARGET/libs/bin/tongsuo" \
-  "$TARGET/sbin" "$TARGET/sbin/lib" \
-  "$TARGET/src" "$TARGET/src/tool" "$TARGET/src/tool/src" "$TARGET/src/tool/bin"
-do
-  [ -d "$d" ] && chmod 0755 "$d" 2>/dev/null || true
+# 收集工具列表（排除 core、core.exe）
+TOOLS=()
+shopt -s nullglob
+for f in "$SOURCE_TOOL_BIN"/*; do
+  base="$(basename "$f")"
+  case "$base" in
+    .*) continue ;;
+    core|core.exe) continue ;;
+  esac
+  [ -f "$f" ] && TOOLS+=("$base")
 done
+shopt -u nullglob
 
-for d in "$TARGET/conf" "$TARGET/logs"; do
-  [ -d "$d" ] && chmod 0750 "$d" 2>/dev/null || true
-done
-
-for d in "$TARGET/data/keys" "$TARGET/tmp"; do
-  [ -d "$d" ] && chmod 0700 "$d" 2>/dev/null || true
-done
-
-# 关键文件
-[ -f "$TARGET/conf/core.conf" ] && chmod 0640 "$TARGET/conf/core.conf" 2>/dev/null || true
-[ -f "$TARGET/conf/algorithm-whitelist.yaml" ] && chmod 0640 "$TARGET/conf/algorithm-whitelist.yaml" 2>/dev/null || true
-
-# 脚本可执行
-if [ -d "$TARGET/sbin" ]; then
-  find "$TARGET/sbin" -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
-fi
-if [ -d "$TARGET/scripts" ]; then
-  find "$TARGET/scripts" -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
-fi
-
-log "✅ 权限已修正"
-
-# -----------------------------------------------------------------------------
-# 校验
-# -----------------------------------------------------------------------------
-info "校验关键文件..."
-
-FAIL=0
-need_exec() {
-  if [ -x "$1" ]; then
-    log "  可执行：$1"
-  else
-    err "  不可执行或缺失：$1"
-    FAIL=1
-  fi
-}
-need_file() {
-  if [ -f "$1" ]; then
-    log "  存在：$1"
-  else
-    err "  缺失：$1"
-    FAIL=1
-  fi
-}
-
-need_exec "$TARGET/sbin/dispatch.sh"
-need_exec "$TARGET/sbin/lib/version_check.sh"
-need_file "$TARGET/conf/core.conf"
-
-# 铜锁 openssl 可选
-if [ -x "$TARGET/libs/bin/tongsuo/bin/openssl" ]; then
-  log "  铜锁 openssl：$TARGET/libs/bin/tongsuo/bin/openssl"
-  VER="$("$TARGET/libs/bin/tongsuo/bin/openssl" version 2>/dev/null || true)"
-  log "  铜锁版本：$VER"
-else
-  warn "  铜锁 openssl 未编译：$TARGET/libs/bin/tongsuo/bin/openssl"
-  warn "  密码操作将不可用，需要先在 core 中执行 make libs"
-fi
-
-if [ "$FAIL" -ne 0 ]; then
-  err "部署校验失败"
+if [ "${#TOOLS[@]}" -eq 0 ]; then
+  err "C 工具目录为空：$SOURCE_TOOL_BIN"
   exit 3
 fi
 
 # -----------------------------------------------------------------------------
-# 完成提示
+# 准备目标目录
+# -----------------------------------------------------------------------------
+info "准备目标目录..."
+mkdir -p "$TARGET_CORE_BIN"
+mkdir -p "$TARGET_CORE_LIBS"
+
+# -----------------------------------------------------------------------------
+# 部署 C 工具（★ 始终真拷贝，不用软链）
+# -----------------------------------------------------------------------------
+info "部署 C 工具 → $TARGET_CORE_BIN/"
+for name in "${TOOLS[@]}"; do
+  src="$SOURCE_TOOL_BIN/$name"
+  dst="$TARGET_CORE_BIN/$name"
+
+  if [ -e "$dst" ] || [ -L "$dst" ]; then
+    if [ "$FORCE" -ne 1 ]; then
+      warn "  已存在，跳过：$dst（加 --force 覆盖）"
+      continue
+    fi
+    rm -f "$dst"
+  fi
+
+  install -m 0755 "$src" "$dst"
+  log "  install: $dst"
+done
+
+# -----------------------------------------------------------------------------
+# 部署铜锁
+# -----------------------------------------------------------------------------
+if [ -d "$SOURCE_TONGSUO" ]; then
+  info "部署铜锁 openssl → $TARGET_TONGSUO"
+
+  if [ "$MODE" = "link" ]; then
+    if [ -e "$TARGET_TONGSUO" ] || [ -L "$TARGET_TONGSUO" ]; then
+      if [ "$FORCE" -ne 1 ]; then
+        warn "  已存在，跳过：$TARGET_TONGSUO（加 --force 覆盖）"
+      else
+        [ -L "$TARGET_TONGSUO" ] && rm -f "$TARGET_TONGSUO"
+        [ -d "$TARGET_TONGSUO" ] && rm -rf "$TARGET_TONGSUO"
+      fi
+    fi
+    if [ ! -e "$TARGET_TONGSUO" ] && [ ! -L "$TARGET_TONGSUO" ]; then
+      ln -s "$SOURCE_TONGSUO" "$TARGET_TONGSUO"
+      log "  link: $TARGET_TONGSUO → $SOURCE_TONGSUO"
+    fi
+  else
+    if ! command -v rsync >/dev/null 2>&1; then
+      err "copy 模式需要 rsync，请先安装：apt install rsync"
+      exit 2
+    fi
+    [ "$FORCE" -eq 1 ] && [ -d "$TARGET_TONGSUO" ] && rm -rf "$TARGET_TONGSUO"
+    mkdir -p "$TARGET_TONGSUO"
+    rsync -a --delete "$SOURCE_TONGSUO/" "$TARGET_TONGSUO/"
+    log "  copy: $TARGET_TONGSUO"
+  fi
+else
+  err "铜锁目录不存在：$SOURCE_TONGSUO"
+  exit 3
+fi
+
+# -----------------------------------------------------------------------------
+# 权限修正
+# -----------------------------------------------------------------------------
+for name in "${TOOLS[@]}"; do
+  [ -e "$TARGET_CORE_BIN/$name" ] && chmod 0755 "$TARGET_CORE_BIN/$name" 2>/dev/null || true
+done
+[ -f "$TARGET_OPENSSL" ] && chmod 0755 "$TARGET_OPENSSL" 2>/dev/null || true
+
+# -----------------------------------------------------------------------------
+# 校验 1：文件存在
+# -----------------------------------------------------------------------------
+info "校验文件..."
+FAIL=0
+for name in "${TOOLS[@]}"; do
+  bin="$TARGET_CORE_BIN/$name"
+  if [ -x "$bin" ]; then
+    log "  可执行：$bin"
+  else
+    err "  不可执行或缺失：$bin"
+    FAIL=1
+  fi
+done
+
+if [ -x "$TARGET_OPENSSL" ]; then
+  log "  铜锁 openssl：$TARGET_OPENSSL"
+  log "  版本：$("$TARGET_OPENSSL" version 2>/dev/null | head -1 || echo unknown)"
+else
+  warn "  铜锁 openssl 未找到：$TARGET_OPENSSL"
+fi
+
+[ "$FAIL" -ne 0 ] && { err "部署校验失败（文件缺失）"; exit 3; }
+
+# -----------------------------------------------------------------------------
+# 校验 2：动态库可达性
+# -----------------------------------------------------------------------------
+info "校验动态库可达性..."
+if command -v ldd >/dev/null 2>&1; then
+  LIBFAIL=0
+  for name in "${TOOLS[@]}"; do
+    bin="$TARGET_CORE_BIN/$name"
+    [ -x "$bin" ] || continue
+
+    missing="$(ldd "$bin" 2>/dev/null | grep 'not found' || true)"
+    if [ -n "$missing" ]; then
+      err "  $name 动态库缺失："
+      echo "$missing" | sed 's/^/    /' >&2
+      LIBFAIL=1
+    else
+      log "  动态库可达：$name"
+    fi
+  done
+
+  if [ "$LIBFAIL" -ne 0 ]; then
+    echo
+    err "动态库校验失败"
+    for name in "${TOOLS[@]}"; do
+      bin="$TARGET_CORE_BIN/$name"
+      [ -x "$bin" ] || continue
+      err "  readelf -d $bin | grep -iE 'rpath|runpath'"
+      err "  ldd $bin"
+    done
+    exit 3
+  fi
+else
+  warn "系统无 ldd，跳过动态库校验"
+fi
+
+# -----------------------------------------------------------------------------
+# 完成
 # -----------------------------------------------------------------------------
 echo
 echo "============================================================"
-echo -e "${GREEN}✅ core 临时部署完成${NC}"
+echo -e "${GREEN}✅ core 库与工具临时部署完成${NC}"
 echo "============================================================"
-echo "部署模式：     $MODE"
+echo "部署模式：     $MODE（C 工具始终真拷贝）"
 echo "源目录：       $SOURCE"
-echo "目标目录：     $TARGET"
-if [ "$MODE" = "link" ]; then
-  echo "类型：         软链接（改动源目录会实时生效）"
-else
-  echo "类型：         独立副本（改动源目录需重新执行本脚本）"
-fi
+echo "目标根：       $TARGET"
+echo "CoreRoot：     $TARGET_CORE_ROOT"
+echo "C 工具目录：   $TARGET_CORE_BIN"
+echo "铜锁目录：     $TARGET_TONGSUO"
 echo
-echo "平台后端无需修改 .env，默认路径即为："
-echo "  CORE_DISPATCH_PATH=/opt/core/sbin/dispatch.sh"
+echo "已部署的 C 工具："
+for name in "${TOOLS[@]}"; do
+  echo "  - $name"
+done
 echo
 echo "验证命令："
-echo "  ls -la $TARGET/sbin/dispatch.sh"
-echo "  $TARGET/sbin/lib/version_check.sh --json"
+echo "  readelf -d $TARGET_CORE_BIN/whitebox_sm4 | grep -i runpath"
+echo "  ldd $TARGET_CORE_BIN/whitebox_sm4 | grep -E 'libcrypto|not found'"
+echo "  $TARGET_CORE_BIN/whitebox_sm4 2>&1 | head -3"
 echo
 echo "卸载："
 echo "  sudo $0 --uninstall"

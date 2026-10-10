@@ -58,6 +58,7 @@ func (s *Service) persistCA(op string, params, data map[string]interface{}) {
 		Algorithm:    getString(params, "algorithm"),
 		CertPath:     getString(data, "cert_path"),
 		KeyRef:       getString(data, "key_ref"),
+		KeyPath:      getString(data, "key_path"), // ★ 白盒私钥路径（新模式）
 		ValidityDays: getInt(params, "validity_days"),
 		Status:       "ACTIVE",
 		CreatedAt:    now,
@@ -88,13 +89,18 @@ func (s *Service) persistCA(op string, params, data map[string]interface{}) {
 	err := s.db.Clauses(clauseOnConflict("ca_id", []string{
 		"parent_ca_id", "subject_cn", "subject_o", "algorithm",
 		"key_params", "validity_days", "cert_path", "key_ref",
+		"key_path", // ★ 新增
 		"chain_path", "serial", "status", "updated_at",
 	})).Create(ca).Error
 	if err != nil {
 		log.Error().Err(err).Str("ca_id", caID).Msg("CA 元数据落库失败")
 		return
 	}
-	log.Info().Str("ca_id", caID).Msg("CA 元数据已落库")
+	log.Info().
+		Str("ca_id", caID).
+		Str("key_ref", ca.KeyRef).
+		Str("key_path", ca.KeyPath).
+		Msg("CA 元数据已落库")
 }
 
 // -----------------------------------------------------------------------------
@@ -150,7 +156,6 @@ func (s *Service) persistCert(params, data map[string]interface{}) {
 		NotAfter:  now.AddDate(0, 0, getIntDefault(params, "validity_days", 365)),
 		CreatedAt: now,
 	}
-	// cert_type 从 params 取，默认 server
 	certType := getString(params, "cert_type")
 	if certType == "" {
 		certType = "server"
@@ -209,7 +214,6 @@ func (s *Service) persistKey(params, data map[string]interface{}) {
 	if keyRef == "" {
 		return
 	}
-	// 仅对 generate 和 import 落库；export/delete 不改主表
 	action := getString(params, "action")
 	if action != "generate" && action != "import" {
 		return

@@ -28,36 +28,19 @@ import (
 // 类型定义
 // =============================================================================
 
-// sm4OID SM4 算法 OID（1.2.156.10197.1.104）。
-// 注意：这个 OID 写在信封的第一个 SEQUENCE 里，标识"SM4 加密加密私钥"。
 var sm4OID = asn1.ObjectIdentifier{1, 2, 156, 10197, 1, 104}
 
-// algIdentifier 算法标识：SEQUENCE { OID }
 type algIdentifier struct {
 	Algorithm asn1.ObjectIdentifier
 }
 
-// gmEnvelope 国密双证数字信封（严格对齐第三方平台格式）。
-//
-//	Envelope ::= SEQUENCE {
-//	    keyAlg        SEQUENCE { OBJECT IDENTIFIER },  -- 1.2.156.10197.1.104 (SM4)
-//	    symKeyCipher  SEQUENCE {                        -- ★ SM2 密文，直接是 SEQUENCE
-//	        INTEGER       x,
-//	        INTEGER       y,
-//	        OCTET STRING  C3,
-//	        OCTET STRING  C2
-//	    },
-//	    encPubPoint   BIT STRING,                       -- ★ BIT STRING: 00 || 04||X||Y
-//	    encKeyCipher  BIT STRING                        -- ★ BIT STRING: 00 || SM4密文
-//	}
 type gmEnvelope struct {
 	KeyAlg       algIdentifier
-	SymKeyCipher asn1.RawValue    // 内嵌 Tongsuo 原生 ASN.1 SEQUENCE
-	EncPubPoint  asn1.BitString   // EC 点 04||X||Y
-	EncKeyCipher asn1.BitString   // SM4 密文
+	SymKeyCipher asn1.RawValue
+	EncPubPoint  asn1.BitString
+	EncKeyCipher asn1.BitString
 }
 
-// legacyEnvelope 旧 JSON 信封（兼容历史数据）。
 type legacyEnvelope struct {
 	Version             string `json:"version"`
 	Algorithm           string `json:"algorithm"`
@@ -72,18 +55,25 @@ type legacyEnvelope struct {
 
 // CertService 证书领域 Service。
 type CertService struct {
-	db     *gorm.DB
-	caller *CoreCaller
-	files  *FileStore
-	parser *CertParser
-	keys   *KeyCrypto
+	db       *gorm.DB
+	caller   *CoreCaller
+	files    *FileStore
+	parser   *CertParser
+	keys     *KeyCrypto
+	layout   *PathLayout
+	whitebox *WhiteboxClient
 }
 
 func NewCertService(
 	db *gorm.DB, caller *CoreCaller, files *FileStore,
 	parser *CertParser, keys *KeyCrypto,
+	layout *PathLayout, whitebox *WhiteboxClient,
 ) *CertService {
-	return &CertService{db: db, caller: caller, files: files, parser: parser, keys: keys}
+	return &CertService{
+		db: db, caller: caller, files: files,
+		parser: parser, keys: keys,
+		layout: layout, whitebox: whitebox,
+	}
 }
 
 // =============================================================================
@@ -120,11 +110,45 @@ func (s *CertService) GetDetail(certID string) (*CertDetail, error) {
 	if err != nil {
 		return nil, err
 	}
-	abs, err := s.files.guard.Resolve(c.CertPath, "cert_path")
+	abs, err := s.resolveCertPath(c.CertPath)
 	if err != nil {
 		return nil, err
 	}
 	return s.parser.Parse(abs)
+}
+
+// resolveCertPath 解析证书绝对路径。
+//
+// 优先级：
+//  1. 绝对路径，且文件存在
+//  2. 按 CertRoot 解析（新规范）
+//  3. 按 CoreRoot 解析（旧数据）
+func (s *CertService) resolveCertPath(certPath string) (string, error) {
+	if certPath == "" {
+		return "", exception.New(exception.CodeInternalError, "证书路径为空", 500, nil)
+	}
+	if filepath.IsAbs(certPath) {
+		if st, err := os.Stat(certPath); err == nil && !st.IsDir() {
+			return certPath, nil
+		}
+	}
+	if s.layout != nil && s.layout.CertRoot != "" {
+		p := filepath.Join(s.layout.CertRoot, certPath)
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p, nil
+		}
+	}
+	if s.caller != nil {
+		p := s.caller.ResolveCorePath(certPath)
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p, nil
+		}
+	}
+	return "", exception.New(
+		exception.CodeNotFound,
+		fmt.Sprintf("证书文件不存在：%s", certPath),
+		404, nil,
+	)
 }
 
 // =============================================================================
@@ -150,8 +174,15 @@ func (s *CertService) Sign(
 		}
 	}
 
+	var cleanupRels []string
+	defer func() {
+		for _, rel := range cleanupRels {
+			_ = s.files.SafeRemove(rel)
+		}
+	}()
+
 	if req.CertMode == "dual" {
-		return s.signDualCert(ctx, req)
+		return s.signDualCert(ctx, req, &cleanupRels)
 	}
 
 	params := map[string]interface{}{
@@ -173,7 +204,7 @@ func (s *CertService) Sign(
 		params["san"] = req.SAN
 	}
 
-	if err := s.resolveCASource(ctx, req, params); err != nil {
+	if err := s.resolveCASource(ctx, req, params, &cleanupRels); err != nil {
 		return nil, err
 	}
 	if err := s.resolveCSRSource(req, params); err != nil {
@@ -188,29 +219,60 @@ func (s *CertService) Sign(
 		}
 	}
 
+	if err := s.attachOutputLayout(params, req.Domain, ""); err != nil {
+		return nil, err
+	}
+
 	resp, err := s.caller.Run(ctx, "cert.sign", params)
 	if err != nil {
 		return nil, err
 	}
 
-	cert, err := s.persistCertFromCore(req, resp)
+	cert, err := s.persistCertFromCore(req, resp, params)
 	if err != nil {
 		return nil, err
 	}
 
 	result := &SignCertResult{Certificate: cert}
-
 	if pem, err := s.files.ReadCoreFile(cert.CertPath); err == nil {
 		result.CertPEM = string(pem)
 	}
-
 	if req.ReturnKey && cert.KeyRef != nil && *cert.KeyRef != "" {
 		if keyPEM, err := s.exportKeyPEM(ctx, *cert.KeyRef, req.KeyExportPassword); err == nil {
 			result.KeyPEM = string(keyPEM)
 		}
 	}
-
 	return result, nil
+}
+
+func (s *CertService) attachOutputLayout(
+	params map[string]interface{}, domain, existingDirNo string,
+) error {
+	if s.layout == nil {
+		return exception.New(exception.CodeInternalError, "PathLayout 未初始化", 500, nil)
+	}
+	dirNo := existingDirNo
+	if dirNo == "" {
+		var err error
+		dirNo, err = s.layout.AllocServerDir()
+		if err != nil {
+			return exception.New(exception.CodeInternalError,
+				fmt.Sprintf("分配 server 目录失败：%v", err), 500, nil)
+		}
+	}
+	dir, err := s.layout.ServerDir(dirNo)
+	if err != nil {
+		return exception.New(exception.CodeParamInvalid,
+			fmt.Sprintf("server 目录非法：%v", err), 400, nil)
+	}
+	params["dir_no"] = dirNo
+	params["output_dir"] = dir
+	params["output_layout"] = "server_pubkey_sm3"
+	params["cert_root"] = s.layout.CertRoot
+	if domain != "" {
+		params["domain"] = domain
+	}
+	return nil
 }
 
 func (s *CertService) resolveSubjectFromCSR(
@@ -247,6 +309,7 @@ func (s *CertService) resolveSubjectFromCSR(
 
 func (s *CertService) resolveCASource(
 	ctx context.Context, req *SignCertRequest, params map[string]interface{},
+	cleanup *[]string,
 ) error {
 	switch req.CASource {
 	case "local":
@@ -261,12 +324,19 @@ func (s *CertService) resolveCASource(
 			}
 			return exception.New(exception.CodeInternalError, "查询 CA 失败", 500, nil)
 		}
-		if ca.KeyRef == "" {
-			return exception.New(exception.CodeParamInvalid, "该 CA 未关联私钥，无法签发", 400, nil)
-		}
+
 		params["ca_id"] = ca.CAID
-		params["ca_cert_path"] = ca.CertPath
-		params["ca_key_ref"] = ca.KeyRef
+
+		if ca.KeyRef != "" {
+			params["ca_cert_path"] = ca.CertPath
+			params["ca_key_ref"] = ca.KeyRef
+			return nil
+		}
+		if ca.KeyPath != "" {
+			return s.prepareManualCAFromWhitebox(ctx, &ca, params, cleanup)
+		}
+		return exception.New(exception.CodeParamInvalid,
+			"该 CA 未关联私钥，无法签发", 400, nil)
 
 	case "manual":
 		if strings.TrimSpace(req.CACertPEM) == "" ||
@@ -279,7 +349,6 @@ func (s *CertService) resolveCASource(
 		if !strings.Contains(req.CAKeyPEM, "-----BEGIN") {
 			return exception.New(exception.CodeParamInvalid, "CA 私钥不是有效 PEM 格式", 400, nil)
 		}
-
 		id := newShortID()
 		certRel := fmt.Sprintf("tmp/manual-ca-cert-%s.pem", id)
 		keyRel := fmt.Sprintf("tmp/manual-ca-key-%s.pem", id)
@@ -289,21 +358,118 @@ func (s *CertService) resolveCASource(
 		if err := s.files.WriteCoreFile(keyRel, []byte(req.CAKeyPEM), 0600); err != nil {
 			return err
 		}
+		if cleanup != nil {
+			*cleanup = append(*cleanup, certRel, keyRel)
+		}
 		params["ca_cert_path"] = certRel
 		params["ca_key_path"] = keyRel
-
 		if strings.TrimSpace(req.CAKeyPassword) != "" {
 			pwRel := fmt.Sprintf("tmp/manual-ca-pass-%s", id)
 			if err := s.files.WriteCoreFile(pwRel, []byte(req.CAKeyPassword), 0600); err != nil {
 				return err
 			}
+			if cleanup != nil {
+				*cleanup = append(*cleanup, pwRel)
+			}
 			params["ca_key_password_file"] = pwRel
 		}
+		return nil
 
 	default:
 		return exception.New(exception.CodeParamInvalid, "ca_source 必须是 local 或 manual", 400, nil)
 	}
+}
+
+func (s *CertService) prepareManualCAFromWhitebox(
+	ctx context.Context, ca *models.CA, params map[string]interface{},
+	cleanup *[]string,
+) error {
+	keyAbs := ca.KeyPath
+	if !filepath.IsAbs(keyAbs) {
+		keyAbs = filepath.Join(s.layout.CertRoot, keyAbs)
+	}
+	if _, err := os.Stat(keyAbs); err != nil {
+		return exception.New(exception.CodeInternalError,
+			fmt.Sprintf("CA 白盒私钥文件不存在：%s", keyAbs), 500, nil)
+	}
+
+	plainTmp, err := s.whitebox.DecryptToTemp(ctx, keyAbs, s.layout.TmpDir)
+	if err != nil {
+		return exception.New(exception.CodeInternalError,
+			fmt.Sprintf("解密 CA 白盒私钥失败：%v", err), 500, nil)
+	}
+	defer os.Remove(plainTmp)
+
+	plainData, err := os.ReadFile(plainTmp)
+	if err != nil {
+		return exception.New(exception.CodeInternalError,
+			fmt.Sprintf("读取解密私钥失败：%v", err), 500, nil)
+	}
+
+	id := newShortID()
+
+	coreKeyRel := fmt.Sprintf("tmp/ca-sign-key-%s.pem", id)
+	if err := s.files.WriteCoreFile(coreKeyRel, plainData, 0600); err != nil {
+		return exception.New(exception.CodeInternalError,
+			fmt.Sprintf("写 core 临时私钥失败：%v", err), 500, nil)
+	}
+	if cleanup != nil {
+		*cleanup = append(*cleanup, coreKeyRel)
+	}
+
+	certAbs, err := s.resolveCACertPathForSign(ca.CertPath)
+	if err != nil {
+		return err
+	}
+	certData, err := os.ReadFile(certAbs)
+	if err != nil {
+		return exception.New(exception.CodeInternalError,
+			fmt.Sprintf("读取 CA 证书失败：%v", err), 500, nil)
+	}
+	coreCertRel := fmt.Sprintf("tmp/ca-sign-cert-%s.pem", id)
+	if err := s.files.WriteCoreFile(coreCertRel, certData, 0640); err != nil {
+		return exception.New(exception.CodeInternalError,
+			fmt.Sprintf("写 core 临时证书失败：%v", err), 500, nil)
+	}
+	if cleanup != nil {
+		*cleanup = append(*cleanup, coreCertRel)
+	}
+
+	params["ca_source"] = "manual"
+	params["ca_cert_path"] = coreCertRel
+	params["ca_key_path"] = coreKeyRel
+
+	log.Info().
+		Str("ca_id", ca.CAID).
+		Str("core_cert_rel", coreCertRel).
+		Str("core_key_rel", coreKeyRel).
+		Msg("CA 白盒私钥已解密并转入 core/tmp（manual 模式）")
 	return nil
+}
+
+func (s *CertService) resolveCACertPathForSign(p string) (string, error) {
+	if p == "" {
+		return "", exception.New(exception.CodeInternalError, "CA 证书路径为空", 500, nil)
+	}
+	if filepath.IsAbs(p) {
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		}
+	}
+	if s.layout != nil && s.layout.CertRoot != "" {
+		abs := filepath.Join(s.layout.CertRoot, p)
+		if _, err := os.Stat(abs); err == nil {
+			return abs, nil
+		}
+	}
+	if s.caller != nil {
+		abs := s.caller.ResolveCorePath(p)
+		if _, err := os.Stat(abs); err == nil {
+			return abs, nil
+		}
+	}
+	return "", exception.New(exception.CodeNotFound,
+		fmt.Sprintf("CA 证书文件不存在：%s", p), 404, nil)
 }
 
 func (s *CertService) resolveCSRSource(
@@ -312,7 +478,6 @@ func (s *CertService) resolveCSRSource(
 	switch req.CSRSource {
 	case "":
 		return nil
-
 	case "existing":
 		if req.CSRID == "" {
 			return exception.New(exception.CodeParamInvalid, "缺少 csr_id", 400, nil)
@@ -324,6 +489,7 @@ func (s *CertService) resolveCSRSource(
 			}
 			return exception.New(exception.CodeInternalError, "查询 P10 失败", 500, nil)
 		}
+		params["csr_source"] = "existing"
 		params["csr_id"] = csr.CSRID
 		params["csr_path"] = csr.CSRPath
 		if csr.KeyRef != nil && *csr.KeyRef != "" {
@@ -334,7 +500,6 @@ func (s *CertService) resolveCSRSource(
 				params["subject"] = subjMap
 			}
 		}
-
 	case "upload":
 		if strings.TrimSpace(req.CSRPEM) == "" {
 			return exception.New(exception.CodeParamInvalid, "缺少 CSR PEM", 400, nil)
@@ -347,8 +512,8 @@ func (s *CertService) resolveCSRSource(
 		if err := s.files.WriteCoreFile(csrRel, []byte(req.CSRPEM), 0600); err != nil {
 			return err
 		}
+		params["csr_source"] = "upload"
 		params["csr_path"] = csrRel
-
 		if strings.TrimSpace(req.CSRKeyPEM) != "" {
 			if !strings.Contains(req.CSRKeyPEM, "-----BEGIN") {
 				return exception.New(exception.CodeParamInvalid, "私钥 PEM 格式错误", 400, nil)
@@ -358,7 +523,6 @@ func (s *CertService) resolveCSRSource(
 				return err
 			}
 			params["csr_key_path"] = keyRel
-
 			if strings.TrimSpace(req.CSRKeyPassword) != "" {
 				pwRel := fmt.Sprintf("tmp/upload-csr-pass-%s", id)
 				if err := s.files.WriteCoreFile(pwRel, []byte(req.CSRKeyPassword), 0600); err != nil {
@@ -367,13 +531,11 @@ func (s *CertService) resolveCSRSource(
 				params["csr_key_password_file"] = pwRel
 			}
 		}
-
 		if _, exists := params["subject"]; !exists {
 			if subjMap, err := s.parseCSRSubjectMap(csrRel); err == nil && len(subjMap) > 0 {
 				params["subject"] = subjMap
 			}
 		}
-
 	default:
 		return exception.New(exception.CodeParamInvalid, "csr_source 必须是空、existing 或 upload", 400, nil)
 	}
@@ -389,18 +551,15 @@ func (s *CertService) parseCSRSubjectMap(csrRel string) (map[string]string, erro
 	if err != nil {
 		return nil, err
 	}
-
 	out, err := RunOpenSSL(bin, "req", "-in", abs, "-noout", "-subject", "-nameopt", "RFC2253")
 	if err != nil {
 		return nil, fmt.Errorf("openssl req -subject failed: %w", err)
 	}
-
 	subjStr := strings.TrimSpace(out)
 	subjStr = strings.TrimSpace(strings.TrimPrefix(subjStr, "subject="))
 	if subjStr == "" {
 		return nil, fmt.Errorf("empty CSR subject")
 	}
-
 	result := make(map[string]string)
 	for _, part := range splitDN(subjStr) {
 		part = strings.TrimSpace(part)
@@ -449,23 +608,88 @@ func splitDN(input string) []string {
 	return parts
 }
 
+// extractCNFromParams 从 params["subject"] 里提取 CN。
+//
+// 兼容两种类型：
+//   - map[string]string（SignCertRequest.Subject 类型）
+//   - map[string]interface{}（core 侧或 JSON 反序列化后的类型）
+func extractCNFromParams(params map[string]interface{}) string {
+	raw, ok := params["subject"]
+	if !ok || raw == nil {
+		return ""
+	}
+	switch m := raw.(type) {
+	case map[string]string:
+		for _, k := range []string{"CN", "cn", "CommonName", "common_name"} {
+			if v, ok := m[k]; ok && strings.TrimSpace(v) != "" {
+				return strings.TrimSpace(v)
+			}
+		}
+	case map[string]interface{}:
+		for _, k := range []string{"CN", "cn", "CommonName", "common_name"} {
+			if v, ok := m[k].(string); ok && strings.TrimSpace(v) != "" {
+				return strings.TrimSpace(v)
+			}
+		}
+	}
+	return ""
+}
+
+// persistCertFromCore ★ 修复 SubjectCN 为空的问题。
+//
+// 关键改动：
+//  1. abs 用 resolveCertPath（不再被 PathGuard 拒绝）；
+//  2. subject 优先从 params["subject"] 拿，其次从 core 响应，最后从 detail；
+//  3. SubjectCN 用 cnFromSubject（无 fallback），避免写入 "imported-ca"。
 func (s *CertService) persistCertFromCore(
-	req *SignCertRequest, resp *CoreResponse,
+	req *SignCertRequest, resp *CoreResponse, params map[string]interface{},
 ) (*models.Certificate, error) {
 	certID := getString(resp.Data, "cert_id")
 	certPath := getString(resp.Data, "cert_path")
-	chainPath := getString(resp.Data, "chain_path")
+	keyPath := getString(resp.Data, "key_path")
 	serial := getString(resp.Data, "serial")
 	keyRef := getString(resp.Data, "key_ref")
 	subject := getString(resp.Data, "subject")
 	issuer := getString(resp.Data, "issuer")
+	pubSM3 := getString(resp.Data, "pubkey_sm3")
+	dirNo := getString(resp.Data, "dir_no")
 
+	if dirNo == "" {
+		if v, ok := params["dir_no"].(string); ok {
+			dirNo = v
+		}
+	}
+	if certPath == "" && pubSM3 != "" && dirNo != "" {
+		_, cPath, _, _, _, err := s.layout.ServerPaths(dirNo, pubSM3)
+		if err == nil {
+			certPath = cPath
+		}
+	}
+	if certPath == "" && req.CSRSource == "existing" {
+		if csrPath, ok := params["csr_path"].(string); ok && csrPath != "" && pubSM3 != "" {
+			csrDir := filepath.Dir(csrPath)
+			certPath = filepath.Join(csrDir, pubSM3+".cert.pem")
+		}
+	}
 	if certID == "" || certPath == "" {
-		return nil, exception.New(exception.CodeInternalError, "core cert.sign 未返回 cert_id/cert_path", 500, nil)
+		return nil, exception.New(exception.CodeInternalError,
+			"core cert.sign 未返回 cert_id/cert_path", 500, nil)
 	}
 
-	abs, _ := s.files.guard.Resolve(certPath, "cert_path")
-	detail, _ := s.parser.Parse(abs)
+	// ★ 修复 1：用 resolveCertPath 替代 guard.Resolve，让 detail 能正常解析
+	abs, _ := s.resolveCertPath(certPath)
+	var detail *CertDetail
+	if abs != "" {
+		detail, _ = s.parser.Parse(abs)
+	}
+
+	// ★ 修复 2：subject 多来源兜底
+	// 优先级：params["subject"].CN > core 响应 subject > detail.Subject
+	if subject == "" {
+		if cn := extractCNFromParams(params); cn != "" {
+			subject = "CN=" + cn
+		}
+	}
 	if subject == "" && detail != nil {
 		subject = detail.Subject
 	}
@@ -487,9 +711,9 @@ func (s *CertService) persistCertFromCore(
 		CertType:  certTypeJoined,
 		Serial:    serial,
 		Subject:   subject,
-		SubjectCN: extractCNFromSubject(subject),
+		SubjectCN: cnFromSubject(subject), // ★ 修复 3：无 fallback
 		Issuer:    issuer,
-		IssuerCN:  extractCNFromSubject(issuer),
+		IssuerCN:  cnFromSubject(issuer),  // ★ 无 fallback
 		CAID:      req.CAID,
 		Algorithm: req.Algorithm,
 		CertPath:  certPath,
@@ -506,13 +730,12 @@ func (s *CertService) persistCertFromCore(
 		cert.PublicKeyAlgorithm = detail.PublicKeyAlgorithm
 		cert.SignatureAlgorithm = detail.SignatureAlgorithm
 	}
-	if chainPath != "" {
-		cert.ChainPath = &chainPath
+	if keyPath != "" {
+		cert.KeyPath = &keyPath
 	}
 	if keyRef != "" {
 		cert.KeyRef = &keyRef
 	}
-
 	if err := s.db.Create(cert).Error; err != nil {
 		return nil, exception.New(exception.CodeInternalError,
 			fmt.Sprintf("证书元数据落库失败: %v", err), 500, nil)
@@ -525,7 +748,7 @@ func (s *CertService) persistCertFromCore(
 // =============================================================================
 
 func (s *CertService) signDualCert(
-	ctx context.Context, req *SignCertRequest,
+	ctx context.Context, req *SignCertRequest, cleanup *[]string,
 ) (*SignCertResult, error) {
 	if req.Algorithm != "" && req.Algorithm != "SM2" {
 		return nil, exception.New(exception.CodeParamInvalid, "国密双证仅支持 SM2", 400, nil)
@@ -541,20 +764,17 @@ func (s *CertService) signDualCert(
 	if err := s.resolveCSRSource(req, params); err != nil {
 		return nil, err
 	}
-
 	csrKeyRef := ""
 	if v, ok := params["csr_key_ref"].(string); ok {
 		csrKeyRef = v
 	}
-
 	if len(req.Subject) > 0 {
 		params["subject"] = req.Subject
 	}
 	if len(req.SAN) > 0 {
 		params["san"] = req.SAN
 	}
-
-	if err := s.resolveCASource(ctx, req, params); err != nil {
+	if err := s.resolveCASource(ctx, req, params, cleanup); err != nil {
 		return nil, err
 	}
 
@@ -588,12 +808,44 @@ func (s *CertService) signDualCert(
 			fmt.Sprintf("P10 公钥为空（%s）", csrAbs), 500, nil)
 	}
 
+	signDirNo := ""
+	if rel, err := filepath.Rel(s.layout.ServerRoot, filepath.Dir(csrAbs)); err == nil {
+		rel = filepath.ToSlash(rel)
+		parts := strings.Split(rel, "/")
+		if len(parts) >= 1 && len(parts[0]) == 4 {
+			signDirNo = parts[0]
+		}
+	}
+	if signDirNo == "" {
+		if err := s.attachOutputLayout(params, req.Domain, ""); err != nil {
+			return nil, err
+		}
+	} else {
+		signDir, _ := s.layout.ServerDir(signDirNo)
+		params["sign_dir_no"] = signDirNo
+		params["sign_output_dir"] = signDir
+	}
+
+	encDirNo, err := s.layout.AllocServerDir()
+	if err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("分配加密证书目录失败：%v", err), 500, nil)
+	}
+	encDir, _ := s.layout.ServerDir(encDirNo)
+	params["enc_dir_no"] = encDirNo
+	params["enc_output_dir"] = encDir
+	params["output_layout"] = "server_pubkey_sm3"
+	params["cert_root"] = s.layout.CertRoot
+	if req.Domain != "" {
+		params["domain"] = req.Domain
+	}
+
 	resp, err := s.caller.Run(ctx, "dual_cert.create", params)
 	if err != nil {
 		return nil, err
 	}
 
-	signCert, err := s.persistDualCertFromCore(req, resp, csrKeyRef)
+	signCert, err := s.persistDualCertFromCore(req, resp, csrKeyRef, params)
 	if err != nil {
 		return nil, err
 	}
@@ -606,7 +858,6 @@ func (s *CertService) signDualCert(
 			result.SignCertPEM = string(pem)
 		}
 	}
-
 	encCertPath := getString(resp.Data, "enc_cert_path")
 	if encCertPath != "" {
 		if pem, err := s.files.ReadCoreFile(encCertPath); err == nil {
@@ -614,26 +865,20 @@ func (s *CertService) signDualCert(
 		}
 	}
 
-	// 公钥一致性校验（告警式，不阻断）
 	if result.SignCertPEM != "" {
 		signCertPubPEM, err := extractPubKeyFromCertPEM(bin, result.SignCertPEM)
 		if err != nil {
-			log.Warn().
-				Err(err).
+			log.Warn().Err(err).
 				Str("csr_path", csrPath).
 				Str("sign_cert_path", signCertPath).
 				Msg("从签名证书提取公钥失败（不阻断签发）")
-		} else {
-			csrFP := pubKeySHA256(csrPubPEM)
-			signFP := pubKeySHA256(signCertPubPEM)
-			if !pubKeyEqual(csrPubPEM, signCertPubPEM) {
-				log.Warn().
-					Str("csr_path", csrPath).
-					Str("sign_cert_path", signCertPath).
-					Str("csr_pub_sha256", csrFP).
-					Str("sign_cert_pub_sha256", signFP).
-					Msg("签名证书公钥指纹与 P10 不一致（已忽略，不阻断签发）")
-			}
+		} else if !pubKeyEqual(csrPubPEM, signCertPubPEM) {
+			log.Warn().
+				Str("csr_path", csrPath).
+				Str("sign_cert_path", signCertPath).
+				Str("csr_pub_sha256", pubKeySHA256(csrPubPEM)).
+				Str("sign_cert_pub_sha256", pubKeySHA256(signCertPubPEM)).
+				Msg("签名证书公钥指纹与 P10 不一致（已忽略，不阻断签发）")
 		}
 	}
 
@@ -653,6 +898,20 @@ func (s *CertService) signDualCert(
 	if err != nil {
 		return nil, exception.New(exception.CodeInternalError,
 			fmt.Sprintf("导出加密私钥明文失败：%v", err), 500, nil)
+	}
+
+	var encKeyAbsPath string
+	if len(encKeyPEM) > 0 && encCertPath != "" {
+		encKeyAbsPath, err = s.persistEncKeyWhitebox(ctx, encDirNo, encDir, encCertPath, encKeyPEM)
+		if err != nil {
+			return nil, err
+		}
+		var encCert models.Certificate
+		if e := s.db.Where("cert_id LIKE ?", "dual-enc-%").
+			Order("id DESC").First(&encCert).Error; e == nil {
+			encCert.KeyPath = &encKeyAbsPath
+			_ = s.db.Save(&encCert).Error
+		}
 	}
 
 	if len(encKeyPEM) > 0 && result.EncCertPEM != "" {
@@ -687,13 +946,82 @@ func (s *CertService) signDualCert(
 	return result, nil
 }
 
+func (s *CertService) persistEncKeyWhitebox(
+	ctx context.Context, encDirNo, encDir, encCertPath string, encKeyPEM []byte,
+) (string, error) {
+	bin := s.parser.OpensslBin()
+	if bin == "" {
+		return "", exception.New(exception.CodeInternalError, "铜锁 openssl 不可用", 500, nil)
+	}
+	encCertPEM, err := os.ReadFile(encCertPath)
+	if err != nil {
+		return "", exception.New(exception.CodeInternalError,
+			fmt.Sprintf("读取加密证书失败：%v", err), 500, nil)
+	}
+	encPubSM3, err := PubkeySM3FromCertPEM(bin, string(encCertPEM))
+	if err != nil {
+		return "", exception.New(exception.CodeInternalError,
+			fmt.Sprintf("计算加密证书公钥 SM3 失败：%v", err), 500, nil)
+	}
+
+	encKeyPath := filepath.Join(encDir, encPubSM3+".key.pem")
+
+	plainTmp := filepath.Join(encDir, ".enc.key.plain.tmp")
+	if err := os.WriteFile(plainTmp, encKeyPEM, 0600); err != nil {
+		return "", exception.New(exception.CodeInternalError,
+			fmt.Sprintf("写临时私钥失败：%v", err), 500, nil)
+	}
+	defer os.Remove(plainTmp)
+
+	if err := s.whitebox.EncryptFile(ctx, plainTmp, encKeyPath); err != nil {
+		return "", exception.New(exception.CodeInternalError,
+			fmt.Sprintf("白盒加密私钥失败：%v", err), 500, nil)
+	}
+	_ = os.Chmod(encKeyPath, 0600)
+
+	log.Info().
+		Str("dir_no", encDirNo).
+		Str("enc_pub_sm3", encPubSM3).
+		Str("key_path", encKeyPath).
+		Msg("加密私钥白盒加密落盘完成")
+	return encKeyPath, nil
+}
+
+// persistDualCertFromCore ★ 修复 SubjectCN
 func (s *CertService) persistDualCertFromCore(
 	req *SignCertRequest, resp *CoreResponse, csrKeyRef string,
+	params map[string]interface{},
 ) (*models.Certificate, error) {
 	signCertPath := getString(resp.Data, "sign_cert_path")
 	encCertPath := getString(resp.Data, "enc_cert_path")
-	chainPath := getString(resp.Data, "chain_path")
+	signPubSM3 := getString(resp.Data, "sign_pubkey_sm3")
+	encPubSM3 := getString(resp.Data, "enc_pubkey_sm3")
 
+	signDirNo := getString(resp.Data, "sign_dir_no")
+	if signDirNo == "" {
+		if v, ok := params["sign_dir_no"].(string); ok {
+			signDirNo = v
+		}
+	}
+	encDirNo := getString(resp.Data, "enc_dir_no")
+	if encDirNo == "" {
+		if v, ok := params["enc_dir_no"].(string); ok {
+			encDirNo = v
+		}
+	}
+
+	if signCertPath == "" && signPubSM3 != "" && signDirNo != "" {
+		_, cPath, _, _, _, err := s.layout.ServerPaths(signDirNo, signPubSM3)
+		if err == nil {
+			signCertPath = cPath
+		}
+	}
+	if encCertPath == "" && encPubSM3 != "" && encDirNo != "" {
+		_, cPath, _, _, _, err := s.layout.ServerPaths(encDirNo, encPubSM3)
+		if err == nil {
+			encCertPath = cPath
+		}
+	}
 	if signCertPath == "" {
 		return nil, exception.New(exception.CodeInternalError,
 			"core dual_cert.create 未返回 sign_cert_path", 500, nil)
@@ -702,8 +1030,12 @@ func (s *CertService) persistDualCertFromCore(
 	now := time.Now().UTC()
 	baseID := newShortID()
 
-	signAbs, _ := s.files.guard.Resolve(signCertPath, "cert_path")
-	signDetail, _ := s.parser.Parse(signAbs)
+	// ★ 修复：用 resolveCertPath
+	signAbs, _ := s.resolveCertPath(signCertPath)
+	var signDetail *CertDetail
+	if signAbs != "" {
+		signDetail, _ = s.parser.Parse(signAbs)
+	}
 
 	signSubject, signIssuer, signSerial := "", "", ""
 	if signDetail != nil {
@@ -711,15 +1043,21 @@ func (s *CertService) persistDualCertFromCore(
 		signIssuer = signDetail.Issuer
 		signSerial = signDetail.Serial
 	}
+	// params 兜底
+	if signSubject == "" {
+		if cn := extractCNFromParams(params); cn != "" {
+			signSubject = "CN=" + cn
+		}
+	}
 
 	signCert := &models.Certificate{
 		CertID:    "dual-sign-" + baseID,
 		CertType:  "dual_sign",
 		Serial:    signSerial,
 		Subject:   signSubject,
-		SubjectCN: extractCNFromSubject(signSubject),
+		SubjectCN: cnFromSubject(signSubject), // ★ 无 fallback
 		Issuer:    signIssuer,
-		IssuerCN:  extractCNFromSubject(signIssuer),
+		IssuerCN:  cnFromSubject(signIssuer),  // ★ 无 fallback
 		CAID:      req.CAID,
 		Algorithm: "SM2",
 		CertPath:  signCertPath,
@@ -728,28 +1066,25 @@ func (s *CertService) persistDualCertFromCore(
 		NotAfter:  now.AddDate(0, 0, req.ValidityDays),
 		CreatedAt: now,
 	}
-
 	if csrKeyRef != "" {
 		signCert.KeyRef = &csrKeyRef
 	}
-
 	if signDetail != nil {
 		signCert.Fingerprint = signDetail.Fingerprint
 		signCert.PublicKeyAlgorithm = signDetail.PublicKeyAlgorithm
 		signCert.SignatureAlgorithm = signDetail.SignatureAlgorithm
 	}
-	if chainPath != "" {
-		signCert.ChainPath = &chainPath
-	}
-
 	if err := s.db.Create(signCert).Error; err != nil {
 		return nil, exception.New(exception.CodeInternalError,
 			fmt.Sprintf("双证签名证书落库失败: %v", err), 500, nil)
 	}
 
 	if encCertPath != "" {
-		encAbs, _ := s.files.guard.Resolve(encCertPath, "cert_path")
-		encDetail, _ := s.parser.Parse(encAbs)
+		encAbs, _ := s.resolveCertPath(encCertPath)
+		var encDetail *CertDetail
+		if encAbs != "" {
+			encDetail, _ = s.parser.Parse(encAbs)
+		}
 
 		encSubject, encIssuer, encSerial := "", "", ""
 		if encDetail != nil {
@@ -757,15 +1092,20 @@ func (s *CertService) persistDualCertFromCore(
 			encIssuer = encDetail.Issuer
 			encSerial = encDetail.Serial
 		}
+		if encSubject == "" {
+			if cn := extractCNFromParams(params); cn != "" {
+				encSubject = "CN=" + cn
+			}
+		}
 
 		encCert := &models.Certificate{
 			CertID:    "dual-enc-" + baseID,
 			CertType:  "dual_enc",
 			Serial:    encSerial,
 			Subject:   encSubject,
-			SubjectCN: extractCNFromSubject(encSubject),
+			SubjectCN: cnFromSubject(encSubject), // ★ 无 fallback
 			Issuer:    encIssuer,
-			IssuerCN:  extractCNFromSubject(encIssuer),
+			IssuerCN:  cnFromSubject(encIssuer),  // ★ 无 fallback
 			CAID:      req.CAID,
 			Algorithm: "SM2",
 			CertPath:  encCertPath,
@@ -773,15 +1113,11 @@ func (s *CertService) persistDualCertFromCore(
 			NotBefore: now,
 			NotAfter:  now.AddDate(0, 0, req.ValidityDays),
 			CreatedAt: now,
-			KeyRef:    nil,
 		}
 		if encDetail != nil {
 			encCert.Fingerprint = encDetail.Fingerprint
 			encCert.PublicKeyAlgorithm = encDetail.PublicKeyAlgorithm
 			encCert.SignatureAlgorithm = encDetail.SignatureAlgorithm
-		}
-		if chainPath != "" {
-			encCert.ChainPath = &chainPath
 		}
 		_ = s.db.Create(encCert).Error
 	}
@@ -794,9 +1130,7 @@ func (s *CertService) persistDualCertFromCore(
 // =============================================================================
 
 func (s *CertService) buildEnvelopeForDual(
-	csrPubPEM []byte,
-	encCertPEM []byte,
-	encKeyPEM []byte,
+	csrPubPEM []byte, encCertPEM []byte, encKeyPEM []byte,
 ) (string, error) {
 	der, err := s.buildEncryptedEnvelopeDER(csrPubPEM, encCertPEM, encKeyPEM)
 	if err != nil {
@@ -805,43 +1139,17 @@ func (s *CertService) buildEnvelopeForDual(
 	return base64.StdEncoding.EncodeToString(der), nil
 }
 
-// buildEncryptedEnvelopeDER 构建严格对齐第三方平台样例的 ASN.1 DER 数字信封。
-//
-// 顶层结构（与第三方样例完全一致）：
-//
-//	SEQUENCE {
-//	    SEQUENCE { OBJECT IDENTIFIER },   -- 1.2.156.10197.1.104 (SM4 OID)
-//	    SEQUENCE {                         -- ★ SM2 密文（Tongsuo 原生输出）
-//	        INTEGER       x,
-//	        INTEGER       y,
-//	        OCTET STRING  C3,              -- SM3 摘要
-//	        OCTET STRING  C2               -- 密文
-//	    },
-//	    BIT STRING,                        -- ★ 加密证书公钥 EC 点（00 || 04||X||Y）
-//	    BIT STRING                         -- ★ SM4 密文（00 || 密文）
-//	}
-//
-// 与第三方样例逐字段对齐（参考 asn1parse 输出）：
-//   - 0:d=0 hl=3 l=237 cons: SEQUENCE
-//   - 3:d=1 hl=2 l=9   cons: SEQUENCE { OBJECT IDENTIFIER :1.2.156.10197.1.104 }
-//   - 14:d=1 hl=2 l=121 cons: SEQUENCE { INTEGER, INTEGER, OCTET, OCTET }
-//   - 137:d=1 hl=2 l=66 prim: BIT STRING
-//   - 205:d=1 hl=2 l=33 prim: BIT STRING
 func (s *CertService) buildEncryptedEnvelopeDER(
-	csrPubPEM []byte,
-	encCertPEM []byte,
-	encKeyPEM []byte,
+	csrPubPEM []byte, encCertPEM []byte, encKeyPEM []byte,
 ) ([]byte, error) {
 	if len(bytes.TrimSpace(csrPubPEM)) == 0 {
 		return nil, fmt.Errorf("加密公钥为空，必须使用 P10 公钥")
 	}
-
 	bin := s.parser.OpensslBin()
 	if bin == "" {
 		return nil, fmt.Errorf("铜锁 openssl 不可用")
 	}
 
-	// 1. 提取加密证书 EC 点（65 字节：04||X||Y）
 	encPubPoint, err := extractEncCertECPoint(bin, encCertPEM)
 	if err != nil {
 		return nil, fmt.Errorf("提取加密证书公钥点失败: %w", err)
@@ -851,7 +1159,6 @@ func (s *CertService) buildEncryptedEnvelopeDER(
 			len(encPubPoint), encPubPoint[0])
 	}
 
-	// 2. 提取加密私钥裸 32 字节
 	rawEncKey, err := extractRawECPrivateKey(bin, encKeyPEM)
 	if err != nil {
 		return nil, fmt.Errorf("提取加密私钥裸字节失败: %w", err)
@@ -860,13 +1167,11 @@ func (s *CertService) buildEncryptedEnvelopeDER(
 		return nil, fmt.Errorf("加密私钥裸字节长度异常：%d", len(rawEncKey))
 	}
 
-	// 3. 生成 SM4 密钥
 	sm4Key := make([]byte, 16)
 	if _, err := rand.Read(sm4Key); err != nil {
 		return nil, fmt.Errorf("生成 SM4 密钥失败: %w", err)
 	}
 
-	// 4. SM2 加密 SM4 密钥 —— Tongsuo 原生 SEQUENCE 输出，不做任何转换
 	symKeyCipherASN1, err := sm2EncryptWithPubKey(bin, csrPubPEM, sm4Key)
 	if err != nil {
 		return nil, fmt.Errorf("SM2 加密对称密钥失败: %w", err)
@@ -875,27 +1180,19 @@ func (s *CertService) buildEncryptedEnvelopeDER(
 		return nil, fmt.Errorf("SM2 密文不是 SEQUENCE（首字节 %02x）", symKeyCipherASN1[0])
 	}
 
-	// 5. SM4-ECB/NoPadding 加密 32 字节裸私钥
 	encKeyCipher, err := sm4EncryptECBNoPadding(bin, sm4Key, rawEncKey)
 	if err != nil {
 		return nil, fmt.Errorf("SM4 加密加密私钥失败: %w", err)
 	}
 
-	// 6. 组装 ASN.1 DER，严格对齐第三方样例
 	env := gmEnvelope{
-		KeyAlg: algIdentifier{
-			Algorithm: sm4OID,
-		},
-		SymKeyCipher: asn1.RawValue{
-			FullBytes: symKeyCipherASN1, // 内嵌原始 SEQUENCE 字节
-		},
+		KeyAlg:       algIdentifier{Algorithm: sm4OID},
+		SymKeyCipher: asn1.RawValue{FullBytes: symKeyCipherASN1},
 		EncPubPoint: asn1.BitString{
-			Bytes:     encPubPoint,
-			BitLength: len(encPubPoint) * 8,
+			Bytes: encPubPoint, BitLength: len(encPubPoint) * 8,
 		},
 		EncKeyCipher: asn1.BitString{
-			Bytes:     encKeyCipher,
-			BitLength: len(encKeyCipher) * 8,
+			Bytes: encKeyCipher, BitLength: len(encKeyCipher) * 8,
 		},
 	}
 	der, err := asn1.Marshal(env)
@@ -909,23 +1206,17 @@ func (s *CertService) buildEncryptedEnvelopeDER(
 // 数字信封：解析
 // =============================================================================
 
-// decodeEnvelopeAny 解析数字信封。
-//
-// 返回 (gmEnv, legacyEnv, err)，其中只有一个非 nil。
 func (s *CertService) decodeEnvelopeAny(raw string) (*gmEnvelope, *legacyEnvelope, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, nil, fmt.Errorf("空字符串")
 	}
-
 	var decoded []byte
 	if b, err := base64.StdEncoding.DecodeString(raw); err == nil {
 		decoded = b
 	} else {
 		decoded = []byte(raw)
 	}
-
-	// 尝试 ASN.1 DER 新格式
 	if len(decoded) > 0 && decoded[0] == 0x30 {
 		var env gmEnvelope
 		if _, err := asn1.Unmarshal(decoded, &env); err == nil &&
@@ -934,8 +1225,6 @@ func (s *CertService) decodeEnvelopeAny(raw string) (*gmEnvelope, *legacyEnvelop
 			return &env, nil, nil
 		}
 	}
-
-	// 尝试旧 JSON 明文
 	if len(decoded) > 0 && decoded[0] == '{' {
 		var leg legacyEnvelope
 		if err := json.Unmarshal(decoded, &leg); err == nil &&
@@ -943,8 +1232,6 @@ func (s *CertService) decodeEnvelopeAny(raw string) (*gmEnvelope, *legacyEnvelop
 			return nil, &leg, nil
 		}
 	}
-
-	// 尝试 base64(JSON)
 	if b, err := base64.StdEncoding.DecodeString(raw); err == nil &&
 		len(b) > 0 && b[0] == '{' {
 		var leg legacyEnvelope
@@ -953,7 +1240,6 @@ func (s *CertService) decodeEnvelopeAny(raw string) (*gmEnvelope, *legacyEnvelop
 			return nil, &leg, nil
 		}
 	}
-
 	return nil, nil, fmt.Errorf("不是有效的加密数字信封")
 }
 
@@ -976,7 +1262,6 @@ func (s *CertService) QueryEnvelope(
 		return nil, exception.New(exception.CodeParamInvalid,
 			"format 必须是 pkcs10 或 cfca", 400, nil)
 	}
-
 	mode := strings.ToLower(strings.TrimSpace(req.Mode))
 	if mode == "" {
 		mode = "cert"
@@ -985,12 +1270,10 @@ func (s *CertService) QueryEnvelope(
 		return nil, exception.New(exception.CodeParamInvalid,
 			"mode 必须是 cert 或 manual", 400, nil)
 	}
-
 	if strings.TrimSpace(req.EncryptedEnvelope) == "" {
 		return nil, exception.New(exception.CodeParamInvalid,
 			"请提供加密的数字信封", 400, nil)
 	}
-
 	env, leg, err := s.decodeEnvelopeAny(req.EncryptedEnvelope)
 	if err != nil {
 		return nil, exception.New(exception.CodeParamInvalid,
@@ -999,7 +1282,6 @@ func (s *CertService) QueryEnvelope(
 
 	var signKeyPEM string
 	var signKeyPassword string
-
 	switch mode {
 	case "cert":
 		if strings.TrimSpace(req.CertID) == "" {
@@ -1024,7 +1306,6 @@ func (s *CertService) QueryEnvelope(
 				fmt.Sprintf("导出签名私钥失败: %v", err), 500, nil)
 		}
 		signKeyPEM = string(plain)
-
 	case "manual":
 		if strings.TrimSpace(req.SignKeyPEM) == "" {
 			return nil, exception.New(exception.CodeParamInvalid,
@@ -1038,7 +1319,6 @@ func (s *CertService) QueryEnvelope(
 	if err != nil {
 		return nil, err
 	}
-
 	resp := &QueryEnvelopeResponse{
 		Format:          format,
 		Mode:            mode,
@@ -1063,12 +1343,10 @@ func (s *CertService) decryptEnvelopeAuto(
 		return nil, exception.New(exception.CodeParamInvalid,
 			fmt.Sprintf("加密的数字信封解析失败: %v", err), 400, nil)
 	}
-
 	bin := s.parser.OpensslBin()
 	if bin == "" {
 		return nil, exception.New(exception.CodeInternalError, "铜锁 openssl 不可用", 500, nil)
 	}
-
 	tmpDir, err := os.MkdirTemp("", "envelope-dec-")
 	if err != nil {
 		return nil, exception.New(exception.CodeInternalError,
@@ -1081,7 +1359,6 @@ func (s *CertService) decryptEnvelopeAuto(
 		return nil, exception.New(exception.CodeInternalError,
 			fmt.Sprintf("写签名私钥失败: %v", err), 500, nil)
 	}
-
 	plainKeyPath := signKeyPath
 	if strings.TrimSpace(signKeyPassword) != "" {
 		pwPath := filepath.Join(tmpDir, "pw.txt")
@@ -1108,24 +1385,17 @@ func (s *CertService) decryptEnvelopeAuto(
 	return nil, exception.New(exception.CodeInternalError, "信封格式未知", 500, nil)
 }
 
-// decryptNewEnvelope 解密新格式 ASN.1 信封。
 func (s *CertService) decryptNewEnvelope(
-	bin, tmpDir, plainKeyPath string,
-	env *gmEnvelope,
+	bin, tmpDir, plainKeyPath string, env *gmEnvelope,
 ) ([]byte, error) {
-	// env.SymKeyCipher.FullBytes 是完整的 Tongsuo 原生 SEQUENCE 输出
-	// 直接喂给 pkeyutl -decrypt
 	if len(env.SymKeyCipher.FullBytes) == 0 {
-		return nil, exception.New(exception.CodeInternalError,
-			"SM2 密文为空", 500, nil)
+		return nil, exception.New(exception.CodeInternalError, "SM2 密文为空", 500, nil)
 	}
-
 	cipherPath := filepath.Join(tmpDir, "sm2.cipher")
 	if err := os.WriteFile(cipherPath, env.SymKeyCipher.FullBytes, 0600); err != nil {
 		return nil, exception.New(exception.CodeInternalError,
 			fmt.Sprintf("写 SM2 密文失败: %v", err), 500, nil)
 	}
-
 	sm4KeyPath := filepath.Join(tmpDir, "sm4.key")
 	_, stderr, err := RunOpenSSLFull(bin, "pkeyutl", "-decrypt",
 		"-inkey", plainKeyPath, "-in", cipherPath, "-out", sm4KeyPath)
@@ -1133,7 +1403,6 @@ func (s *CertService) decryptNewEnvelope(
 		return nil, exception.New(exception.CodeParamInvalid,
 			fmt.Sprintf("SM2 解密对称密钥失败: %s", strings.TrimSpace(stderr)), 400, nil)
 	}
-
 	sm4Key, err := os.ReadFile(sm4KeyPath)
 	if err != nil {
 		return nil, exception.New(exception.CodeInternalError,
@@ -1143,14 +1412,11 @@ func (s *CertService) decryptNewEnvelope(
 		return nil, exception.New(exception.CodeInternalError,
 			fmt.Sprintf("SM4 密钥长度异常：%d", len(sm4Key)), 500, nil)
 	}
-
-	// env.EncKeyCipher.Bytes 是 SM4 密文（asn1.BitString 已剥离 unused bits）
 	encKeyPath := filepath.Join(tmpDir, "enc.key.cipher")
 	if err := os.WriteFile(encKeyPath, env.EncKeyCipher.Bytes, 0600); err != nil {
 		return nil, exception.New(exception.CodeInternalError,
 			fmt.Sprintf("写加密私钥密文失败: %v", err), 500, nil)
 	}
-
 	decKeyPath := filepath.Join(tmpDir, "enc.key.plain")
 	keyHex := hex.EncodeToString(sm4Key)
 	_, stderr, err = RunOpenSSLFull(bin, "enc", "-sm4-ecb",
@@ -1160,20 +1426,17 @@ func (s *CertService) decryptNewEnvelope(
 		return nil, exception.New(exception.CodeInternalError,
 			fmt.Sprintf("SM4-ECB 解密失败: %s", strings.TrimSpace(stderr)), 500, nil)
 	}
-
 	return os.ReadFile(decKeyPath)
 }
 
 func (s *CertService) decryptLegacyEnvelope(
-	bin, plainKeyPath string,
-	leg *legacyEnvelope,
+	bin, plainKeyPath string, leg *legacyEnvelope,
 ) ([]byte, error) {
 	symCipher, err := base64.StdEncoding.DecodeString(leg.SymmetricKeyCipher)
 	if err != nil {
 		return nil, exception.New(exception.CodeInternalError,
 			fmt.Sprintf("对称密钥密文 base64 解码失败: %v", err), 500, nil)
 	}
-
 	tmpDir, _ := os.MkdirTemp("", "legacy-dec-")
 	defer os.RemoveAll(tmpDir)
 
@@ -1181,7 +1444,6 @@ func (s *CertService) decryptLegacyEnvelope(
 	if err := os.WriteFile(cipherPath, symCipher, 0600); err != nil {
 		return nil, exception.New(exception.CodeInternalError, "写 SM2 密文失败", 500, nil)
 	}
-
 	sm4KeyPath := filepath.Join(tmpDir, "sm4.key")
 	_, stderr, err := RunOpenSSLFull(bin, "pkeyutl", "-decrypt",
 		"-inkey", plainKeyPath, "-in", cipherPath, "-out", sm4KeyPath)
@@ -1189,12 +1451,10 @@ func (s *CertService) decryptLegacyEnvelope(
 		return nil, exception.New(exception.CodeParamInvalid,
 			fmt.Sprintf("SM2 解密对称密钥失败: %s", strings.TrimSpace(stderr)), 400, nil)
 	}
-
 	sm4Key, _ := os.ReadFile(sm4KeyPath)
 	if len(sm4Key) != 16 {
 		return nil, exception.New(exception.CodeInternalError, "SM4 密钥长度异常", 500, nil)
 	}
-
 	iv, err := base64.StdEncoding.DecodeString(leg.IV)
 	if err != nil {
 		return nil, exception.New(exception.CodeInternalError,
@@ -1205,13 +1465,11 @@ func (s *CertService) decryptLegacyEnvelope(
 		return nil, exception.New(exception.CodeInternalError,
 			fmt.Sprintf("加密私钥密文 base64 解码失败: %v", err), 500, nil)
 	}
-
 	encKeyPath := filepath.Join(tmpDir, "enc.key.cipher")
 	decKeyPath := filepath.Join(tmpDir, "enc.key.plain")
 	if err := os.WriteFile(encKeyPath, encKeyCipher, 0600); err != nil {
 		return nil, exception.New(exception.CodeInternalError, "写加密私钥密文失败", 500, nil)
 	}
-
 	keyHex := hex.EncodeToString(sm4Key)
 	ivHex := hex.EncodeToString(iv)
 	_, stderr, err = RunOpenSSLFull(bin, "enc", "-sm4-cbc",
@@ -1220,7 +1478,6 @@ func (s *CertService) decryptLegacyEnvelope(
 		return nil, exception.New(exception.CodeInternalError,
 			fmt.Sprintf("SM4-CBC 解密失败: %s", strings.TrimSpace(stderr)), 500, nil)
 	}
-
 	return os.ReadFile(decKeyPath)
 }
 
@@ -1228,16 +1485,6 @@ func (s *CertService) decryptLegacyEnvelope(
 // SM2 / SM4 底层原语
 // =============================================================================
 
-// sm2EncryptWithPubKey SM2 加密。返回 Tongsuo pkeyutl -encrypt 原生 ASN.1 DER。
-//
-// 输出结构：
-//
-//	SEQUENCE {
-//	    INTEGER       x,
-//	    INTEGER       y,
-//	    OCTET STRING  C3,
-//	    OCTET STRING  C2
-//	}
 func sm2EncryptWithPubKey(opensslBin string, pubPEM, plaintext []byte) ([]byte, error) {
 	tmpDir, err := os.MkdirTemp("", "sm2-enc-")
 	if err != nil {
@@ -1255,35 +1502,29 @@ func sm2EncryptWithPubKey(opensslBin string, pubPEM, plaintext []byte) ([]byte, 
 	if err := os.WriteFile(inPath, plaintext, 0600); err != nil {
 		return nil, err
 	}
-
 	_, stderr, err := RunOpenSSLFull(opensslBin, "pkeyutl", "-encrypt",
 		"-pubin", "-inkey", pubPath,
 		"-in", inPath, "-out", outPath)
 	if err != nil {
 		return nil, fmt.Errorf("openssl pkeyutl -encrypt 失败: %s", strings.TrimSpace(stderr))
 	}
-
 	return os.ReadFile(outPath)
 }
 
-// sm4EncryptECBNoPadding SM4-ECB/NoPadding 加密（输入必须 16 字节倍数）。
 func sm4EncryptECBNoPadding(opensslBin string, key, plaintext []byte) ([]byte, error) {
 	if len(plaintext)%16 != 0 {
 		return nil, fmt.Errorf("SM4-ECB/NoPadding 明文长度必须是 16 的倍数，当前 %d", len(plaintext))
 	}
-
 	tmpDir, err := os.MkdirTemp("", "sm4-ecb-")
 	if err != nil {
 		return nil, err
 	}
 	defer os.RemoveAll(tmpDir)
-
 	inPath := filepath.Join(tmpDir, "in.bin")
 	outPath := filepath.Join(tmpDir, "out.bin")
 	if err := os.WriteFile(inPath, plaintext, 0600); err != nil {
 		return nil, err
 	}
-
 	keyHex := hex.EncodeToString(key)
 	_, stderr, err := RunOpenSSLFull(opensslBin, "enc", "-sm4-ecb",
 		"-e", "-K", keyHex, "-nopad",
@@ -1294,35 +1535,29 @@ func sm4EncryptECBNoPadding(opensslBin string, key, plaintext []byte) ([]byte, e
 	return os.ReadFile(outPath)
 }
 
-// extractEncCertECPoint 从证书 PEM 中提取公钥 EC 点（未压缩 04||X||Y）。
 func extractEncCertECPoint(opensslBin string, certPEM []byte) ([]byte, error) {
 	tmpDir, err := os.MkdirTemp("", "enc-point-")
 	if err != nil {
 		return nil, err
 	}
 	defer os.RemoveAll(tmpDir)
-
 	certPath := filepath.Join(tmpDir, "cert.pem")
 	if err := os.WriteFile(certPath, certPEM, 0600); err != nil {
 		return nil, err
 	}
-
 	pubPEM, err := RunOpenSSL(opensslBin, "x509", "-in", certPath, "-noout", "-pubkey")
 	if err != nil {
 		return nil, fmt.Errorf("openssl x509 -pubkey 失败: %w", err)
 	}
-
 	pubPath := filepath.Join(tmpDir, "pub.pem")
 	if err := os.WriteFile(pubPath, []byte(pubPEM), 0600); err != nil {
 		return nil, err
 	}
-
 	derOut, stderr, err := RunOpenSSLFull(opensslBin, "ec", "-pubin",
 		"-in", pubPath, "-conv_form", "uncompressed", "-outform", "DER")
 	if err != nil {
 		return nil, fmt.Errorf("openssl ec -conv_form 失败: %s", strings.TrimSpace(stderr))
 	}
-
 	var spki struct {
 		Algorithm pkix.AlgorithmIdentifier
 		PublicKey asn1.BitString
@@ -1333,19 +1568,16 @@ func extractEncCertECPoint(opensslBin string, certPEM []byte) ([]byte, error) {
 	return spki.PublicKey.Bytes, nil
 }
 
-// extractRawECPrivateKey 从 PEM 私钥中提取 32 字节裸私钥。
 func extractRawECPrivateKey(opensslBin string, keyPEM []byte) ([]byte, error) {
 	tmpDir, err := os.MkdirTemp("", "raw-ec-")
 	if err != nil {
 		return nil, err
 	}
 	defer os.RemoveAll(tmpDir)
-
 	keyPath := filepath.Join(tmpDir, "key.pem")
 	if err := os.WriteFile(keyPath, keyPEM, 0600); err != nil {
 		return nil, err
 	}
-
 	out, stderr, err := RunOpenSSLFull(opensslBin, "ec", "-in", keyPath, "-noout", "-text")
 	if err != nil {
 		out, stderr, err = RunOpenSSLFull(opensslBin, "pkey", "-in", keyPath, "-noout", "-text")
@@ -1353,7 +1585,6 @@ func extractRawECPrivateKey(opensslBin string, keyPEM []byte) ([]byte, error) {
 			return nil, fmt.Errorf("提取裸私钥失败: %s", strings.TrimSpace(stderr))
 		}
 	}
-
 	lines := strings.Split(out, "\n")
 	var inPriv bool
 	var hexBuf strings.Builder
@@ -1374,19 +1605,14 @@ func extractRawECPrivateKey(opensslBin string, keyPEM []byte) ([]byte, error) {
 			hexBuf.WriteString(trimmed)
 		}
 	}
-
 	hexStr := hexBuf.String()
-	hexStr = strings.ReplaceAll(hexStr, ":", "")
-	hexStr = strings.ReplaceAll(hexStr, " ", "")
-	hexStr = strings.ReplaceAll(hexStr, "\n", "")
-	hexStr = strings.ReplaceAll(hexStr, "\r", "")
-	hexStr = strings.ReplaceAll(hexStr, "\t", "")
-
+	for _, r := range []string{":", " ", "\n", "\r", "\t"} {
+		hexStr = strings.ReplaceAll(hexStr, r, "")
+	}
 	raw, err := hex.DecodeString(hexStr)
 	if err != nil {
 		return nil, fmt.Errorf("解析私钥 hex 失败: %w", err)
 	}
-
 	for len(raw) > 32 && raw[0] == 0 {
 		raw = raw[1:]
 	}
@@ -1397,7 +1623,7 @@ func extractRawECPrivateKey(opensslBin string, keyPEM []byte) ([]byte, error) {
 }
 
 // =============================================================================
-// 公钥提取 / 比对辅助
+// 公钥提取 / 比对
 // =============================================================================
 
 func extractPubKeyFromCertPEM(opensslBin, certPEM string) ([]byte, error) {
@@ -1406,12 +1632,10 @@ func extractPubKeyFromCertPEM(opensslBin, certPEM string) ([]byte, error) {
 		return nil, fmt.Errorf("创建临时目录失败: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	certPath := filepath.Join(tmpDir, "cert.pem")
 	if err := os.WriteFile(certPath, []byte(certPEM), 0600); err != nil {
 		return nil, fmt.Errorf("写临时证书失败: %w", err)
 	}
-
 	out, err := RunOpenSSL(opensslBin, "x509", "-in", certPath, "-noout", "-pubkey")
 	if err != nil {
 		return nil, fmt.Errorf("openssl x509 -pubkey 失败: %w", err)
@@ -1426,7 +1650,6 @@ func extractPubKeyFromCSR(opensslBin, csrPath string) ([]byte, error) {
 	if _, err := os.Stat(csrPath); err != nil {
 		return nil, fmt.Errorf("P10 文件不存在: %s: %w", csrPath, err)
 	}
-
 	out, err := RunOpenSSL(opensslBin, "req", "-in", csrPath, "-noout", "-pubkey")
 	if err != nil {
 		return nil, fmt.Errorf("openssl req -pubkey 失败: %w", err)
@@ -1465,7 +1688,7 @@ func pubKeySHA256(pemBytes []byte) string {
 }
 
 // =============================================================================
-// 导入证书
+// 导入单证书
 // =============================================================================
 
 func (s *CertService) Import(
@@ -1476,79 +1699,91 @@ func (s *CertService) Import(
 		return nil, exception.New(exception.CodeParamInvalid, "证书不是有效的 PEM 格式", 400, nil)
 	}
 
-	id := newShortID()
-	certID := "cert-" + id
-	certRel := fmt.Sprintf("data/certs/imported-%s.pem", id)
+	dirNo, err := s.layout.AllocServerDir()
+	if err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("分配 server 目录失败：%v", err), 500, nil)
+	}
+	dir, _ := s.layout.ServerDir(dirNo)
 
-	if err := s.files.WriteCoreFile(certRel, []byte(certPEM), 0640); err != nil {
-		return nil, err
+	bin := s.parser.OpensslBin()
+	if bin == "" {
+		return nil, exception.New(exception.CodeInternalError, "铜锁 openssl 不可用", 500, nil)
+	}
+	pubSM3, err := PubkeySM3FromCertPEM(bin, certPEM)
+	if err != nil {
+		return nil, exception.New(exception.CodeParamInvalid,
+			fmt.Sprintf("计算证书公钥 SM3 失败：%v", err), 400, nil)
+	}
+	certAbs := filepath.Join(dir, pubSM3+".cert.pem")
+	if err := os.WriteFile(certAbs, []byte(certPEM), 0640); err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("写证书失败：%v", err), 500, nil)
 	}
 	success := false
 	defer func() {
 		if !success {
-			_ = s.files.SafeRemove(certRel)
+			_ = os.Remove(certAbs)
 		}
 	}()
 
-	abs, err := s.files.guard.Resolve(certRel, "cert_path")
-	if err != nil {
-		return nil, err
-	}
-	detail, err := s.parser.Parse(abs)
+	detail, err := s.parser.Parse(certAbs)
 	if err != nil {
 		return nil, exception.New(exception.CodeParamInvalid,
 			fmt.Sprintf("证书解析失败: %v", err), 400, nil)
 	}
 
 	var keyRef *string
+	var keyPath string
+
 	if strings.TrimSpace(req.KeyPEM) != "" {
 		if !strings.Contains(req.KeyPEM, "-----BEGIN") {
 			return nil, exception.New(exception.CodeParamInvalid, "私钥不是有效的 PEM 格式", 400, nil)
 		}
-		keyRel := fmt.Sprintf("tmp/import-cert-key-%s.pem", id)
-		if err := s.files.WriteCoreFile(keyRel, []byte(req.KeyPEM), 0600); err != nil {
-			return nil, err
-		}
-		defer s.files.SafeRemove(keyRel)
-
-		keyAbs, _ := s.files.guard.Resolve(keyRel, "key_path")
-		if bin := s.parser.OpensslBin(); bin != "" {
-			encrypted, _ := s.keys.IsEncrypted(bin, keyAbs)
-			if encrypted {
+		plainKeyPEM := []byte(req.KeyPEM)
+		if s.keys != nil {
+			tmpDir, _ := os.MkdirTemp("", "import-key-")
+			defer os.RemoveAll(tmpDir)
+			tmpKey := filepath.Join(tmpDir, "key.pem")
+			if err := os.WriteFile(tmpKey, []byte(req.KeyPEM), 0600); err != nil {
+				return nil, exception.New(exception.CodeInternalError, "写临时私钥失败", 500, nil)
+			}
+			if encrypted, _ := s.keys.IsEncrypted(bin, tmpKey); encrypted {
 				if strings.TrimSpace(req.KeyPassword) == "" {
 					return nil, exception.New(exception.CodeParamInvalid,
 						"私钥已加密，请提供私钥密码", 400, nil)
 				}
-				pwRel := fmt.Sprintf("tmp/import-cert-pass-%s", id)
-				plainRel := fmt.Sprintf("tmp/import-cert-plain-%s.pem", id)
-				if err := s.files.WriteCoreFile(pwRel, []byte(req.KeyPassword), 0600); err != nil {
-					return nil, err
+				pwPath := filepath.Join(tmpDir, "pw.txt")
+				plainPath := filepath.Join(tmpDir, "plain.key")
+				if err := os.WriteFile(pwPath, []byte(req.KeyPassword), 0600); err != nil {
+					return nil, exception.New(exception.CodeInternalError, "写口令文件失败", 500, nil)
 				}
-				defer s.files.SafeRemove(pwRel)
-				defer s.files.SafeRemove(plainRel)
-
-				pwAbs, _ := s.files.guard.Resolve(pwRel, "path")
-				plainAbs, _ := s.files.guard.Resolve(plainRel, "path")
-
-				if err := s.keys.DecryptWithPasswordFile(bin, keyAbs, pwAbs, plainAbs); err != nil {
+				if err := s.keys.DecryptWithPasswordFile(bin, tmpKey, pwPath, plainPath); err != nil {
 					return nil, exception.New(exception.CodeParamInvalid,
 						"私钥密码错误或解密失败", 400, nil)
 				}
-				plainData, err := s.files.ReadCoreFile(plainRel)
+				data, err := os.ReadFile(plainPath)
 				if err != nil {
-					return nil, err
+					return nil, exception.New(exception.CodeInternalError, "读解密私钥失败", 500, nil)
 				}
-				if err := s.files.WriteCoreFile(keyRel, plainData, 0600); err != nil {
-					return nil, err
-				}
+				plainKeyPEM = data
 			}
 		}
 
-		ref, err := s.caller.ImportKey(ctx, keyRel, detail.PublicKeyAlgorithm)
-		if err != nil {
-			return nil, err
+		keyPath = filepath.Join(dir, pubSM3+".key.pem")
+
+		plainTmp := filepath.Join(dir, ".import.key.plain.tmp")
+		if err := os.WriteFile(plainTmp, plainKeyPEM, 0600); err != nil {
+			return nil, exception.New(exception.CodeInternalError,
+				fmt.Sprintf("写临时私钥失败：%v", err), 500, nil)
 		}
-		keyRef = &ref
+		defer os.Remove(plainTmp)
+
+		if err := s.whitebox.EncryptFile(ctx, plainTmp, keyPath); err != nil {
+			return nil, exception.New(exception.CodeInternalError,
+				fmt.Sprintf("白盒加密私钥失败：%v", err), 500, nil)
+		}
+		_ = os.Chmod(keyPath, 0600)
 	} else if req.KeyRef != "" {
 		keyRef = &req.KeyRef
 	}
@@ -1557,25 +1792,27 @@ func (s *CertService) Import(
 
 	now := time.Now().UTC()
 	cert := &models.Certificate{
-		CertID:             certID,
+		CertID:             "cert-" + dirNo + "-" + pubSM3[:12],
 		CertType:           inferredType,
 		Serial:             detail.Serial,
 		Subject:            detail.Subject,
-		SubjectCN:          extractCNFromSubject(detail.Subject),
+		SubjectCN:          cnFromSubject(detail.Subject), // ★ 无 fallback
 		Issuer:             detail.Issuer,
-		IssuerCN:           extractCNFromSubject(detail.Issuer),
+		IssuerCN:           cnFromSubject(detail.Issuer),  // ★ 无 fallback
 		Algorithm:          detail.PublicKeyAlgorithm,
 		Fingerprint:        detail.Fingerprint,
 		PublicKeyAlgorithm: detail.PublicKeyAlgorithm,
 		SignatureAlgorithm: detail.SignatureAlgorithm,
 		NotBefore:          now,
 		NotAfter:           now,
-		CertPath:           certRel,
+		CertPath:           certAbs,
 		KeyRef:             keyRef,
 		Status:             "VALID",
 		CreatedAt:          now,
 	}
-
+	if keyPath != "" {
+		cert.KeyPath = &keyPath
+	}
 	if err := s.db.Create(cert).Error; err != nil {
 		return nil, exception.New(exception.CodeInternalError,
 			fmt.Sprintf("证书元数据落库失败: %v", err), 500, nil)
@@ -1584,11 +1821,130 @@ func (s *CertService) Import(
 	return cert, nil
 }
 
+// ImportDualCert 国密双证导入。
+func (s *CertService) ImportDualCert(
+	ctx context.Context, req *ImportDualCertRequest,
+) (*models.Certificate, error) {
+	if req == nil ||
+		strings.TrimSpace(req.CSRPubSM3) == "" ||
+		strings.TrimSpace(req.SignCertPEM) == "" ||
+		strings.TrimSpace(req.EncCertPEM) == "" ||
+		strings.TrimSpace(req.EncKeyPEM) == "" {
+		return nil, exception.New(exception.CodeParamInvalid, "双证导入参数不完整", 400, nil)
+	}
+	bin := s.parser.OpensslBin()
+	if bin == "" {
+		return nil, exception.New(exception.CodeInternalError, "铜锁 openssl 不可用", 500, nil)
+	}
+
+	csrDir, err := s.layout.FindCSRDirByPubkeySM3(req.CSRPubSM3)
+	if err != nil {
+		return nil, err
+	}
+
+	signPubSM3, err := PubkeySM3FromCertPEM(bin, req.SignCertPEM)
+	if err != nil {
+		return nil, exception.New(exception.CodeParamInvalid,
+			fmt.Sprintf("签名证书公钥 SM3 计算失败：%v", err), 400, nil)
+	}
+	signCertAbs := filepath.Join(csrDir, signPubSM3+".cert.pem")
+	if err := os.WriteFile(signCertAbs, []byte(req.SignCertPEM), 0640); err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("写签名证书失败：%v", err), 500, nil)
+	}
+
+	encDirNo, err := s.layout.AllocServerDir()
+	if err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("分配加密证书目录失败：%v", err), 500, nil)
+	}
+	encDir, _ := s.layout.ServerDir(encDirNo)
+
+	encPubSM3, err := PubkeySM3FromCertPEM(bin, req.EncCertPEM)
+	if err != nil {
+		return nil, exception.New(exception.CodeParamInvalid,
+			fmt.Sprintf("加密证书公钥 SM3 计算失败：%v", err), 400, nil)
+	}
+	encCertAbs := filepath.Join(encDir, encPubSM3+".cert.pem")
+	if err := os.WriteFile(encCertAbs, []byte(req.EncCertPEM), 0640); err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("写加密证书失败：%v", err), 500, nil)
+	}
+
+	plainKeyPEM := []byte(req.EncKeyPEM)
+	if strings.TrimSpace(req.EncKeyPassword) != "" && s.keys != nil {
+		tmpDir, _ := os.MkdirTemp("", "import-dual-key-")
+		defer os.RemoveAll(tmpDir)
+		tmpKey := filepath.Join(tmpDir, "key.pem")
+		pwPath := filepath.Join(tmpDir, "pw.txt")
+		plainPath := filepath.Join(tmpDir, "plain.key")
+		if err := os.WriteFile(tmpKey, []byte(req.EncKeyPEM), 0600); err != nil {
+			return nil, exception.New(exception.CodeInternalError, "写临时私钥失败", 500, nil)
+		}
+		if err := os.WriteFile(pwPath, []byte(req.EncKeyPassword), 0600); err != nil {
+			return nil, exception.New(exception.CodeInternalError, "写口令文件失败", 500, nil)
+		}
+		if err := s.keys.DecryptWithPasswordFile(bin, tmpKey, pwPath, plainPath); err != nil {
+			return nil, exception.New(exception.CodeParamInvalid,
+				"加密私钥口令错误或解密失败", 400, nil)
+		}
+		data, err := os.ReadFile(plainPath)
+		if err != nil {
+			return nil, exception.New(exception.CodeInternalError, "读解密私钥失败", 500, nil)
+		}
+		plainKeyPEM = data
+	}
+
+	encKeyAbs := filepath.Join(encDir, encPubSM3+".key.pem")
+
+	plainTmp := filepath.Join(encDir, ".import.dual.key.plain.tmp")
+	if err := os.WriteFile(plainTmp, plainKeyPEM, 0600); err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("写临时私钥失败：%v", err), 500, nil)
+	}
+	defer os.Remove(plainTmp)
+
+	if err := s.whitebox.EncryptFile(ctx, plainTmp, encKeyAbs); err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("白盒加密私钥失败：%v", err), 500, nil)
+	}
+	_ = os.Chmod(encKeyAbs, 0600)
+
+	now := time.Now().UTC()
+	encDetail, _ := s.parser.Parse(encCertAbs)
+	cert := &models.Certificate{
+		CertID:    "dual-enc-" + encDirNo + "-" + encPubSM3[:12],
+		CertType:  "dual_enc",
+		CertPath:  encCertAbs,
+		Algorithm: "SM2",
+		Status:    "VALID",
+		NotBefore: now,
+		NotAfter:  now,
+		CreatedAt: now,
+	}
+	if encDetail != nil {
+		cert.Serial = encDetail.Serial
+		cert.Subject = encDetail.Subject
+		cert.SubjectCN = cnFromSubject(encDetail.Subject)
+		cert.Issuer = encDetail.Issuer
+		cert.IssuerCN = cnFromSubject(encDetail.Issuer)
+		cert.Fingerprint = encDetail.Fingerprint
+		cert.PublicKeyAlgorithm = encDetail.PublicKeyAlgorithm
+		cert.SignatureAlgorithm = encDetail.SignatureAlgorithm
+	}
+	cert.KeyPath = &encKeyAbs
+
+	if err := s.db.Create(cert).Error; err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("双证加密证书落库失败：%v", err), 500, nil)
+	}
+	return cert, nil
+}
+
 func inferCertType(keyUsage, eku, pubAlg string) string {
 	kuLower := strings.ToLower(keyUsage)
 	hasSig := strings.Contains(kuLower, "digital signature") || strings.Contains(kuLower, "non repudiation")
 	hasEnc := strings.Contains(kuLower, "key encipherment") || strings.Contains(kuLower, "key agreement")
-
 	switch {
 	case hasSig && hasEnc:
 		return "signature,encryption"
@@ -1597,14 +1953,12 @@ func inferCertType(keyUsage, eku, pubAlg string) string {
 	case hasEnc:
 		return "encryption"
 	}
-
 	ekuLower := strings.ToLower(eku)
 	if strings.Contains(ekuLower, "server authentication") ||
 		strings.Contains(ekuLower, "client authentication") ||
 		strings.Contains(ekuLower, "code signing") {
 		return "signature"
 	}
-
 	pubLower := strings.ToLower(pubAlg)
 	switch {
 	case strings.Contains(pubLower, "ml-kem"):
@@ -1622,7 +1976,7 @@ func inferCertType(keyUsage, eku, pubAlg string) string {
 }
 
 // =============================================================================
-// 导出 / 删除
+// 导出
 // =============================================================================
 
 func (s *CertService) Export(
@@ -1632,12 +1986,14 @@ func (s *CertService) Export(
 	if err != nil {
 		return nil, err
 	}
-
 	switch exportType {
 	case "cert":
-		data, err := s.files.ReadCoreFile(c.CertPath)
+		data, err := os.ReadFile(c.CertPath)
 		if err != nil {
-			return nil, err
+			data, err = s.files.ReadCoreFile(c.CertPath)
+			if err != nil {
+				return nil, err
+			}
 		}
 		return &ExportResult{
 			Data:        data,
@@ -1646,12 +2002,16 @@ func (s *CertService) Export(
 		}, nil
 
 	case "key":
-		if c.KeyRef == nil || *c.KeyRef == "" {
-			return nil, exception.New(exception.CodeParamInvalid, "该证书未关联私钥", 400, nil)
-		}
-		plain, err := s.caller.ExportKey(ctx, *c.KeyRef)
+		keyPEM, err := s.exportKeyFromStorage(ctx, c)
 		if err != nil {
-			return nil, err
+			if c.KeyRef != nil && *c.KeyRef != "" {
+				keyPEM, err = s.caller.ExportKey(ctx, *c.KeyRef)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				return nil, err
+			}
 		}
 		if strings.TrimSpace(password) != "" {
 			bin := s.parser.OpensslBin()
@@ -1659,15 +2019,15 @@ func (s *CertService) Export(
 				return nil, exception.New(exception.CodeInternalError,
 					"铜锁 openssl 不可用，无法加密私钥", 500, nil)
 			}
-			encrypted, err := encryptPrivateKeyPEM(bin, plain, password)
+			encrypted, err := encryptPrivateKeyPEM(bin, keyPEM, password)
 			if err != nil {
 				return nil, exception.New(exception.CodeInternalError,
 					fmt.Sprintf("加密私钥失败: %v", err), 500, nil)
 			}
-			plain = encrypted
+			keyPEM = encrypted
 		}
 		return &ExportResult{
-			Data:        plain,
+			Data:        keyPEM,
 			Filename:    certID + ".key.pem",
 			ContentType: "application/x-pem-file",
 		}, nil
@@ -1695,18 +2055,204 @@ func (s *CertService) Export(
 	}
 }
 
+func (s *CertService) exportKeyFromStorage(
+	ctx context.Context, c *models.Certificate,
+) ([]byte, error) {
+	keyAbs := s.resolveCertKeyPath(c)
+	if keyAbs == "" {
+		return nil, exception.New(exception.CodeParamInvalid,
+			"该证书未关联白盒私钥", 400, nil)
+	}
+	if _, err := os.Stat(keyAbs); err != nil {
+		return nil, exception.New(exception.CodeNotFound, "白盒私钥文件不存在", 404, nil)
+	}
+	plainTmp, err := s.whitebox.DecryptToTemp(ctx, keyAbs, s.layout.TmpDir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = s.whitebox.ReEncrypt(ctx, plainTmp, keyAbs)
+		_ = os.Remove(plainTmp)
+	}()
+	return os.ReadFile(plainTmp)
+}
+
+func (s *CertService) resolveCertKeyPath(c *models.Certificate) string {
+	if c == nil {
+		return ""
+	}
+	if c.KeyPath != nil && *c.KeyPath != "" {
+		p := *c.KeyPath
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(s.layout.CertRoot, p)
+		}
+		return p
+	}
+	if c.ChainPath != nil && *c.ChainPath != "" {
+		p := *c.ChainPath
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(s.layout.CertRoot, p)
+		}
+		return p
+	}
+	return ""
+}
+
+// =============================================================================
+// 删除（硬删除）
+// =============================================================================
+
 func (s *CertService) Delete(certID string) error {
-	res := s.db.Model(&models.Certificate{}).
-		Where("cert_id = ? AND status <> ?", certID, "DELETED").
-		Updates(map[string]interface{}{"status": "DELETED"})
-	if res.Error != nil {
+	var c models.Certificate
+	if err := s.db.Where("cert_id = ?", certID).First(&c).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return exception.New(exception.CodeNotFound, "证书不存在", 404, nil)
+		}
 		return exception.New(exception.CodeInternalError,
-			fmt.Sprintf("删除证书失败: %v", res.Error), 500, nil)
+			fmt.Sprintf("查询证书失败: %v", err), 500, nil)
 	}
-	if res.RowsAffected == 0 {
-		return exception.New(exception.CodeNotFound, "证书不存在或已删除", 404, nil)
+
+	var files []string
+	if c.CertPath != "" {
+		if abs := s.absUnderCertRoot(c.CertPath); abs != "" {
+			files = append(files, abs)
+		}
 	}
+	if kp := s.resolveCertKeyPath(&c); kp != "" && s.underCertRoot(kp) {
+		files = append(files, kp)
+	}
+	if c.CertPath != "" {
+		if abs := s.absUnderCertRoot(c.CertPath); abs != "" {
+			files = append(files, findRehashLinks(abs)...)
+		}
+	}
+
+	if err := s.db.Unscoped().
+		Where("cert_id = ?", certID).
+		Delete(&models.Certificate{}).Error; err != nil {
+		return exception.New(exception.CodeInternalError,
+			fmt.Sprintf("删除证书记录失败: %v", err), 500, nil)
+	}
+
+	removed := 0
+	for _, f := range files {
+		if err := os.Remove(f); err != nil {
+			if !os.IsNotExist(err) {
+				log.Warn().Str("file", f).Err(err).
+					Msg("Delete: 删除文件失败（忽略）")
+			}
+		} else {
+			removed++
+		}
+	}
+
+	// ★ 清理空目录：只删 server/<dir_no> 类型的目录
+	if c.CertPath != "" {
+		if abs := s.absUnderCertRoot(c.CertPath); abs != "" {
+			s.tryRemoveEmptyDir(filepath.Dir(abs))
+		}
+	}
+
+	log.Info().
+		Str("cert_id", certID).
+		Int("files_removed", removed).
+		Int("files_total", len(files)).
+		Msg("证书已硬删除")
 	return nil
+}
+
+func (s *CertService) tryRemoveEmptyDir(dir string) {
+	if dir == "" || s.layout == nil {
+		return
+	}
+	abs := filepath.Clean(dir)
+	root := filepath.Clean(s.layout.CertRoot)
+	if abs == root {
+		return
+	}
+	if !s.underCertRoot(abs) {
+		return
+	}
+
+	base := filepath.Base(abs)
+	parent := filepath.Dir(abs)
+
+	isServerDir := parent == filepath.Clean(s.layout.ServerRoot) && dirNoRe.MatchString(base)
+	isCADir := parent == filepath.Clean(s.layout.CARoot) &&
+		base != "" && !strings.HasPrefix(base, ".")
+
+	if !isServerDir && !isCADir {
+		return
+	}
+
+	entries, err := os.ReadDir(abs)
+	if err != nil || len(entries) > 0 {
+		return
+	}
+
+	if err := os.Remove(abs); err != nil {
+		log.Warn().Str("dir", abs).Err(err).Msg("Delete: 删除空目录失败（忽略）")
+		return
+	}
+	log.Info().Str("dir", abs).Msg("Delete: 已删除空目录")
+}
+
+func findRehashLinks(target string) []string {
+	dir := filepath.Dir(target)
+	base := filepath.Base(target)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var links []string
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".0") || len(name) != 10 {
+			continue
+		}
+		full := filepath.Join(dir, name)
+		info, err := os.Lstat(full)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+		linkTarget, err := os.Readlink(full)
+		if err != nil {
+			continue
+		}
+		if linkTarget == base || linkTarget == target {
+			links = append(links, full)
+		}
+	}
+	return links
+}
+
+func (s *CertService) absUnderCertRoot(p string) string {
+	if p == "" {
+		return ""
+	}
+	abs := p
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(s.layout.CertRoot, p)
+	}
+	if s.underCertRoot(abs) {
+		return abs
+	}
+	if s.caller != nil {
+		abs2 := s.caller.ResolveCorePath(p)
+		if s.underCertRoot(abs2) {
+			return abs2
+		}
+	}
+	return ""
+}
+
+func (s *CertService) underCertRoot(p string) bool {
+	if s.layout == nil || s.layout.CertRoot == "" {
+		return false
+	}
+	abs := filepath.Clean(p)
+	root := filepath.Clean(s.layout.CertRoot)
+	return abs == root || strings.HasPrefix(abs, root+string(os.PathSeparator))
 }
 
 // =============================================================================
@@ -1730,9 +2276,6 @@ func (s *CertService) exportKeyPEM(
 	return encryptPrivateKeyPEM(bin, plain, password)
 }
 
-// encryptPrivateKeyPEM 用 AES-256-CBC 加密私钥 PEM。
-//
-// ★ 包级函数，被 csr_service.go 等引用。
 func encryptPrivateKeyPEM(
 	opensslBin string, plainPEM []byte, password string,
 ) ([]byte, error) {
@@ -1741,27 +2284,19 @@ func encryptPrivateKeyPEM(
 		return nil, fmt.Errorf("创建临时目录失败: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
-
 	plainPath := filepath.Join(tmpDir, "plain.key")
 	encPath := filepath.Join(tmpDir, "enc.key")
 	pwPath := filepath.Join(tmpDir, "pw.txt")
-
 	if err := os.WriteFile(plainPath, plainPEM, 0600); err != nil {
 		return nil, fmt.Errorf("写明文私钥失败: %w", err)
 	}
 	if err := os.WriteFile(pwPath, []byte(password), 0600); err != nil {
 		return nil, fmt.Errorf("写口令文件失败: %w", err)
 	}
-
 	_, stderr, err := RunOpenSSLFull(opensslBin, "pkey",
 		"-in", plainPath, "-aes-256-cbc", "-passout", "file:"+pwPath, "-out", encPath)
 	if err != nil {
 		return nil, fmt.Errorf("openssl pkey 加密失败: %s", strings.TrimSpace(stderr))
 	}
-
-	enc, err := os.ReadFile(encPath)
-	if err != nil {
-		return nil, fmt.Errorf("读取加密结果失败: %w", err)
-	}
-	return enc, nil
+	return os.ReadFile(encPath)
 }

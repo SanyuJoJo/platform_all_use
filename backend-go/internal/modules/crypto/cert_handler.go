@@ -22,7 +22,7 @@ func NewCertHandler(svc *CertService) *CertHandler {
 
 // RegisterRoutes 注册证书路由。
 //
-// 注意：静态段 /sign、/import、/envelope/query 必须早于 /:cert_id。
+// 注意：静态段 /sign、/import、/dual/import、/envelope/query 必须早于 /:cert_id。
 func (h *CertHandler) RegisterRoutes(r *gin.RouterGroup) {
 	certs := r.Group("/certs")
 
@@ -37,6 +37,10 @@ func (h *CertHandler) RegisterRoutes(r *gin.RouterGroup) {
 	certs.POST("/import",
 		middleware.RequirePermission("crypto_console:cert:import"),
 		h.Import,
+	)
+	certs.POST("/dual/import",
+		middleware.RequirePermission("crypto_console:cert:import"),
+		h.ImportDualCert,
 	)
 	certs.POST("/envelope/query",
 		middleware.RequirePermission("crypto_console:cert:view"),
@@ -91,7 +95,7 @@ func (h *CertHandler) GetDetail(c *gin.Context) {
 	response.Success(c, data, "success")
 }
 
-// Sign 签发证书。
+// Sign 签发证书（普通 / 双证）。
 func (h *CertHandler) Sign(c *gin.Context) {
 	var req SignCertRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -110,7 +114,7 @@ func (h *CertHandler) Sign(c *gin.Context) {
 	response.SuccessWithStatus(c, http.StatusCreated, result, "签发成功")
 }
 
-// Import 导入证书。
+// Import 导入单证书。
 func (h *CertHandler) Import(c *gin.Context) {
 	var req ImportCertRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -129,7 +133,26 @@ func (h *CertHandler) Import(c *gin.Context) {
 	response.SuccessWithStatus(c, http.StatusCreated, data, "导入成功")
 }
 
-// Export 导出证书。
+// ImportDualCert 国密双证导入。
+func (h *CertHandler) ImportDualCert(c *gin.Context) {
+	var req ImportDualCertRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusUnprocessableEntity,
+			exception.CodeValidationFail, "请求参数校验失败",
+			gin.H{"errors": []map[string]interface{}{
+				{"type": "invalid_json", "msg": err.Error()},
+			}})
+		return
+	}
+	data, err := h.svc.ImportDualCert(c.Request.Context(), &req)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.SuccessWithStatus(c, http.StatusCreated, data, "双证导入成功")
+}
+
+// Export 导出证书 / 私钥 / PKCS#12。
 func (h *CertHandler) Export(c *gin.Context) {
 	var req ExportCertRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -151,27 +174,6 @@ func (h *CertHandler) Export(c *gin.Context) {
 }
 
 // QueryEnvelope 查询信封信息。
-//
-// 请求：
-//
-//	{
-//	  "format":  "pkcs10",
-//	  "cert_id": "dual-sign-xxx"
-//	}
-//
-// 响应：
-//
-//	{
-//	  "format":               "pkcs10",
-//	  "sign_cert_id":         "dual-sign-xxx",
-//	  "enc_cert_id":          "dual-enc-xxx",
-//	  "algorithm":            "SM2+SM4-CBC",
-//	  "sign_alg":             "SM3withSM2",
-//	  "enc_alg":              "SM4-CBC",
-//	  "symmetric_key_cipher": "...",
-//	  "iv":                   "...",
-//	  "encrypted_private_key": "..."
-//	}
 func (h *CertHandler) QueryEnvelope(c *gin.Context) {
 	var req QueryEnvelopeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -190,9 +192,21 @@ func (h *CertHandler) QueryEnvelope(c *gin.Context) {
 	response.Success(c, data, "success")
 }
 
-// Delete 删除证书。
+// Delete 硬删除证书（不可恢复）。
+//
+// 行为：
+//   - 删除 DB 记录（Unscoped，物理删除）
+//   - 删除磁盘文件（.cert.pem / .key.pem，路径必须在 CertRoot 下）
+//
+// 审计与恢复能力由上层自行设计。
 func (h *CertHandler) Delete(c *gin.Context) {
-	if err := h.svc.Delete(c.Param("cert_id")); err != nil {
+	certID := c.Param("cert_id")
+	if certID == "" {
+		response.Error(c, http.StatusBadRequest,
+			exception.CodeParamInvalid, "缺少 cert_id", nil)
+		return
+	}
+	if err := h.svc.Delete(certID); err != nil {
 		handleError(c, err)
 		return
 	}

@@ -15,37 +15,28 @@ import (
 	"github.com/yourorg/core-go/internal/pathguard"
 )
 
-// DualCertCreateHandler dual_cert.create。
+// DualCertCreateHandler dual_cert.create 国密双证签发。
 //
 // ★ 正确流程：
-//   1. 客户本地生成 CSR，私钥 s_pri 永不上传；
+//   1. 客户本地生成 CSR，私钥 s_pri 永不上传（签名私钥归客户）；
 //   2. core 用 CSR 的公钥 s_pub 签发【签名证书】（不重新生成签名密钥对）；
 //   3. core 内部生成加密密钥对 e_pri / e_pub，用 e_pub 签发【加密证书】；
-//   4. 返回 sign_cert_path / enc_cert_path / enc_key_ref（一次性）。
+//   4. 返回 sign_cert_path / enc_cert_path / enc_key_ref（一次性）；
+//      backend-go 侧拿到 enc_key_ref 后导出私钥 → 白盒加密 → 落盘 → 删除 core 引用。
 //
-// ★ 使用者 DN：
-//   - 若 params.subject 提供，则签名证书和加密证书都使用该 DN
-//     （签名证书通过 -subj 覆盖 CSR 中的默认 DN）；
-//   - 若未提供，则签名证书沿用 CSR 的 DN，加密证书从 CSR 中提取相同的 DN，
-//     保证两证书 DN 一致。
+// ★ 路径约定（无 -chain.pem）：
+//   - sign_output_dir 非空：
+//       <sign_output_dir>/<sign_pubkey_sm3>.cert.pem
+//     sign_output_dir 为空：
+//       <CoreRoot>/data/certs/<sign_cert_id>.pem
+//   - enc_output_dir 非空：
+//       <enc_output_dir>/<enc_pubkey_sm3>.cert.pem
+//     enc_output_dir 为空：
+//       <CoreRoot>/data/certs/<enc_cert_id>.pem
 //
-// ★ 输入 params：
-//   csr_path        : 客户上传的 CSR 文件路径（core root 相对路径）—— 必填
-//   ca_id           : CA 标识
-//   ca_cert_path    : CA 证书路径
-//   ca_key_ref      : CA 私钥 key_ref
-//   subject         : 使用者 DN（可选；不填则用 CSR 里的）
-//   san             : SAN 列表
-//   validity_days   : 有效期
-//
-// ★ 输出 data：
-//   sign_cert_path  : 签名证书路径
-//   sign_cert_id    : 签名证书内部 ID
-//   enc_cert_path   : 加密证书路径
-//   enc_cert_id     : 加密证书内部 ID
-//   enc_key_ref     : 加密私钥的一次性 key_ref（后端构建信封后立即删除）
-//   chain_path      : 链文件路径
-//   ★ 不返回 sign_key_ref —— 签名私钥 s_pri 只在客户端
+// ★ 证书校验：
+//   依赖 <CertRoot>/ca/<domain>/ 下的 rehash 文件（<hash>.0），
+//   由 openssl verify -CApath 自动定位，不需要 chain 文件。
 type DualCertCreateHandler struct{}
 
 func (h *DualCertCreateHandler) Execute(
@@ -53,6 +44,7 @@ func (h *DualCertCreateHandler) Execute(
 ) *envelope.Response {
 	start := time.Now()
 
+	// ---------- 算法校验 ----------
 	signAlg := strParamDefault(req.Params, "sign_algorithm", "SM2")
 	encAlg := strParamDefault(req.Params, "enc_algorithm", "SM2")
 	tlcp := strParamDefault(req.Params, "tlcp_profile", "GB/T 38636-2020")
@@ -67,12 +59,13 @@ func (h *DualCertCreateHandler) Execute(
 			})
 	}
 
-	// ---- 必须提供 CSR ----
+	// ---------- CSR（必填） ----------
 	csrPath := strParam(req.Params, "csr_path")
 	if csrPath == "" {
 		return genErr("INVALID_PARAM", "missing csr_path (客户 CSR 必须提供)")
 	}
 
+	// ---------- 父 CA ----------
 	caCertRel := strParam(req.Params, "ca_cert_path")
 	caKeyRef := strParam(req.Params, "ca_key_ref")
 	if caCertRel == "" || caKeyRef == "" {
@@ -84,7 +77,12 @@ func (h *DualCertCreateHandler) Execute(
 		days = 365
 	}
 
-	// ---- 路径解析 ----
+	// ---------- 输出路径参数 ----------
+	signOutputDir := strParam(req.Params, "sign_output_dir")
+	encOutputDir := strParam(req.Params, "enc_output_dir")
+	outputLayout := strParamDefault(req.Params, "output_layout", "server_pubkey_sm3")
+
+	// ---------- 解析 CSR ----------
 	csrAbs, err := pathguard.Resolve(csrPath)
 	if err != nil {
 		return genErr("PATH_NOT_ALLOWED", "invalid csr_path: "+err.Error())
@@ -93,6 +91,7 @@ func (h *DualCertCreateHandler) Execute(
 		return genErr("INVALID_PARAM", "csr file not found: "+csrPath)
 	}
 
+	// ---------- 解析父 CA ----------
 	caCertAbs, err := pathguard.Resolve(caCertRel)
 	if err != nil {
 		return genErr("PATH_NOT_ALLOWED", err.Error())
@@ -101,12 +100,14 @@ func (h *DualCertCreateHandler) Execute(
 		return genErr("CERT_NOT_FOUND", "ca cert not found")
 	}
 
+	// ---------- 临时目录 ----------
 	tmpDir, err := mkTmpDir("dual-cert")
 	if err != nil {
 		return genErr("CORE_EXEC_FAILED", err.Error())
 	}
 	defer cleanupTmpDir(tmpDir)
 
+	// ---------- 解密父 CA 私钥 ----------
 	caKeyAbs, err := loadDecryptedKey(caKeyRef, tmpDir)
 	if err != nil {
 		return genErr("KEY_NOT_FOUND", err.Error())
@@ -153,22 +154,42 @@ func (h *DualCertCreateHandler) Execute(
 	}
 
 	// ========================================================================
-	// 步骤 1：用 CSR 签发签名证书
+	// 步骤 1：用 CSR 签发【签名证书】
 	//
 	// ★ 关键：openssl x509 -req 会从 CSR 中读取公钥并写入证书，
 	//   因此签名证书公钥 = CSR 公钥 = 客户 s_pub。
-	//   若用户提供了 DN，用 -subj 覆盖 CSR 里的 DN。
+	//   客户私钥 s_pri 永远不上传，core 也不落签名私钥。
 	// ========================================================================
 	signCertID := newID("dual-sign")
-	signCertRel := "data/certs/" + signCertID + ".pem"
-	signCertAbs, err := pathguard.Resolve(signCertRel)
-	if err != nil {
-		return genErr("PATH_NOT_ALLOWED", err.Error())
-	}
-	if err := pathguard.EnsureDir(filepath.Dir(signCertAbs), 0750); err != nil {
-		return genErr("CORE_EXEC_FAILED", err.Error())
+	var (
+		signCertAbs      string
+		signCertRespPath string
+		signUseNew       bool
+	)
+
+	if signOutputDir != "" {
+		signUseNew = true
+		if !filepath.IsAbs(signOutputDir) {
+			return genErr("INVALID_PARAM", "sign_output_dir must be absolute")
+		}
+		if err := os.MkdirAll(signOutputDir, 0750); err != nil {
+			return genErr("CORE_EXEC_FAILED", "mkdir sign_output_dir: "+err.Error())
+		}
+		signCertAbs = filepath.Join(signOutputDir, signCertID+".cert.pem.tmp")
+	} else {
+		signCertRel := "data/certs/" + signCertID + ".pem"
+		var rerr error
+		signCertAbs, rerr = pathguard.Resolve(signCertRel)
+		if rerr != nil {
+			return genErr("PATH_NOT_ALLOWED", rerr.Error())
+		}
+		if err := pathguard.EnsureDir(filepath.Dir(signCertAbs), 0750); err != nil {
+			return genErr("CORE_EXEC_FAILED", err.Error())
+		}
+		signCertRespPath = signCertRel
 	}
 
+	// 签名证书扩展配置
 	signExt := filepath.Join(tmpDir, "sign.ext")
 	signExtContent := "basicConstraints=CA:FALSE\n" +
 		"keyUsage=critical,digitalSignature,nonRepudiation\n" +
@@ -187,7 +208,6 @@ func (h *DualCertCreateHandler) Execute(
 		"-days", fmt.Sprintf("%d", days),
 		"-extfile", signExt,
 	}
-	// ★ 如果用户显式提供了 subject，用 -subj 覆盖 CSR 里的 DN
 	if userProvidedSubject {
 		signArgs = append(signArgs, "-subj", subjectArg)
 	}
@@ -202,6 +222,23 @@ func (h *DualCertCreateHandler) Execute(
 
 	if _, err := os.Stat(signCertAbs); err != nil {
 		return genErr("CORE_EXEC_FAILED", "sign cert not generated")
+	}
+
+	// ★ 新规范：算 sign_pubkey_sm3，重命名
+	var signPubSM3 string
+	if signUseNew {
+		signPubSM3, err = pubkeySM3FromCertAbs(ctx, client, signCertAbs, tmpDir)
+		if err != nil {
+			_ = os.Remove(signCertAbs)
+			return genErr("CORE_EXEC_FAILED", "calc sign pubkey_sm3: "+err.Error())
+		}
+		finalSignCertAbs := filepath.Join(signOutputDir, signPubSM3+".cert.pem")
+		if err := os.Rename(signCertAbs, finalSignCertAbs); err != nil {
+			_ = os.Remove(signCertAbs)
+			return genErr("CORE_EXEC_FAILED", "rename sign cert: "+err.Error())
+		}
+		signCertAbs = finalSignCertAbs
+		signCertRespPath = signCertAbs
 	}
 
 	// ========================================================================
@@ -220,16 +257,35 @@ func (h *DualCertCreateHandler) Execute(
 	}
 
 	// ========================================================================
-	// 步骤 3：用 CA 签发加密证书
+	// 步骤 3：用父 CA 签发【加密证书】
 	// ========================================================================
 	encCertID := newID("dual-enc")
-	encCertRel := "data/certs/" + encCertID + ".pem"
-	encCertAbs, err := pathguard.Resolve(encCertRel)
-	if err != nil {
-		return genErr("PATH_NOT_ALLOWED", err.Error())
-	}
-	if err := pathguard.EnsureDir(filepath.Dir(encCertAbs), 0750); err != nil {
-		return genErr("CORE_EXEC_FAILED", err.Error())
+	var (
+		encCertAbs      string
+		encCertRespPath string
+		encUseNew       bool
+	)
+
+	if encOutputDir != "" {
+		encUseNew = true
+		if !filepath.IsAbs(encOutputDir) {
+			return genErr("INVALID_PARAM", "enc_output_dir must be absolute")
+		}
+		if err := os.MkdirAll(encOutputDir, 0750); err != nil {
+			return genErr("CORE_EXEC_FAILED", "mkdir enc_output_dir: "+err.Error())
+		}
+		encCertAbs = filepath.Join(encOutputDir, encCertID+".cert.pem.tmp")
+	} else {
+		encCertRel := "data/certs/" + encCertID + ".pem"
+		var rerr error
+		encCertAbs, rerr = pathguard.Resolve(encCertRel)
+		if rerr != nil {
+			return genErr("PATH_NOT_ALLOWED", rerr.Error())
+		}
+		if err := pathguard.EnsureDir(filepath.Dir(encCertAbs), 0750); err != nil {
+			return genErr("CORE_EXEC_FAILED", err.Error())
+		}
+		encCertRespPath = encCertRel
 	}
 
 	encExt := filepath.Join(tmpDir, "enc.ext")
@@ -263,37 +319,67 @@ func (h *DualCertCreateHandler) Execute(
 		return genErr("CORE_EXEC_FAILED", "enc cert not generated")
 	}
 
-	// ========================================================================
-	// 步骤 4：链文件
-	// ========================================================================
-	chainRel := "data/certs/" + signCertID + "-chain.pem"
-	chainAbs, _ := pathguard.Resolve(chainRel)
-	if chainAbs != "" {
-		signData, _ := os.ReadFile(signCertAbs)
-		caData, _ := os.ReadFile(caCertAbs)
-		_ = os.WriteFile(chainAbs, append(signData, caData...), 0640)
+	// ★ 新规范：算 enc_pubkey_sm3，重命名
+	var encPubSM3 string
+	if encUseNew {
+		encPubSM3, err = pubkeySM3FromCertAbs(ctx, client, encCertAbs, tmpDir)
+		if err != nil {
+			_ = os.Remove(encCertAbs)
+			return genErr("CORE_EXEC_FAILED", "calc enc pubkey_sm3: "+err.Error())
+		}
+		finalEncCertAbs := filepath.Join(encOutputDir, encPubSM3+".cert.pem")
+		if err := os.Rename(encCertAbs, finalEncCertAbs); err != nil {
+			_ = os.Remove(encCertAbs)
+			return genErr("CORE_EXEC_FAILED", "rename enc cert: "+err.Error())
+		}
+		encCertAbs = finalEncCertAbs
+		encCertRespPath = encCertAbs
 	}
 
 	// ========================================================================
-	// 步骤 5：返回结果
+	// 步骤 4：加密私钥存入 keystore，返回一次性 key_ref
+	//
+	// ★ 加密私钥不下落到 output_dir：
+	//   - core 侧：keystore 加密存储，返回 enc_key_ref；
+	//   - backend-go 侧：拿 enc_key_ref 调 key.manage export 导出明文，
+	//     再调 whitebox_sm4 白盒加密，落盘到 <enc_dir>/<enc_pub>.key.pem，
+	//     最后调 key.manage delete 删除 core 侧临时引用。
 	// ========================================================================
-	encPlain, _ := os.ReadFile(encKeyPath)
+	encPlain, err := os.ReadFile(encKeyPath)
+	if err != nil {
+		return genErr("CORE_EXEC_FAILED", "read enc key: "+err.Error())
+	}
 	encKeyRef, err := saveEncryptedKey(encPlain)
 	if err != nil {
 		return genErr("CORE_EXEC_FAILED", "save enc key: "+err.Error())
 	}
 
+	// ========================================================================
+	// 步骤 5：审计 + 响应（★ 无 chain_path）
+	// ========================================================================
 	audit.Log(req, "dual_cert.create", start, "SUCCESS", "")
 
-	return envelope.NewSuccess(map[string]interface{}{
-		"sign_cert_path": signCertRel,
+	data := map[string]interface{}{
+		"sign_cert_path": signCertRespPath,
 		"sign_cert_id":   signCertID,
-		"enc_cert_path":  encCertRel,
+		"enc_cert_path":  encCertRespPath,
 		"enc_cert_id":    encCertID,
 		"enc_key_ref":    encKeyRef,
-		"chain_path":     chainRel,
-	})
+	}
+	if signUseNew {
+		data["sign_pubkey_sm3"] = signPubSM3
+	}
+	if encUseNew {
+		data["enc_pubkey_sm3"] = encPubSM3
+	}
+	data["output_layout"] = outputLayout
+
+	return envelope.NewSuccess(data)
 }
+
+// =============================================================================
+// RFC2253 → openssl -subj 风格转换
+// =============================================================================
 
 // rfc2253ToSubj 把 RFC2253 subject 转换为 openssl -subj 风格。
 //

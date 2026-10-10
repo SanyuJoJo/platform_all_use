@@ -106,29 +106,47 @@ type TaskResponse struct {
 // 证书相关 DTO
 // =============================================================================
 
+// SignCertRequest 签发证书请求。
+//
+// 覆盖两类场景：
+//   - normal：普通单证书签发；
+//   - dual  ：国密双证签发（签名证书 + 加密证书）。
+//
+// CA 来源二选一：ca_source = "local"（平台内 CA）或 "manual"（上传 CA 证书+私钥）。
+// CSR 来源三选一：csr_source = ""（不使用）、"existing"（引用已导入 P10）、"upload"（随请求上传）。
 type SignCertRequest struct {
+	// ---------- CA 来源 ----------
 	CASource      string `json:"ca_source" binding:"required"`
 	CAID          string `json:"ca_id,omitempty"`
 	CACertPEM     string `json:"ca_cert_pem,omitempty"`
 	CAKeyPEM      string `json:"ca_key_pem,omitempty"`
 	CAKeyPassword string `json:"ca_key_password,omitempty"`
 
+	// ---------- CSR 来源 ----------
 	CSRSource      string `json:"csr_source,omitempty"`
 	CSRID          string `json:"csr_id,omitempty"`
 	CSRPEM         string `json:"csr_pem,omitempty"`
 	CSRKeyPEM      string `json:"csr_key_pem,omitempty"`
 	CSRKeyPassword string `json:"csr_key_password,omitempty"`
 
+	// ---------- 证书参数 ----------
 	Algorithm    string                 `json:"algorithm,omitempty"`
 	KeyParams    map[string]interface{} `json:"key_params,omitempty"`
 	Subject      map[string]string      `json:"subject,omitempty"`
 	SAN          []string               `json:"san,omitempty"`
 	CertTypes    []string               `json:"cert_types,omitempty"`
 	ValidityDays int                    `json:"validity_days"`
-	CertMode     string                 `json:"cert_mode,omitempty"`
+	CertMode     string                 `json:"cert_mode,omitempty"` // normal（默认） | dual
 
+	// ---------- 私钥回传 ----------
 	ReturnKey         bool   `json:"return_key,omitempty"`
 	KeyExportPassword string `json:"key_export_password,omitempty"`
+
+	// ---------- ★ 证书路径改造新增 ----------
+	// Domain 域名目录（可选）。
+	//   - 用于 CA 场景 / 目录标识；
+	//   - 为空时由 core 或 layout 默认处理。
+	Domain string `json:"domain,omitempty"`
 }
 
 type ImportCertRequest struct {
@@ -136,6 +154,21 @@ type ImportCertRequest struct {
 	KeyPEM      string `json:"key_pem,omitempty"`
 	KeyPassword string `json:"key_password,omitempty"`
 	KeyRef      string `json:"key_ref,omitempty"`
+}
+
+// ImportDualCertRequest 国密双证导入请求。
+//
+// 落盘规则（证书路径改造）：
+//   - 签名证书：server/<csr_dir_no>/<sign_pub_sm3>.cert.pem；
+//   - 加密证书：server/<new_dir_no>/<enc_pub_sm3>.cert.pem；
+//   - 加密私钥：server/<new_dir_no>/<enc_pub_sm3>.key.pem（白盒密文）
+//     与 <enc_pub_sm3>.key.pem.pass（0600）。
+type ImportDualCertRequest struct {
+	CSRPubSM3      string `json:"csr_pub_sm3"   binding:"required"`
+	SignCertPEM    string `json:"sign_cert_pem" binding:"required"`
+	EncCertPEM     string `json:"enc_cert_pem"  binding:"required"`
+	EncKeyPEM      string `json:"enc_key_pem"   binding:"required"`
+	EncKeyPassword string `json:"enc_key_password,omitempty"`
 }
 
 type ExportCertRequest struct {

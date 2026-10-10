@@ -1,0 +1,7 @@
+paths:
+  install_root: "/opt/plats_tool"
+  core_go_bin: "/opt/plats_tool/core/bin/core"
+  cert_root: "/opt/plats_tool/user_data/cert"
+  ca_root: "/opt/plats_tool/user_data/cert/ca"
+  server_root: "/opt/plats_tool/user_data/cert/server"
+  whitebox_bin: "/opt/plats_tool/core/bin/whitebox_sm4"

@@ -3,6 +3,9 @@ package crypto
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -10,27 +13,38 @@ import (
 )
 
 // CoreCaller 封装 CoreAdapter，提供领域无关的 core 调用能力。
-//
-// 任何子 Service（CAService / CertService / ...）都通过 CoreCaller
-// 与 core 交互，避免重复实现错误码映射、request_id 生成、响应校验。
 type CoreCaller struct {
 	adapter  *CoreAdapter
 	coreRoot string
 	files    *FileStore
+	layout   *PathLayout
 }
 
-// NewCoreCaller 创建 CoreCaller。
-func NewCoreCaller(adapter *CoreAdapter, coreRoot string, files *FileStore) *CoreCaller {
-	return &CoreCaller{adapter: adapter, coreRoot: coreRoot, files: files}
+func NewCoreCaller(
+	adapter *CoreAdapter, coreRoot string, files *FileStore, layout *PathLayout,
+) *CoreCaller {
+	return &CoreCaller{
+		adapter:  adapter,
+		coreRoot: coreRoot,
+		files:    files,
+		layout:   layout,
+	}
 }
 
-// CoreRoot 返回 core 根目录（供子 Service 拼路径用）。
-func (c *CoreCaller) CoreRoot() string { return c.coreRoot }
+func (c *CoreCaller) CoreRoot() string       { return c.coreRoot }
+func (c *CoreCaller) Layout() *PathLayout     { return c.layout }
 
-// Run 调用任意 operation_id，统一做错误码映射与响应校验。
+// Run 调用任意 operation_id。
 func (c *CoreCaller) Run(
 	ctx context.Context, op string, params map[string]interface{},
 ) (*CoreResponse, error) {
+	if params == nil {
+		params = map[string]interface{}{}
+	}
+	if err := InjectOutputLayout(c.layout, op, params); err != nil {
+		return nil, err
+	}
+
 	req := &CoreRequest{
 		SchemaVersion: "1.0",
 		OperationID:   op,
@@ -56,7 +70,158 @@ func (c *CoreCaller) Run(
 	return resp, nil
 }
 
-// ParseCert 调用 cert.parse，返回解析后的结构化字段。
+// =============================================================================
+// 路径自动注入
+// =============================================================================
+
+// InjectOutputLayout 按 op 注入路径参数。
+func InjectOutputLayout(
+	layout *PathLayout, op string, params map[string]interface{},
+) error {
+	if layout == nil || params == nil {
+		return nil
+	}
+	if _, exists := params["output_dir"]; exists {
+		return nil
+	}
+
+	switch op {
+	case "ca.create", "ca.intermediate.create":
+		return injectCAOutput(layout, params)
+	case "csr.create":
+		return injectCSROutput(layout, params)
+	case "cert.sign":
+		return injectServerOutput(layout, params)
+	case "dual_cert.create":
+		return injectDualOutput(layout, params)
+	}
+	return nil
+}
+
+// injectCAOutput 为 ca.create 注入 CA 目录。
+//
+// ★ 变更：domain 默认值从 subject.CN 派生改为固定 "safe"。
+//
+// domain 来源优先级：
+//  1. params["domain"]（显式指定）
+//  2. "safe"（默认域）
+func injectCAOutput(layout *PathLayout, params map[string]interface{}) error {
+	domain := strings.TrimSpace(getString(params, "domain"))
+	if domain == "" {
+		domain = "safe" // ★ 默认域
+	}
+
+	dir, err := layout.CADir(domain)
+	if err != nil {
+		return exception.New(exception.CodeParamInvalid,
+			fmt.Sprintf("非法 CA 域名目录：%v", err), 400, nil)
+	}
+	if err := os.MkdirAll(dir, 0750); err != nil {
+		return exception.New(exception.CodeInternalError,
+			fmt.Sprintf("创建 CA 目录失败：%v", err), 500, nil)
+	}
+
+	params["domain"] = domain
+	params["output_dir"] = dir
+	params["output_layout"] = "ca_domain_pubkey_sm3"
+	params["cert_root"] = layout.CertRoot
+	return nil
+}
+
+func injectCSROutput(layout *PathLayout, params map[string]interface{}) error {
+	dirNo := strings.TrimSpace(getString(params, "dir_no"))
+	if dirNo == "" {
+		var err error
+		dirNo, err = layout.AllocServerDir()
+		if err != nil {
+			return exception.New(exception.CodeInternalError,
+				fmt.Sprintf("分配 server 目录失败：%v", err), 500, nil)
+		}
+	}
+	dir, err := layout.ServerDir(dirNo)
+	if err != nil {
+		return exception.New(exception.CodeParamInvalid,
+			fmt.Sprintf("server 目录非法：%v", err), 400, nil)
+	}
+
+	params["dir_no"] = dirNo
+	params["output_dir"] = dir
+	params["output_layout"] = "server_pubkey_sm3"
+	params["cert_root"] = layout.CertRoot
+	return nil
+}
+
+func injectServerOutput(layout *PathLayout, params map[string]interface{}) error {
+	if _, ok := params["dir_no"]; ok {
+		return nil
+	}
+	return injectCSROutput(layout, params)
+}
+
+func injectDualOutput(layout *PathLayout, params map[string]interface{}) error {
+	if _, ok := params["sign_dir_no"]; !ok {
+		signDirNo, err := layout.AllocServerDir()
+		if err != nil {
+			return exception.New(exception.CodeInternalError,
+				fmt.Sprintf("分配签名 server 目录失败：%v", err), 500, nil)
+		}
+		signDir, _ := layout.ServerDir(signDirNo)
+		params["sign_dir_no"] = signDirNo
+		params["sign_output_dir"] = signDir
+	}
+	if _, ok := params["enc_dir_no"]; !ok {
+		encDirNo, err := layout.AllocServerDir()
+		if err != nil {
+			return exception.New(exception.CodeInternalError,
+				fmt.Sprintf("分配加密 server 目录失败：%v", err), 500, nil)
+		}
+		encDir, _ := layout.ServerDir(encDirNo)
+		params["enc_dir_no"] = encDirNo
+		params["enc_output_dir"] = encDir
+	}
+
+	params["output_layout"] = "server_pubkey_sm3"
+	params["cert_root"] = layout.CertRoot
+	return nil
+}
+
+// extractCNFromSubjectMap 保留（供其它调用者）。
+func extractCNFromSubjectMap(v interface{}) string {
+	m, ok := v.(map[string]interface{})
+	if !ok {
+		if m2, ok2 := v.(map[string]string); ok2 {
+			if cn, ok := m2["CN"]; ok {
+				return cn
+			}
+			if cn, ok := m2["cn"]; ok {
+				return cn
+			}
+		}
+		return ""
+	}
+	for _, k := range []string{"CN", "cn", "CommonName", "common_name"} {
+		if s, ok := m[k].(string); ok && strings.TrimSpace(s) != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+// ResolveCorePath 解析 core 返回的相对路径。
+func (c *CoreCaller) ResolveCorePath(rel string) string {
+	if rel == "" {
+		return ""
+	}
+	if filepath.IsAbs(rel) {
+		return rel
+	}
+	return filepath.Join(c.coreRoot, rel)
+}
+
+// =============================================================================
+// 领域方法
+// =============================================================================
+
 func (c *CoreCaller) ParseCert(
 	ctx context.Context, certRel string,
 ) (map[string]interface{}, error) {
@@ -69,7 +234,6 @@ func (c *CoreCaller) ParseCert(
 	return resp.Data, nil
 }
 
-// ImportKey 调用 key.manage import，返回 key_ref。
 func (c *CoreCaller) ImportKey(
 	ctx context.Context, keyRel, algorithm string,
 ) (string, error) {
@@ -93,7 +257,6 @@ func (c *CoreCaller) ImportKey(
 	return keyRef, nil
 }
 
-// ExportKey 导出私钥到受控临时路径，返回内容并自动清理。
 func (c *CoreCaller) ExportKey(ctx context.Context, keyRef string) ([]byte, error) {
 	id := newShortID()
 	exportRel := fmt.Sprintf("tmp/export-%s.key.pem", id)
@@ -112,7 +275,6 @@ func (c *CoreCaller) ExportKey(ctx context.Context, keyRef string) ([]byte, erro
 	return data, err
 }
 
-// ExportPKCS12 导出 PKCS#12 到受控临时路径，返回内容并自动清理。
 func (c *CoreCaller) ExportPKCS12(
 	ctx context.Context, certRel, keyRef, password string,
 ) ([]byte, error) {

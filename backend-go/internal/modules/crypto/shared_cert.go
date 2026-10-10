@@ -43,20 +43,13 @@ type CertDetail struct {
 	ExtendedKeyUsage   string `json:"extended_key_usage"`
 }
 
-// CADetail 是 CertDetail 的类型别名，保留以兼容已有 CA 代码。
+// CADetail 是 CertDetail 的类型别名。
 type CADetail = CertDetail
 
 // Parse 解析证书。
-//
-// 解析流程：
-//  1. 优先铜锁 openssl x509 -text 解析；
-//  2. 若 Serial / KeyUsage / ExtendedKeyUsage 任一字段为空，
-//     用 openssl 对应子命令单独获取（-serial / -ext keyUsage / -ext extendedKeyUsage）；
-//  3. 若铜锁 openssl 不可用或解析出的 subject 为空，回退到 Go 标准库。
 func (p *CertParser) Parse(certAbs string) (*CertDetail, error) {
 	if bin := p.OpensslBin(); bin != "" {
 		if detail, err := p.parseWithOpenSSL(bin, certAbs); err == nil && detail.Subject != "" {
-			// 兜底：单独调用 -serial
 			if detail.Serial == "" {
 				if serialOut, err := RunOpenSSL(bin, "x509", "-in", certAbs, "-noout", "-serial"); err == nil {
 					serialOut = strings.TrimSpace(serialOut)
@@ -64,7 +57,6 @@ func (p *CertParser) Parse(certAbs string) (*CertDetail, error) {
 					detail.Serial = cleanHex(serialOut)
 				}
 			}
-			// 兜底：单独调用 -ext keyUsage
 			if detail.KeyUsage == "" {
 				if kuOut, err := RunOpenSSL(bin, "x509", "-in", certAbs, "-noout", "-ext", "keyUsage"); err == nil {
 					lines := extractExtLines(kuOut)
@@ -73,7 +65,6 @@ func (p *CertParser) Parse(certAbs string) (*CertDetail, error) {
 					}
 				}
 			}
-			// 兜底：单独调用 -ext extendedKeyUsage
 			if detail.ExtendedKeyUsage == "" {
 				if ekuOut, err := RunOpenSSL(bin, "x509", "-in", certAbs, "-noout", "-ext", "extendedKeyUsage"); err == nil {
 					lines := extractExtLines(ekuOut)
@@ -89,10 +80,18 @@ func (p *CertParser) Parse(certAbs string) (*CertDetail, error) {
 }
 
 // OpensslBin 返回铜锁 openssl 路径。
+//
+// ★ 候选路径（按优先级）：
+//  1. <coreRoot>/libs/tongsuo/bin/openssl      （部署后新规范）
+//  2. <coreRoot>/libs/bin/tongsuo/bin/openssl  （历史布局）
+//  3. <coreRoot>/run/bin/openssl               （最旧布局）
+//
+// 全部不存在时才回退系统 openssl。
 func (p *CertParser) OpensslBin() string {
 	candidates := []string{
-		filepath.Join(p.coreRoot, "run/bin/openssl"),
-		filepath.Join(p.coreRoot, "libs/bin/tongsuo/bin/openssl"),
+		filepath.Join(p.coreRoot, "libs", "tongsuo", "bin", "openssl"),
+		filepath.Join(p.coreRoot, "libs", "bin", "tongsuo", "bin", "openssl"),
+		filepath.Join(p.coreRoot, "run", "bin", "openssl"),
 	}
 	for _, c := range candidates {
 		if st, err := os.Stat(c); err == nil && !st.IsDir() && st.Mode()&0111 != 0 {
@@ -204,8 +203,8 @@ func (p *CertParser) parseFromPEM(certAbs string) (*CertDetail, error) {
 
 // RunOpenSSLFull 执行 openssl 命令。
 //
-// 显式设置 cmd.Stdin = bytes.NewReader(nil)，避免任何 openssl 子命令从
-// 标准输入或 /dev/tty 读取内容导致进程挂起。
+// ★ 关键：显式设置 cmd.Stdin = bytes.NewReader(nil)，禁止 openssl 从 stdin 读取；
+//   同时将所有 openssl 调用加 -passin pass: 之类的显式密码来源（由调用方决定）。
 func RunOpenSSLFull(bin string, args ...string) (string, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -225,18 +224,6 @@ func RunOpenSSL(bin string, args ...string) (string, error) {
 }
 
 // extractExtLines 从 openssl x509 -ext <name> 输出中提取扩展值。
-//
-// 输入格式示例：
-//
-//	X509v3 Key Usage: critical
-//	    Digital Signature, Key Encipherment
-//
-// 或：
-//
-//	X509v3 Extended Key Usage:
-//	    TLS Web Server Authentication
-//
-// 返回值为扩展的值行（已 trim）。
 func extractExtLines(out string) []string {
 	var lines []string
 	for _, raw := range strings.Split(out, "\n") {
@@ -244,7 +231,6 @@ func extractExtLines(out string) []string {
 		if trimmed == "" {
 			continue
 		}
-		// 头行 "X509v3 xxx: [critical] [inline-value]"
 		if strings.HasPrefix(trimmed, "X509v3 ") {
 			idx := strings.Index(trimmed, ":")
 			if idx >= 0 {
@@ -256,13 +242,11 @@ func extractExtLines(out string) []string {
 			}
 			continue
 		}
-		// 值行
 		lines = append(lines, trimmed)
 	}
 	return lines
 }
 
-// parseCertText 从 openssl x509 -text 输出解析证书字段。
 func parseCertText(text string, detail *CertDetail) {
 	lines := strings.Split(text, "\n")
 	var (

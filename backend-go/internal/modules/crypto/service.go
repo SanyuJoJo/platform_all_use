@@ -3,6 +3,7 @@ package crypto
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ type Service struct {
 	cfg        *config.Config
 	auditSvc   *audit_log.Service
 	db         *gorm.DB
+	layout     *PathLayout // ★ 证书路径改造新增：供通用路由注入路径
 	sem        chan struct{}
 	taskMu     sync.Mutex
 	taskCancel map[string]context.CancelFunc
@@ -30,16 +32,27 @@ type Service struct {
 
 // NewService 创建密码操作服务。
 func NewService(cfg *config.Config, auditSvc *audit_log.Service, db *gorm.DB) *Service {
-	adapter := NewCoreAdapter(
-		cfg.CoreDispatchPath,
-		cfg.CoreTimeoutMs,
-		cfg.CoreMaxConcurrency,
-	)
+	// core 二进制路径（CoreGoBin 优先，兼容 CoreDispatchPath，兜底 InstallRoot）
+	coreBin := strings.TrimSpace(cfg.CoreGoBin)
+	if coreBin == "" {
+		coreBin = strings.TrimSpace(cfg.CoreDispatchPath)
+	}
+	if coreBin == "" && cfg.InstallRoot != "" {
+		coreBin = filepath.Join(cfg.InstallRoot, "core", "bin", "core")
+	}
+
+	adapter := NewCoreAdapter(coreBin, cfg.CoreTimeoutMs, cfg.CoreMaxConcurrency)
+
+	// ★ 证书路径改造：构造 layout，供通用路由注入 output_dir
+	layout := NewPathLayout(cfg)
+	_ = layout.EnsureRoots()
+
 	return &Service{
 		adapter:    adapter,
 		cfg:        cfg,
 		auditSvc:   auditSvc,
 		db:         db,
+		layout:     layout,
 		sem:        make(chan struct{}, cfg.CoreMaxConcurrency),
 		taskCancel: make(map[string]context.CancelFunc),
 	}
@@ -57,7 +70,6 @@ func (s *Service) Execute(
 	req *OperationRequest,
 	actorType, actorID string,
 ) (*OperationResponse, int, error) {
-	// 1. 校验 operation_id
 	if !IsValidOperation(op) {
 		return nil, 400, exception.New(
 			exception.CodeParamInvalid,
@@ -66,27 +78,16 @@ func (s *Service) Execute(
 		)
 	}
 
-	// 2. 生成 request_id
 	requestID := uuid.NewString()
 
-	// 3. 【新增】参数预校验：subject 字段
-	//
-	// 目的：提前拦截非法 DN（如 C 字段长度不为 2、包含全角逗号未拆分的
-	// "C=CN，CN=TEST" 被误当成 C 的值），避免传给 core 后触发
-	// OpenSSL "ASN1_mbstring_ncopy:string too long" 之类的底层错误。
-	//
-	// 非法参数统一返回 400 + CRYPTO_INVALID_PARAM，并写审计。
+	// 参数预校验
 	if err := ValidateSubjectForOperation(op, req.Params); err != nil {
 		msg := err.Error()
 		platformCode := PlatformCryptoInvalidParam
-
-		// 从 exception.PlatformError 提取可读消息
 		if pe, ok := err.(*exception.PlatformError); ok {
 			msg = pe.Message
 		}
-
 		s.writeAudit(requestID, op, "FAILED", 0, platformCode, nil)
-
 		return &OperationResponse{
 			Code:        platformCode,
 			Message:     msg,
@@ -100,7 +101,33 @@ func (s *Service) Execute(
 		}, 400, nil
 	}
 
-	// 4. 构造 core 请求
+	// ★ 证书路径改造：在通用路由上注入 output_dir
+	// 与 CoreCaller.Run 共用 InjectOutputLayout，避免 ca.create 等
+	// 走通用路由时被漏掉。
+	if req.Params == nil {
+		req.Params = map[string]interface{}{}
+	}
+	if err := InjectOutputLayout(s.layout, op, req.Params); err != nil {
+		msg := err.Error()
+		platformCode := PlatformCryptoInvalidParam
+		if pe, ok := err.(*exception.PlatformError); ok {
+			msg = pe.Message
+		}
+		s.writeAudit(requestID, op, "FAILED", 0, platformCode, nil)
+		return &OperationResponse{
+			Code:        platformCode,
+			Message:     msg,
+			RequestID:   requestID,
+			OperationID: op,
+			Error: &PlatformErrorDetail{
+				Code:      platformCode,
+				Message:   msg,
+				Retryable: false,
+			},
+		}, 400, nil
+	}
+
+	// 构造 core 请求
 	coreReq := &CoreRequest{
 		SchemaVersion: "1.0",
 		OperationID:   op,
@@ -118,7 +145,7 @@ func (s *Service) Execute(
 		}
 	}
 
-	// 5. 并发信号量
+	// 并发信号量
 	select {
 	case s.sem <- struct{}{}:
 		defer func() { <-s.sem }()
@@ -130,12 +157,11 @@ func (s *Service) Execute(
 		)
 	}
 
-	// 6. 调用 CoreAdapter
+	// 调用 CoreAdapter
 	start := time.Now()
 	coreResp, exitCode, err := s.adapter.Call(ctx, op, coreReq)
 	durationMs := int(time.Since(start).Milliseconds())
 
-	// 7. 处理调用错误
 	if err != nil {
 		platformCode := PlatformCryptoCoreFailed
 		httpStatus := 500
@@ -157,10 +183,8 @@ func (s *Service) Execute(
 		}, httpStatus, nil
 	}
 
-	// 8. 映射错误码
 	mapping := MapCoreError(coreResp.Code)
 
-	// 9. 构造平台响应
 	platformResp := &OperationResponse{
 		Code:        mapping.PlatformCode,
 		Message:     coreResp.Message,
@@ -195,11 +219,10 @@ func (s *Service) Execute(
 		}
 		s.writeAudit(requestID, op, "SUCCESS", durationMs, "", nil)
 
-		// core 成功后，把元数据落库
+		// 元数据落库
 		s.persistMetadata(op, req.Params, coreResp.Data)
 	}
 
-	// 10. 调试日志
 	log.Debug().
 		Str("operation_id", op).
 		Str("request_id", requestID).
@@ -307,7 +330,6 @@ func (s *Service) writeAudit(
 	s.auditSvc.WriteOperationLogAsync(entry)
 }
 
-// 辅助函数
 func strPtr(s string) *string {
 	if s == "" {
 		return nil
