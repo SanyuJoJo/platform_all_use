@@ -117,6 +117,10 @@ func (s *CertService) GetDetail(certID string) (*CertDetail, error) {
 	return s.parser.Parse(abs)
 }
 
+// =============================================================================
+// 路径解析
+// =============================================================================
+
 // resolveCertPath 解析证书绝对路径。
 //
 // 优先级：
@@ -149,6 +153,37 @@ func (s *CertService) resolveCertPath(certPath string) (string, error) {
 		fmt.Sprintf("证书文件不存在：%s", certPath),
 		404, nil,
 	)
+}
+
+// resolveCSRAbsPath 解析 CSR 绝对路径。
+//
+// 优先级：
+//  1. 绝对路径，且文件存在（新规范：<CertRoot>/server/<dir_no>/<pubkey_sm3>.req.csr）
+//  2. 按 CertRoot 解析
+//  3. 按 CoreRoot 解析（core/tmp/ 或 core/data/，旧数据）
+func (s *CertService) resolveCSRAbsPath(csrPath string) (string, error) {
+	if csrPath == "" {
+		return "", exception.New(exception.CodeInternalError, "CSR 路径为空", 500, nil)
+	}
+	if filepath.IsAbs(csrPath) {
+		if st, err := os.Stat(csrPath); err == nil && !st.IsDir() {
+			return csrPath, nil
+		}
+	}
+	if s.layout != nil && s.layout.CertRoot != "" {
+		p := filepath.Join(s.layout.CertRoot, csrPath)
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p, nil
+		}
+	}
+	if s.caller != nil {
+		p := s.caller.ResolveCorePath(csrPath)
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			return p, nil
+		}
+	}
+	return "", exception.New(exception.CodeNotFound,
+		fmt.Sprintf("CSR 文件不存在：%s", csrPath), 404, nil)
 }
 
 // =============================================================================
@@ -234,7 +269,9 @@ func (s *CertService) Sign(
 	}
 
 	result := &SignCertResult{Certificate: cert}
-	if pem, err := s.files.ReadCoreFile(cert.CertPath); err == nil {
+	if data, err := os.ReadFile(cert.CertPath); err == nil {
+		result.CertPEM = string(data)
+	} else if pem, err := s.files.ReadCoreFile(cert.CertPath); err == nil {
 		result.CertPEM = string(pem)
 	}
 	if req.ReturnKey && cert.KeyRef != nil && *cert.KeyRef != "" {
@@ -245,6 +282,7 @@ func (s *CertService) Sign(
 	return result, nil
 }
 
+// attachOutputLayout 为 core 调用附加路径约定参数。
 func (s *CertService) attachOutputLayout(
 	params map[string]interface{}, domain, existingDirNo string,
 ) error {
@@ -307,6 +345,16 @@ func (s *CertService) resolveSubjectFromCSR(
 	return nil, fmt.Errorf("no csr source")
 }
 
+// resolveCASource 解析 CA 来源并准备参数。
+//
+// ★ 两种 CA 模式统一走 manual 转换：
+//   - 旧模式（KeyRef 非空）：从 keystore 导出私钥 → 拷 core/tmp → 切 manual
+//   - 新模式（KeyPath 非空）：解密白盒私钥 → 拷 core/tmp → 切 manual
+//
+// 原因：core 的 pathguard 只允许 coreRoot/data 与 coreRoot/tmp，
+//       而 CA 证书位于 <CertRoot>/ca/<domain>/，必须转换。
+//
+// cleanup 用于注册需要在请求结束后清理的 core 相对路径。
 func (s *CertService) resolveCASource(
 	ctx context.Context, req *SignCertRequest, params map[string]interface{},
 	cleanup *[]string,
@@ -327,11 +375,11 @@ func (s *CertService) resolveCASource(
 
 		params["ca_id"] = ca.CAID
 
+		// 旧模式：keystore 引用 → 导出 + 拷 core/tmp
 		if ca.KeyRef != "" {
-			params["ca_cert_path"] = ca.CertPath
-			params["ca_key_ref"] = ca.KeyRef
-			return nil
+			return s.prepareManualCAFromKeystore(ctx, &ca, params, cleanup)
 		}
+		// 新模式：白盒密文 → 解密 + 拷 core/tmp
 		if ca.KeyPath != "" {
 			return s.prepareManualCAFromWhitebox(ctx, &ca, params, cleanup)
 		}
@@ -380,6 +428,82 @@ func (s *CertService) resolveCASource(
 	}
 }
 
+// prepareManualCAFromKeystore 把 core keystore 中的 CA 私钥导出，
+// 连同 CA 证书一起拷到 core/tmp/，并把 params 切换为 manual 模式。
+//
+// 适用场景：**旧模式 CA**（DB 中 ca.KeyRef 非空、KeyPath 空）。
+//
+// 核心问题：
+//   - 旧模式 CA 的 CertPath 在新规范下是绝对路径（<CertRoot>/ca/<domain>/...），
+//     core 的 pathguard 只允许 coreRoot/data 和 coreRoot/tmp；
+//   - 所以必须先把证书与私钥拷到 core/tmp/ 再喂给 core；
+//   - 私钥通过 core 的 key.manage export 拿到明文（allow_plain_export=true）。
+func (s *CertService) prepareManualCAFromKeystore(
+	ctx context.Context, ca *models.CA, params map[string]interface{},
+	cleanup *[]string,
+) error {
+	if ca == nil || ca.KeyRef == "" {
+		return exception.New(exception.CodeInternalError, "CA keyRef 为空", 500, nil)
+	}
+
+	// 1. 从 core keystore 导出私钥明文
+	plainKey, err := s.caller.ExportKey(ctx, ca.KeyRef)
+	if err != nil {
+		return exception.New(exception.CodeInternalError,
+			fmt.Sprintf("导出 CA 私钥失败：%v", err), 500, nil)
+	}
+	if len(plainKey) == 0 {
+		return exception.New(exception.CodeInternalError, "导出的 CA 私钥为空", 500, nil)
+	}
+
+	id := newShortID()
+
+	// 2. 拷私钥到 core/tmp/
+	coreKeyRel := fmt.Sprintf("tmp/ca-sign-key-%s.pem", id)
+	if err := s.files.WriteCoreFile(coreKeyRel, plainKey, 0600); err != nil {
+		return exception.New(exception.CodeInternalError,
+			fmt.Sprintf("写 core 临时私钥失败：%v", err), 500, nil)
+	}
+	if cleanup != nil {
+		*cleanup = append(*cleanup, coreKeyRel)
+	}
+
+	// 3. 拷 CA 证书到 core/tmp/
+	certAbs, err := s.resolveCACertPathForSign(ca.CertPath)
+	if err != nil {
+		return err
+	}
+	certData, err := os.ReadFile(certAbs)
+	if err != nil {
+		return exception.New(exception.CodeInternalError,
+			fmt.Sprintf("读取 CA 证书失败：%v", err), 500, nil)
+	}
+	coreCertRel := fmt.Sprintf("tmp/ca-sign-cert-%s.pem", id)
+	if err := s.files.WriteCoreFile(coreCertRel, certData, 0640); err != nil {
+		return exception.New(exception.CodeInternalError,
+			fmt.Sprintf("写 core 临时证书失败：%v", err), 500, nil)
+	}
+	if cleanup != nil {
+		*cleanup = append(*cleanup, coreCertRel)
+	}
+
+	// 4. 切 manual 模式
+	params["ca_source"] = "manual"
+	params["ca_cert_path"] = coreCertRel
+	params["ca_key_path"] = coreKeyRel
+
+	log.Info().
+		Str("ca_id", ca.CAID).
+		Str("core_cert_rel", coreCertRel).
+		Str("core_key_rel", coreKeyRel).
+		Msg("CA keystore 私钥已导出并转入 core/tmp（manual 模式）")
+	return nil
+}
+
+// prepareManualCAFromWhitebox 把白盒 CA 私钥解密并转入 core/tmp/，
+// 使 params 切换为 manual 模式。
+//
+// 适用场景：**新模式 CA**（DB 中 ca.KeyPath 非空、KeyRef 空）。
 func (s *CertService) prepareManualCAFromWhitebox(
 	ctx context.Context, ca *models.CA, params map[string]interface{},
 	cleanup *[]string,
@@ -542,12 +666,13 @@ func (s *CertService) resolveCSRSource(
 	return nil
 }
 
+// parseCSRSubjectMap ★ 使用 resolveCSRAbsPath，兼容 <CertRoot>/server/... 下 CSR
 func (s *CertService) parseCSRSubjectMap(csrRel string) (map[string]string, error) {
 	bin := s.parser.OpensslBin()
 	if bin == "" {
 		return nil, fmt.Errorf("openssl not available")
 	}
-	abs, err := s.files.guard.Resolve(csrRel, "csr_path")
+	abs, err := s.resolveCSRAbsPath(csrRel)
 	if err != nil {
 		return nil, err
 	}
@@ -609,10 +734,6 @@ func splitDN(input string) []string {
 }
 
 // extractCNFromParams 从 params["subject"] 里提取 CN。
-//
-// 兼容两种类型：
-//   - map[string]string（SignCertRequest.Subject 类型）
-//   - map[string]interface{}（core 侧或 JSON 反序列化后的类型）
 func extractCNFromParams(params map[string]interface{}) string {
 	raw, ok := params["subject"]
 	if !ok || raw == nil {
@@ -635,12 +756,7 @@ func extractCNFromParams(params map[string]interface{}) string {
 	return ""
 }
 
-// persistCertFromCore ★ 修复 SubjectCN 为空的问题。
-//
-// 关键改动：
-//  1. abs 用 resolveCertPath（不再被 PathGuard 拒绝）；
-//  2. subject 优先从 params["subject"] 拿，其次从 core 响应，最后从 detail；
-//  3. SubjectCN 用 cnFromSubject（无 fallback），避免写入 "imported-ca"。
+// persistCertFromCore ★ SubjectCN 多来源兜底
 func (s *CertService) persistCertFromCore(
 	req *SignCertRequest, resp *CoreResponse, params map[string]interface{},
 ) (*models.Certificate, error) {
@@ -676,15 +792,12 @@ func (s *CertService) persistCertFromCore(
 			"core cert.sign 未返回 cert_id/cert_path", 500, nil)
 	}
 
-	// ★ 修复 1：用 resolveCertPath 替代 guard.Resolve，让 detail 能正常解析
 	abs, _ := s.resolveCertPath(certPath)
 	var detail *CertDetail
 	if abs != "" {
 		detail, _ = s.parser.Parse(abs)
 	}
 
-	// ★ 修复 2：subject 多来源兜底
-	// 优先级：params["subject"].CN > core 响应 subject > detail.Subject
 	if subject == "" {
 		if cn := extractCNFromParams(params); cn != "" {
 			subject = "CN=" + cn
@@ -711,9 +824,9 @@ func (s *CertService) persistCertFromCore(
 		CertType:  certTypeJoined,
 		Serial:    serial,
 		Subject:   subject,
-		SubjectCN: cnFromSubject(subject), // ★ 修复 3：无 fallback
+		SubjectCN: cnFromSubject(subject),
 		Issuer:    issuer,
-		IssuerCN:  cnFromSubject(issuer),  // ★ 无 fallback
+		IssuerCN:  cnFromSubject(issuer),
 		CAID:      req.CAID,
 		Algorithm: req.Algorithm,
 		CertPath:  certPath,
@@ -787,10 +900,10 @@ func (s *CertService) signDualCert(
 			"国密双证必须提供 P10（csr_path）", 400, nil)
 	}
 
-	csrAbs, err := s.files.guard.Resolve(csrPath, "csr_path")
+	// ★ 用 resolveCSRAbsPath，兼容 <CertRoot>/server/... 下的 CSR
+	csrAbs, err := s.resolveCSRAbsPath(csrPath)
 	if err != nil {
-		return nil, exception.New(exception.CodeInternalError,
-			fmt.Sprintf("P10 路径不合法（%s）：%v", csrPath, err), 500, nil)
+		return nil, err
 	}
 
 	bin := s.parser.OpensslBin()
@@ -854,13 +967,17 @@ func (s *CertService) signDualCert(
 
 	signCertPath := getString(resp.Data, "sign_cert_path")
 	if signCertPath != "" {
-		if pem, err := s.files.ReadCoreFile(signCertPath); err == nil {
+		if data, err := os.ReadFile(signCertPath); err == nil {
+			result.SignCertPEM = string(data)
+		} else if pem, err := s.files.ReadCoreFile(signCertPath); err == nil {
 			result.SignCertPEM = string(pem)
 		}
 	}
 	encCertPath := getString(resp.Data, "enc_cert_path")
 	if encCertPath != "" {
-		if pem, err := s.files.ReadCoreFile(encCertPath); err == nil {
+		if data, err := os.ReadFile(encCertPath); err == nil {
+			result.EncCertPEM = string(data)
+		} else if pem, err := s.files.ReadCoreFile(encCertPath); err == nil {
 			result.EncCertPEM = string(pem)
 		}
 	}
@@ -987,7 +1104,6 @@ func (s *CertService) persistEncKeyWhitebox(
 	return encKeyPath, nil
 }
 
-// persistDualCertFromCore ★ 修复 SubjectCN
 func (s *CertService) persistDualCertFromCore(
 	req *SignCertRequest, resp *CoreResponse, csrKeyRef string,
 	params map[string]interface{},
@@ -1030,7 +1146,6 @@ func (s *CertService) persistDualCertFromCore(
 	now := time.Now().UTC()
 	baseID := newShortID()
 
-	// ★ 修复：用 resolveCertPath
 	signAbs, _ := s.resolveCertPath(signCertPath)
 	var signDetail *CertDetail
 	if signAbs != "" {
@@ -1043,7 +1158,6 @@ func (s *CertService) persistDualCertFromCore(
 		signIssuer = signDetail.Issuer
 		signSerial = signDetail.Serial
 	}
-	// params 兜底
 	if signSubject == "" {
 		if cn := extractCNFromParams(params); cn != "" {
 			signSubject = "CN=" + cn
@@ -1055,9 +1169,9 @@ func (s *CertService) persistDualCertFromCore(
 		CertType:  "dual_sign",
 		Serial:    signSerial,
 		Subject:   signSubject,
-		SubjectCN: cnFromSubject(signSubject), // ★ 无 fallback
+		SubjectCN: cnFromSubject(signSubject),
 		Issuer:    signIssuer,
-		IssuerCN:  cnFromSubject(signIssuer),  // ★ 无 fallback
+		IssuerCN:  cnFromSubject(signIssuer),
 		CAID:      req.CAID,
 		Algorithm: "SM2",
 		CertPath:  signCertPath,
@@ -1103,9 +1217,9 @@ func (s *CertService) persistDualCertFromCore(
 			CertType:  "dual_enc",
 			Serial:    encSerial,
 			Subject:   encSubject,
-			SubjectCN: cnFromSubject(encSubject), // ★ 无 fallback
+			SubjectCN: cnFromSubject(encSubject),
 			Issuer:    encIssuer,
-			IssuerCN:  cnFromSubject(encIssuer),  // ★ 无 fallback
+			IssuerCN:  cnFromSubject(encIssuer),
 			CAID:      req.CAID,
 			Algorithm: "SM2",
 			CertPath:  encCertPath,
@@ -1796,9 +1910,9 @@ func (s *CertService) Import(
 		CertType:           inferredType,
 		Serial:             detail.Serial,
 		Subject:            detail.Subject,
-		SubjectCN:          cnFromSubject(detail.Subject), // ★ 无 fallback
+		SubjectCN:          cnFromSubject(detail.Subject),
 		Issuer:             detail.Issuer,
-		IssuerCN:           cnFromSubject(detail.Issuer),  // ★ 无 fallback
+		IssuerCN:           cnFromSubject(detail.Issuer),
 		Algorithm:          detail.PublicKeyAlgorithm,
 		Fingerprint:        detail.Fingerprint,
 		PublicKeyAlgorithm: detail.PublicKeyAlgorithm,
@@ -2146,7 +2260,6 @@ func (s *CertService) Delete(certID string) error {
 		}
 	}
 
-	// ★ 清理空目录：只删 server/<dir_no> 类型的目录
 	if c.CertPath != "" {
 		if abs := s.absUnderCertRoot(c.CertPath); abs != "" {
 			s.tryRemoveEmptyDir(filepath.Dir(abs))

@@ -19,24 +19,19 @@ import (
 //
 // ★ 正确流程：
 //   1. 客户本地生成 CSR，私钥 s_pri 永不上传（签名私钥归客户）；
-//   2. core 用 CSR 的公钥 s_pub 签发【签名证书】（不重新生成签名密钥对）；
+//   2. core 用 CSR 的公钥 s_pub 签发【签名证书】；
 //   3. core 内部生成加密密钥对 e_pri / e_pub，用 e_pub 签发【加密证书】；
-//   4. 返回 sign_cert_path / enc_cert_path / enc_key_ref（一次性）；
-//      backend-go 侧拿到 enc_key_ref 后导出私钥 → 白盒加密 → 落盘 → 删除 core 引用。
+//   4. 返回 sign_cert_path / enc_cert_path / enc_key_ref。
+//
+// ★ CA 来源两种模式：
+//   - local  ：ca_key_ref 非空（core keystore）
+//   - manual ：ca_key_path 非空（core/tmp/ 下明文私钥，backend-go 拷入）
 //
 // ★ 路径约定（无 -chain.pem）：
 //   - sign_output_dir 非空：
 //       <sign_output_dir>/<sign_pubkey_sm3>.cert.pem
-//     sign_output_dir 为空：
-//       <CoreRoot>/data/certs/<sign_cert_id>.pem
 //   - enc_output_dir 非空：
 //       <enc_output_dir>/<enc_pubkey_sm3>.cert.pem
-//     enc_output_dir 为空：
-//       <CoreRoot>/data/certs/<enc_cert_id>.pem
-//
-// ★ 证书校验：
-//   依赖 <CertRoot>/ca/<domain>/ 下的 rehash 文件（<hash>.0），
-//   由 openssl verify -CApath 自动定位，不需要 chain 文件。
 type DualCertCreateHandler struct{}
 
 func (h *DualCertCreateHandler) Execute(
@@ -65,11 +60,16 @@ func (h *DualCertCreateHandler) Execute(
 		return genErr("INVALID_PARAM", "missing csr_path (客户 CSR 必须提供)")
 	}
 
-	// ---------- 父 CA ----------
+	// ---------- 父 CA：兼容 local / manual ----------
 	caCertRel := strParam(req.Params, "ca_cert_path")
+	if caCertRel == "" {
+		return genErr("INVALID_PARAM", "missing ca_cert_path")
+	}
 	caKeyRef := strParam(req.Params, "ca_key_ref")
-	if caCertRel == "" || caKeyRef == "" {
-		return genErr("INVALID_PARAM", "missing ca_cert_path or ca_key_ref")
+	caKeyPath := strParam(req.Params, "ca_key_path")
+	if caKeyRef == "" && caKeyPath == "" {
+		return genErr("INVALID_PARAM",
+			"missing ca_key_ref or ca_key_path (须提供其一)")
 	}
 
 	days := intParam(req.Params, "validity_days", 365)
@@ -83,7 +83,10 @@ func (h *DualCertCreateHandler) Execute(
 	outputLayout := strParamDefault(req.Params, "output_layout", "server_pubkey_sm3")
 
 	// ---------- 解析 CSR ----------
-	csrAbs, err := pathguard.Resolve(csrPath)
+	// ★ 用 resolveInputPath 兼容：
+	//    - 绝对路径（新规范：<CertRoot>/server/<dir_no>/<pubkey_sm3>.req.csr）
+	//    - 相对路径（旧数据：core/tmp/... 或 core/data/...）
+	csrAbs, err := resolveInputPath(csrPath)
 	if err != nil {
 		return genErr("PATH_NOT_ALLOWED", "invalid csr_path: "+err.Error())
 	}
@@ -91,10 +94,10 @@ func (h *DualCertCreateHandler) Execute(
 		return genErr("INVALID_PARAM", "csr file not found: "+csrPath)
 	}
 
-	// ---------- 解析父 CA ----------
-	caCertAbs, err := pathguard.Resolve(caCertRel)
+	// ---------- 解析父 CA 证书 ----------
+	caCertAbs, err := resolveInputPath(caCertRel)
 	if err != nil {
-		return genErr("PATH_NOT_ALLOWED", err.Error())
+		return genErr("PATH_NOT_ALLOWED", "invalid ca_cert_path: "+err.Error())
 	}
 	if _, err := os.Stat(caCertAbs); err != nil {
 		return genErr("CERT_NOT_FOUND", "ca cert not found")
@@ -107,10 +110,23 @@ func (h *DualCertCreateHandler) Execute(
 	}
 	defer cleanupTmpDir(tmpDir)
 
-	// ---------- 解密父 CA 私钥 ----------
-	caKeyAbs, err := loadDecryptedKey(caKeyRef, tmpDir)
-	if err != nil {
-		return genErr("KEY_NOT_FOUND", err.Error())
+	// ---------- 解析父 CA 私钥（local/manual 兼容） ----------
+	var caKeyAbs string
+	if caKeyPath != "" {
+		// manual 模式：core/tmp/ 下的明文私钥
+		caKeyAbs, err = resolveInputPath(caKeyPath)
+		if err != nil {
+			return genErr("PATH_NOT_ALLOWED", "invalid ca_key_path: "+err.Error())
+		}
+		if _, err := os.Stat(caKeyAbs); err != nil {
+			return genErr("KEY_NOT_FOUND", "ca key file not found: "+caKeyPath)
+		}
+	} else {
+		// local 模式：从 core keystore 解密到临时文件
+		caKeyAbs, err = loadDecryptedKey(caKeyRef, tmpDir)
+		if err != nil {
+			return genErr("KEY_NOT_FOUND", err.Error())
+		}
 	}
 
 	client, err := openssl.NewClient()
@@ -122,16 +138,6 @@ func (h *DualCertCreateHandler) Execute(
 
 	// ========================================================================
 	// 步骤 0：确定使用者 DN
-	//
-	//   优先 params.subject（用户显式输入）；
-	//   否则从 CSR 中提取。
-	//
-	//   userProvidedSubject=true 时：
-	//     - 签名证书：通过 openssl x509 -subj 覆盖 CSR 里的 DN
-	//     - 加密证书：用该 DN 生成加密 CSR
-	//   userProvidedSubject=false 时：
-	//     - 签名证书：直接用 CSR，不加 -subj
-	//     - 加密证书：用从 CSR 提取的 DN
 	// ========================================================================
 	userProvidedSubject := false
 	subjectArg := ""
@@ -155,10 +161,6 @@ func (h *DualCertCreateHandler) Execute(
 
 	// ========================================================================
 	// 步骤 1：用 CSR 签发【签名证书】
-	//
-	// ★ 关键：openssl x509 -req 会从 CSR 中读取公钥并写入证书，
-	//   因此签名证书公钥 = CSR 公钥 = 客户 s_pub。
-	//   客户私钥 s_pri 永远不上传，core 也不落签名私钥。
 	// ========================================================================
 	signCertID := newID("dual-sign")
 	var (
@@ -189,7 +191,6 @@ func (h *DualCertCreateHandler) Execute(
 		signCertRespPath = signCertRel
 	}
 
-	// 签名证书扩展配置
 	signExt := filepath.Join(tmpDir, "sign.ext")
 	signExtContent := "basicConstraints=CA:FALSE\n" +
 		"keyUsage=critical,digitalSignature,nonRepudiation\n" +
@@ -242,14 +243,13 @@ func (h *DualCertCreateHandler) Execute(
 	}
 
 	// ========================================================================
-	// 步骤 2：内部生成加密密钥对（e_pri / e_pub）
+	// 步骤 2：内部生成加密密钥对
 	// ========================================================================
 	encKeyPath := filepath.Join(tmpDir, "enc.key")
 	if err := genPrivateKey(ctx, "SM2", req.Params, encKeyPath); err != nil {
 		return genErr("CORE_EXEC_FAILED", "gen enc key: "+err.Error())
 	}
 
-	// 加密证书使用与签名证书相同的 DN
 	encCSR := filepath.Join(tmpDir, "enc.csr")
 	if _, err := client.Run(ctx, "req", "-new", "-key", encKeyPath,
 		"-out", encCSR, "-subj", subjectArg); err != nil {
@@ -257,7 +257,7 @@ func (h *DualCertCreateHandler) Execute(
 	}
 
 	// ========================================================================
-	// 步骤 3：用父 CA 签发【加密证书】
+	// 步骤 3：签发【加密证书】
 	// ========================================================================
 	encCertID := newID("dual-enc")
 	var (
@@ -337,13 +337,7 @@ func (h *DualCertCreateHandler) Execute(
 	}
 
 	// ========================================================================
-	// 步骤 4：加密私钥存入 keystore，返回一次性 key_ref
-	//
-	// ★ 加密私钥不下落到 output_dir：
-	//   - core 侧：keystore 加密存储，返回 enc_key_ref；
-	//   - backend-go 侧：拿 enc_key_ref 调 key.manage export 导出明文，
-	//     再调 whitebox_sm4 白盒加密，落盘到 <enc_dir>/<enc_pub>.key.pem，
-	//     最后调 key.manage delete 删除 core 侧临时引用。
+	// 步骤 4：加密私钥存 keystore，返回一次性 key_ref
 	// ========================================================================
 	encPlain, err := os.ReadFile(encKeyPath)
 	if err != nil {
@@ -355,7 +349,7 @@ func (h *DualCertCreateHandler) Execute(
 	}
 
 	// ========================================================================
-	// 步骤 5：审计 + 响应（★ 无 chain_path）
+	// 步骤 5：审计 + 响应
 	// ========================================================================
 	audit.Log(req, "dual_cert.create", start, "SUCCESS", "")
 
@@ -375,6 +369,36 @@ func (h *DualCertCreateHandler) Execute(
 	data["output_layout"] = outputLayout
 
 	return envelope.NewSuccess(data)
+}
+
+// =============================================================================
+// 路径解析辅助
+// =============================================================================
+
+// resolveInputPath 解析输入路径，兼容绝对路径与受控相对路径。
+//
+// 规则：
+//   - 绝对路径：直接 os.Stat 检查存在性；不存在返回错误。
+//     用于新规范下的 <CertRoot>/server/<dir_no>/ 等路径。
+//   - 相对路径：走 pathguard.Resolve（只允许 coreRoot/data 和 coreRoot/tmp）。
+//     用于旧数据或 backend-go 拷入 core/tmp/ 的临时文件。
+//
+// 说明：只做"是否存在于预期位置"的判断；不强制所有输入都在受控目录下，
+//      因为新规范的证书/CSR 就在 <CertRoot> 下，不在 coreRoot 内。
+func resolveInputPath(p string) (string, error) {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return "", fmt.Errorf("empty path")
+	}
+	if filepath.IsAbs(p) {
+		abs := filepath.Clean(p)
+		if st, err := os.Stat(abs); err == nil && !st.IsDir() {
+			return abs, nil
+		}
+		return "", fmt.Errorf("file not found: %s", abs)
+	}
+	// 相对路径 → 受控目录校验
+	return pathguard.Resolve(p)
 }
 
 // =============================================================================
