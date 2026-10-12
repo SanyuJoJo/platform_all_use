@@ -1,0 +1,7 @@
+# 构建产物
+./bin/
+# Go
+*.test
+# IDE
+.idea/
+.vscode/

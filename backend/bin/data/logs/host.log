@@ -1,0 +1,24 @@
+[host] 2026/10/12 16:16:12 main.go:56: 启动主应用 version=8af4d8a-dirty
+[host] 2026/10/12 16:16:12 main.go:58: 配置文件: /code/platform_all_use/backend/bin/config.json
+[host] 2026/10/12 16:16:12 main.go:60: 监听地址 0.0.0.0:8080（外部访问 http://127.0.0.1:8080）
+2026-10-12T16:16:12.665+0800 [DEBUG] plugin: starting plugin: path=/code/platform_all_use/backend/bin/plugins/echo/echo args=["/code/platform_all_use/backend/bin/plugins/echo/echo"]
+2026-10-12T16:16:12.666+0800 [DEBUG] plugin: plugin started: path=/code/platform_all_use/backend/bin/plugins/echo/echo pid=1824756
+2026-10-12T16:16:12.666+0800 [DEBUG] plugin: waiting for RPC address: plugin=/code/platform_all_use/backend/bin/plugins/echo/echo
+2026-10-12T16:16:12.675+0800 [DEBUG] plugin.echo: plugin address: address=/tmp/plugin452332887 network=unix timestamp="2026-10-12T16:16:12.673+0800"
+2026-10-12T16:16:12.675+0800 [DEBUG] plugin: using plugin: version=1
+2026-10-12T16:16:12.678+0800 [DEBUG] plugin.echo: 2026/10/12 16:16:12 EchoPlugin 初始化完成 prefix="[echo] "
+[host] 2026/10/12 16:16:12 manager.go:138: [manager] 插件 echo v1.0.0 已加载 (mode=managed runtime=go-plugin)
+ * Serving Flask app 'main'
+ * Debug mode: off
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on http://127.0.0.1:9100
+Press CTRL+C to quit
+127.0.0.1 - - [12/Oct/2026 16:16:13] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [12/Oct/2026 16:16:13] "POST /initialize HTTP/1.1" 200 -
+[host] 2026/10/12 16:16:13 manager.go:138: [manager] 插件 python-hello v1.0.0 已加载 (mode=managed runtime=http)
+[host] 2026/10/12 16:16:13 main.go:100: [host] route /api/go/echo -> plugin echo (methods=[GET POST PUT DELETE] priority=100 strip=false)
+[host] 2026/10/12 16:16:13 main.go:100: [host] route /api/hello -> plugin python-hello (methods=[GET] priority=100 strip=false)
+[host] 2026/10/12 16:16:13 main.go:100: [host] route /api/go/echo/ -> plugin echo (methods=[GET POST] priority=90 strip=true)
+[host] 2026/10/12 16:16:13 main.go:100: [host] route /api/hello/ -> plugin python-hello (methods=[GET POST PUT DELETE] priority=90 strip=true)
+[host] 2026/10/12 16:16:13 main.go:320: HTTP 服务监听 0.0.0.0:8080
+127.0.0.1 - - [12/Oct/2026 16:16:24] "GET /api/hello HTTP/1.1" 200 -

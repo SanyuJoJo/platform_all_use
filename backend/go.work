@@ -1,0 +1,6 @@
+go 1.22
+use (
+    ./contract
+    ./host
+    ./plugin-echo
+)
