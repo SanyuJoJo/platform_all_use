@@ -7,46 +7,57 @@ import (
 )
 
 // CA 根 CA 与中间 CA 元数据表。
+//
+// 非持久化展示字段（gorm:"-"）：
+//   - HasPrivateKey：是否存在私钥；
+//   - Domain       ：域目录名（从 CertPath 推导）；
+//   - NotBefore / NotAfter：证书生效/失效时间（从证书解析，北京时间字符串）。
 type CA struct {
-	ID           uint      `gorm:"primaryKey;autoIncrement" json:"-"`
-	CAID         string    `gorm:"size:64;not null;uniqueIndex" json:"ca_id"`
-	ParentCAID   *string   `gorm:"size:64;index" json:"parent_ca_id"`
-	SubjectCN    string    `gorm:"size:255;not null" json:"subject_cn"`
-	SubjectO     *string   `gorm:"size:255" json:"subject_o"`
-	Algorithm    string    `gorm:"size:32;not null" json:"algorithm"`
-	KeyParams    JSONMap   `gorm:"type:json" json:"key_params,omitempty"`
-	ValidityDays int       `gorm:"not null" json:"validity_days"`
-	CertPath     string    `gorm:"size:255;not null" json:"cert_path"`
+	ID         uint    `gorm:"primaryKey;autoIncrement" json:"-"`
+	CAID       string  `gorm:"size:64;not null;uniqueIndex" json:"ca_id"`
+	ParentCAID *string `gorm:"size:64;index" json:"parent_ca_id"`
+	SubjectCN  string  `gorm:"size:255;not null" json:"subject_cn"`
+	SubjectO   *string `gorm:"size:255" json:"subject_o"`
 
-	// KeyRef 旧模式：core keystore 私钥引用。新模式下为空字符串。
-	KeyRef string `gorm:"size:64;not null" json:"key_ref,omitempty"`
+	// ★ Algorithm 存储公钥算法，JSON 键为 public_key_algorithm。
+	Algorithm string `gorm:"column:algorithm;size:32;not null" json:"public_key_algorithm"`
 
-	// KeyPath 新模式：白盒私钥路径（<pubkey_sm3>.key.pem）。
-	// 与 KeyRef 二选一：
-	//   - KeyRef 非空  → 旧模式，签发时走 core local 分支
-	//   - KeyPath 非空 → 新模式，签发时解密白盒私钥后走 core manual 分支
-	KeyPath string `gorm:"size:255" json:"key_path,omitempty"`
+	KeyParams    JSONMap `gorm:"type:json" json:"key_params,omitempty"`
+	ValidityDays int     `gorm:"not null" json:"validity_days"`
+	CertPath     string  `gorm:"size:255;not null" json:"cert_path"`
 
-	ChainPath *string   `gorm:"size:255" json:"chain_path,omitempty"` // 保留兼容，新数据不写
+	KeyRef    string  `gorm:"size:64;not null" json:"key_ref,omitempty"`
+	KeyPath   string  `gorm:"size:255" json:"key_path,omitempty"`
+	ChainPath *string `gorm:"size:255" json:"chain_path,omitempty"`
+
 	Serial    *string   `gorm:"size:128" json:"serial,omitempty"`
 	Status    string    `gorm:"size:16;not null;default:ACTIVE;index" json:"status"`
 	CreatedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
 	UpdatedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updated_at"`
+
+	// ★ 非持久化展示字段
+	HasPrivateKey bool   `gorm:"-" json:"has_private_key"`
+	Domain        string `gorm:"-" json:"domain,omitempty"`
+	NotBefore     string `gorm:"-" json:"not_before,omitempty"`
+	NotAfter      string `gorm:"-" json:"not_after,omitempty"`
 }
 
+// TableName 指定表名。
 func (CA) TableName() string { return "platform_ca" }
 
 // Certificate 终端证书元数据表。
 type Certificate struct {
-	ID                 uint      `gorm:"primaryKey;autoIncrement" json:"-"`
-	CertID             string    `gorm:"size:64;not null;uniqueIndex" json:"cert_id"`
-	CertType           string    `gorm:"size:32;not null;index" json:"cert_type"`
-	Serial             string    `gorm:"size:128;not null;index" json:"serial"`
-	Subject            string    `gorm:"size:512" json:"subject"`
-	SubjectCN          string    `gorm:"size:255;not null" json:"subject_cn"`
-	Issuer             string    `gorm:"size:512" json:"issuer"`
-	IssuerCN           string    `gorm:"size:255" json:"issuer_cn"`
-	CAID               string    `gorm:"size:64;not null;index" json:"ca_id"`
+	ID       uint   `gorm:"primaryKey;autoIncrement" json:"-"`
+	CertID   string `gorm:"size:64;not null;uniqueIndex" json:"cert_id"`
+	CertType string `gorm:"size:32;not null;index" json:"cert_type"`
+	Serial   string `gorm:"size:128;not null;index" json:"serial"`
+
+	Subject   string `gorm:"size:512" json:"subject"`
+	SubjectCN string `gorm:"size:255;not null" json:"subject_cn"`
+	Issuer    string `gorm:"size:512" json:"issuer"`
+	IssuerCN  string `gorm:"size:255" json:"issuer_cn"`
+	CAID      string `gorm:"size:64;not null;index" json:"ca_id"`
+
 	Algorithm          string    `gorm:"size:32;not null" json:"algorithm"`
 	Fingerprint        string    `gorm:"size:128" json:"fingerprint"`
 	PublicKeyAlgorithm string    `gorm:"size:64" json:"public_key_algorithm"`
@@ -55,34 +66,49 @@ type Certificate struct {
 	NotAfter           time.Time `gorm:"not null;index" json:"not_after"`
 	CertPath           string    `gorm:"size:255;not null" json:"cert_path"`
 
-	// KeyPath 白盒私钥路径（<pubkey_sm3>.key.pem）。可为空（证书不带私钥）。
-	KeyPath *string `gorm:"size:255" json:"key_path,omitempty"`
-
-	// KeyRef 旧模式：core keystore 私钥引用。兼容保留。
-	KeyRef *string `gorm:"size:64" json:"key_ref,omitempty"`
-
-	// ChainPath 旧的证书链路径，已废弃。
-	// 保留字段用于清理历史数据，新数据不写。
+	KeyPath   *string `gorm:"size:255" json:"key_path,omitempty"`
+	KeyRef    *string `gorm:"size:64" json:"key_ref,omitempty"`
 	ChainPath *string `gorm:"size:255" json:"chain_path,omitempty"`
 
 	Status    string    `gorm:"size:16;not null;default:VALID;index" json:"status"`
 	CreatedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
+
+	// ★ 非持久化展示字段
+	HasPrivateKey bool `gorm:"-" json:"has_private_key"`
 }
 
+// TableName 指定表名。
 func (Certificate) TableName() string { return "platform_certificate" }
 
 // CSR P10 元数据表。
+//
+// 非持久化展示字段（gorm:"-"）：
+//   - HasPrivateKey：是否存在私钥；
+//   - Subject      ：完整 DN（运行时从 CSR 文件解析，RFC2253 规范化）；
+//   - NotBefore    ：CreatedAt（北京时间，展示用）；
+//   - NotAfter     ：空（P10 无固有有效期）。
 type CSR struct {
-	ID        uint      `gorm:"primaryKey;autoIncrement" json:"-"`
-	CSRID     string    `gorm:"size:64;not null;uniqueIndex" json:"csr_id"`
-	SubjectCN string    `gorm:"size:255;not null" json:"subject_cn"`
-	Algorithm string    `gorm:"size:32;not null" json:"algorithm"`
+	ID        uint   `gorm:"primaryKey;autoIncrement" json:"-"`
+	CSRID     string `gorm:"size:64;not null;uniqueIndex" json:"csr_id"`
+	SubjectCN string `gorm:"size:255;not null" json:"subject_cn"`
+
+	// ★ Algorithm 存储公钥算法，JSON 键为 public_key_algorithm。
+	Algorithm string `gorm:"column:algorithm;size:32;not null" json:"public_key_algorithm"`
+
 	CSRPath   string    `gorm:"size:255;not null" json:"csr_path"`
 	KeyRef    *string   `gorm:"size:64" json:"key_ref,omitempty"`
 	Status    string    `gorm:"size:16;not null;default:NEW;index" json:"status"`
 	CreatedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
+
+	// ★ 非持久化展示字段
+	HasPrivateKey bool   `gorm:"-" json:"has_private_key"`
+	NotBefore     string `gorm:"-" json:"not_before,omitempty"`
+	NotAfter      string `gorm:"-" json:"not_after,omitempty"`
+	// ★ Subject 完整 DN（运行时从 CSR 文件解析）
+	Subject string `gorm:"-" json:"subject,omitempty"`
 }
 
+// TableName 指定表名。
 func (CSR) TableName() string { return "platform_csr" }
 
 // CRL CRL 元数据表。
@@ -98,6 +124,7 @@ type CRL struct {
 	CreatedAt    time.Time  `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
 }
 
+// TableName 指定表名。
 func (CRL) TableName() string { return "platform_crl" }
 
 // KeyMeta 密钥元数据表。
@@ -115,6 +142,7 @@ type KeyMeta struct {
 	UpdatedAt     time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updated_at"`
 }
 
+// TableName 指定表名。
 func (KeyMeta) TableName() string { return "platform_key_meta" }
 
 // EnvelopedKeyRecord 数字信封记录表。
@@ -132,6 +160,7 @@ type EnvelopedKeyRecord struct {
 	CreatedAt           time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
 }
 
+// TableName 指定表名。
 func (EnvelopedKeyRecord) TableName() string { return "platform_enveloped_key" }
 
 // EnsureCryptoMetaTables 确保密码元数据表存在（仅供开发/测试使用）。

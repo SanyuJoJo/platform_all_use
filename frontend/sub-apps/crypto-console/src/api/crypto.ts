@@ -20,6 +20,7 @@ export interface ImportCAParams {
   key_pem?: string;
   key_password?: string;
   key_ref?: string;
+  domain?: string;
 }
 
 export interface ImportCertParams {
@@ -57,9 +58,25 @@ export interface CAListItem {
   ca_id: string;
   subject_cn: string;
   subject?: string;
-  algorithm: string;
+  public_key_algorithm: string;
+  algorithm?: string;
   cert_path: string;
   status: string;
+  has_private_key?: boolean;
+  /** ★ 域 */
+  domain?: string;
+  /** ★ 生效时间（北京时间字符串） */
+  not_before?: string;
+  /** ★ 失效时间（北京时间字符串） */
+  not_after?: string;
+}
+
+export interface CreateDomainResponse {
+  name: string;
+}
+
+export interface DomainListResponse {
+  domains: string[];
 }
 
 export type CertTypeItem = 'server' | 'client' | 'signature' | 'encryption';
@@ -84,6 +101,7 @@ export interface SignCertParams {
   cert_types?: CertTypeItem[];
   validity_days: number;
   cert_mode?: 'normal' | 'dual';
+  domain?: string;
 
   return_key?: boolean;
   key_export_password?: string;
@@ -98,24 +116,11 @@ export interface SignCertResult {
   encrypted_envelope?: string;
 }
 
-/**
- * 查询信封信息请求。
- *
- * mode：
- *   - cert   ：从平台已签发的签名证书反查 key_ref，自动用签名私钥解密（推荐）
- *   - manual ：手动粘贴签名私钥 PEM 解密
- *
- * 两种模式都必须提供 encrypted_envelope。
- */
 export interface QueryEnvelopeParams {
   format: 'pkcs10' | 'cfca';
   mode?: 'cert' | 'manual';
   encrypted_envelope: string;
-
-  // mode=cert
   cert_id?: string;
-
-  // mode=manual
   sign_key_pem?: string;
   sign_key_password?: string;
 }
@@ -180,6 +185,17 @@ export const cryptoApi = {
   },
   deleteCA(caId: string) {
     return request.delete(`/cas/${caId}`);
+  },
+
+  // ★ 域管理
+  listDomains() {
+    return request.get<DomainListResponse>('/cas/domains');
+  },
+  createDomain(name: string) {
+    return request.post<CreateDomainResponse>('/cas/domains', { name });
+  },
+  deleteDomain(name: string) {
+    return request.delete(`/cas/domains/${encodeURIComponent(name)}`);
   },
 
   listCerts(params?: Record<string, unknown>) {

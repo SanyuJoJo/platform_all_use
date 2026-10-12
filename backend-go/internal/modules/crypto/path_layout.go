@@ -29,7 +29,7 @@ type PathLayout struct {
 	CertRoot   string
 	CARoot     string
 	ServerRoot string
-	TmpDir     string // ★ 白盒临时解密目录
+	TmpDir     string
 }
 
 func NewPathLayout(cfg *config.Config) *PathLayout {
@@ -119,9 +119,6 @@ func (l *PathLayout) ServerPaths(dirNo, pubSM3 string) (
 }
 
 // AllocServerDir 分配下一个可用的 server 目录编号（0000 起递增）。
-//
-// 规则：取当前 ServerRoot 下所有 4 位数字目录的最大值 + 1。
-// 不复用已删除编号，保证历史审计可追溯。
 func (l *PathLayout) AllocServerDir() (string, error) {
 	if err := os.MkdirAll(l.ServerRoot, 0750); err != nil {
 		return "", err
@@ -149,8 +146,6 @@ func (l *PathLayout) AllocServerDir() (string, error) {
 }
 
 // FindCSRDirByPubkeySM3 通过 CSR 公钥 SM3 定位其所在目录。
-//
-// 遍历 server/<dir_no>/ 下是否存在 <pubSM3>.req.csr。
 func (l *PathLayout) FindCSRDirByPubkeySM3(pubSM3 string) (string, error) {
 	entries, err := os.ReadDir(l.ServerRoot)
 	if err != nil {
@@ -177,4 +172,128 @@ func (l *PathLayout) EnsureUnderCertRoot(p string) error {
 		return nil
 	}
 	return exception.New(exception.CodeParamInvalid, "路径不在证书根目录下", 400, nil)
+}
+
+// =============================================================================
+// ★ 域管理
+// =============================================================================
+
+// ListDomains 列出 CARoot 下的所有合法域目录（含 safe）。
+//
+// 规则：
+//   - 只统计 CARoot 的直接子目录；
+//   - 目录名必须匹配 ^[A-Za-z0-9_-]+$；
+//   - 目录名以 "." 开头的一律忽略；
+//   - 结果按字典序排序，safe 优先排在首位；
+//   - 若无任何合法域，至少返回 ["safe"]。
+func (l *PathLayout) ListDomains() ([]string, error) {
+	if err := os.MkdirAll(l.CARoot, 0750); err != nil {
+		return nil, fmt.Errorf("mkdir %s: %w", l.CARoot, err)
+	}
+	entries, err := os.ReadDir(l.CARoot)
+	if err != nil {
+		return nil, err
+	}
+	var domains []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if strings.HasPrefix(name, ".") || !domainRe.MatchString(name) {
+			continue
+		}
+		domains = append(domains, name)
+	}
+	sort.Strings(domains)
+
+	// safe 优先
+	for i, d := range domains {
+		if d == "safe" && i != 0 {
+			domains = append([]string{"safe"}, append(domains[:i], domains[i+1:]...)...)
+			break
+		}
+	}
+	if len(domains) == 0 {
+		domains = []string{"safe"}
+	}
+	return domains, nil
+}
+
+// CreateDomain 创建一个新的域目录。
+//
+// 校验规则：
+//   - 名称必须匹配 ^[A-Za-z0-9_-]+$；
+//   - 长度 1~64；
+//   - 不能与已有域重名；
+//   - 目录权限 0750。
+func (l *PathLayout) CreateDomain(name string) error {
+	n := strings.TrimSpace(name)
+	if n == "" || len(n) > 64 {
+		return exception.New(exception.CodeParamInvalid,
+			"域名称长度必须在 1~64 之间", 400, nil)
+	}
+	if !domainRe.MatchString(n) {
+		return exception.New(exception.CodeParamInvalid,
+			"域名称只能包含字母、数字、下划线、短横线", 400, nil)
+	}
+	dir := filepath.Join(l.CARoot, n)
+	if st, err := os.Stat(dir); err == nil && st.IsDir() {
+		return exception.New(exception.CodeParamInvalid,
+			"域已存在："+n, 409, nil)
+	}
+	if err := os.MkdirAll(dir, 0750); err != nil {
+		return exception.New(exception.CodeInternalError,
+			fmt.Sprintf("创建域目录失败：%v", err), 500, nil)
+	}
+	return nil
+}
+
+// ★ DeleteDomain 删除一个域目录。
+//
+// 约束：
+//   - safe 为默认域，禁止删除；
+//   - 名称必须匹配 ^[A-Za-z0-9_-]+$；
+//   - 目录必须为空（不含任何文件 / 子目录），否则拒绝删除；
+//   - 目录不存在 → 404。
+func (l *PathLayout) DeleteDomain(name string) error {
+	n := strings.TrimSpace(name)
+	if n == "" {
+		return exception.New(exception.CodeParamInvalid, "域名称不能为空", 400, nil)
+	}
+	if n == "safe" {
+		return exception.New(exception.CodeParamInvalid,
+			"默认域 safe 不允许删除", 400, nil)
+	}
+	if !domainRe.MatchString(n) {
+		return exception.New(exception.CodeParamInvalid,
+			"域名称只能包含字母、数字、下划线、短横线", 400, nil)
+	}
+	dir := filepath.Join(l.CARoot, n)
+	st, err := os.Stat(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return exception.New(exception.CodeNotFound, "域不存在："+n, 404, nil)
+		}
+		return exception.New(exception.CodeInternalError,
+			fmt.Sprintf("查询域目录失败：%v", err), 500, nil)
+	}
+	if !st.IsDir() {
+		return exception.New(exception.CodeParamInvalid,
+			"域路径不是目录："+n, 400, nil)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return exception.New(exception.CodeInternalError,
+			fmt.Sprintf("读取域目录失败：%v", err), 500, nil)
+	}
+	if len(entries) > 0 {
+		return exception.New(exception.CodeParamInvalid,
+			"域目录非空，无法删除："+n+"（请先删除该域下的所有 CA）", 400, nil)
+	}
+	if err := os.Remove(dir); err != nil {
+		return exception.New(exception.CodeInternalError,
+			fmt.Sprintf("删除域目录失败：%v", err), 500, nil)
+	}
+	return nil
 }

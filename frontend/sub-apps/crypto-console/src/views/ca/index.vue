@@ -17,6 +17,7 @@
             >
               创建根 CA
             </n-button>
+            <n-button @click="openDomainManager">域管理</n-button>
           </n-space>
         </template>
 
@@ -25,11 +26,12 @@
           :data="list"
           :loading="loading"
           :pagination="false"
+          :scroll-x="1500"
         />
       </n-card>
     </n-space>
 
-    <!-- 创建根 CA -->
+    <!-- ================= 创建根 CA ================= -->
     <n-modal
       v-model:show="showCreate"
       preset="card"
@@ -37,7 +39,17 @@
       style="width: 720px"
     >
       <n-form :model="form" label-placement="left" label-width="120">
-        <n-form-item label="算法">
+        <n-form-item label="域">
+          <n-select
+            v-model:value="form.domain"
+            :options="domainOptions"
+            :loading="domainLoading"
+            placeholder="选择域"
+            style="width: 100%"
+          />
+        </n-form-item>
+
+        <n-form-item label="公钥算法">
           <n-select v-model:value="form.algorithm" :options="algorithmOptions" />
         </n-form-item>
 
@@ -49,23 +61,9 @@
               :autosize="{ minRows: 3, maxRows: 6 }"
               :placeholder="DN_HELP_EXAMPLE"
             />
-            <n-popover
-              trigger="click"
-              placement="left-start"
-              :width="440"
-              style="max-width: 90vw"
-            >
+            <n-popover trigger="click" placement="left-start" :width="440" style="max-width: 90vw">
               <template #trigger>
-                <n-button
-                  circle
-                  size="small"
-                  quaternary
-                  type="info"
-                  class="dn-help-btn"
-                  title="DN 项说明"
-                >
-                  ?
-                </n-button>
+                <n-button circle size="small" quaternary type="info" class="dn-help-btn">?</n-button>
               </template>
               <div class="dn-help">
                 <p class="dn-help__title">DN 项支持</p>
@@ -96,12 +94,7 @@
 
         <n-form-item v-if="form.dn.trim()" label="解析预览">
           <div class="dn-preview">
-            <n-alert
-              v-if="dnPreview.errors.length"
-              type="error"
-              :show-icon="true"
-              style="width: 100%"
-            >
+            <n-alert v-if="dnPreview.errors.length" type="error" :show-icon="true" style="width: 100%">
               <div v-for="(e, i) in dnPreview.errors" :key="i">{{ e }}</div>
             </n-alert>
             <template v-else>
@@ -137,7 +130,7 @@
           <n-button
             type="primary"
             :loading="submitting"
-            :disabled="dnPreview.errors.length > 0 || !form.dn.trim()"
+            :disabled="dnPreview.errors.length > 0 || !form.dn.trim() || !form.domain"
             @click="handleCreate"
           >
             提交
@@ -146,13 +139,8 @@
       </template>
     </n-modal>
 
-    <!-- 导入 CA -->
-    <n-modal
-      v-model:show="showImport"
-      preset="card"
-      title="导入 CA"
-      style="width: 680px"
-    >
+    <!-- ================= 导入 CA ================= -->
+    <n-modal v-model:show="showImport" preset="card" title="导入 CA" style="width: 680px">
       <n-alert type="info" :show-icon="true" style="margin-bottom: 12px">
         支持两种导入方式：
         <br />① 仅导入 CA 证书（不选私钥文件）；
@@ -160,45 +148,32 @@
       </n-alert>
 
       <n-form label-placement="top">
+        <n-form-item label="域">
+          <n-select
+            v-model:value="importForm.domain"
+            :options="domainOptions"
+            :loading="domainLoading"
+            placeholder="选择域（默认 safe）"
+            style="width: 100%"
+          />
+        </n-form-item>
+
         <n-form-item label="CA 证书文件（PEM / CRT / CER，必填）">
           <div class="file-row">
-            <input
-              ref="certFileInputRef"
-              type="file"
-              accept=".pem,.crt,.cer,.cert"
-              style="display: none"
-              @change="onCertFileChange"
-            />
+            <input ref="certFileInputRef" type="file" accept=".pem,.crt,.cer,.cert" style="display: none" @change="onCertFileChange" />
             <n-button @click="certFileInputRef?.click()">选择证书文件</n-button>
-            <span v-if="importForm.cert_file_name" class="file-name">
-              {{ importForm.cert_file_name }}
-            </span>
+            <span v-if="importForm.cert_file_name" class="file-name">{{ importForm.cert_file_name }}</span>
             <span v-else class="file-placeholder">未选择文件</span>
           </div>
         </n-form-item>
 
         <n-form-item label="CA 私钥文件（PEM，可选）">
           <div class="file-row">
-            <input
-              ref="keyFileInputRef"
-              type="file"
-              accept=".pem,.key"
-              style="display: none"
-              @change="onKeyFileChange"
-            />
+            <input ref="keyFileInputRef" type="file" accept=".pem,.key" style="display: none" @change="onKeyFileChange" />
             <n-button @click="keyFileInputRef?.click()">选择私钥文件</n-button>
-            <span v-if="importForm.key_file_name" class="file-name">
-              {{ importForm.key_file_name }}
-            </span>
+            <span v-if="importForm.key_file_name" class="file-name">{{ importForm.key_file_name }}</span>
             <span v-else class="file-placeholder">未选择文件</span>
-            <n-button
-              v-if="importForm.key_file_name"
-              size="tiny"
-              quaternary
-              @click="clearKeyFile"
-            >
-              清除
-            </n-button>
+            <n-button v-if="importForm.key_file_name" size="tiny" quaternary @click="clearKeyFile">清除</n-button>
           </div>
         </n-form-item>
 
@@ -218,7 +193,7 @@
           <n-button
             type="primary"
             :loading="importing"
-            :disabled="!importForm.cert_pem.trim()"
+            :disabled="!importForm.cert_pem.trim() || !importForm.domain"
             @click="handleImport"
           >
             导入
@@ -227,13 +202,66 @@
       </template>
     </n-modal>
 
-    <!-- 导出 CA -->
-    <n-modal
-      v-model:show="showExport"
-      preset="card"
-      title="导出 CA"
-      style="width: 560px"
-    >
+    <!-- ================= 域管理 ================= -->
+    <n-modal v-model:show="showDomainManager" preset="card" title="域管理" style="width: 520px">
+      <n-space vertical>
+        <n-alert type="info" :show-icon="true">
+          域用于隔离不同业务线的 CA 与证书。safe 为默认域，不可删除。
+        </n-alert>
+
+        <n-list bordered>
+          <n-list-item v-for="d in domains" :key="d">
+            <n-space justify="space-between" align="center" style="width: 100%">
+              <span class="mono">{{ d }}</span>
+              <n-space align="center">
+                <n-tag v-if="d === 'safe'" size="small" type="success">默认</n-tag>
+                <n-popconfirm
+                  v-else
+                  :show-icon="true"
+                  positive-text="确认删除"
+                  negative-text="取消"
+                  @positive-click="handleDeleteDomain(d)"
+                >
+                  <template #trigger>
+                    <n-button size="tiny" type="error" quaternary>删除</n-button>
+                  </template>
+                  确认删除域「{{ d }}」？该操作不可恢复，且要求域目录为空。
+                </n-popconfirm>
+              </n-space>
+            </n-space>
+          </n-list-item>
+        </n-list>
+
+        <n-divider style="margin: 4px 0" />
+
+        <n-form-item label="新建域" :show-feedback="false">
+          <n-input
+            v-model:value="newDomainName"
+            placeholder="仅支持字母、数字、下划线、短横线；长度 1-64"
+          />
+        </n-form-item>
+        <n-alert v-if="newDomainError" type="error" :show-icon="true">
+          {{ newDomainError }}
+        </n-alert>
+      </n-space>
+
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showDomainManager = false">关闭</n-button>
+          <n-button
+            type="primary"
+            :loading="creatingDomain"
+            :disabled="!newDomainValid"
+            @click="handleCreateDomain"
+          >
+            创建
+          </n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
+    <!-- ================= 导出 CA ================= -->
+    <n-modal v-model:show="showExport" preset="card" title="导出 CA" style="width: 560px">
       <n-alert
         v-if="exportForm.type === 'key' || exportForm.type === 'pkcs12'"
         type="warning"
@@ -283,7 +311,7 @@
       </template>
     </n-modal>
 
-    <!-- CA 证书详情 -->
+    <!-- ================= CA 证书详情 ================= -->
     <n-drawer v-model:show="showDetail" :width="760">
       <n-drawer-content title="CA 证书详情" closable>
         <n-spin :show="detailLoading">
@@ -294,18 +322,10 @@
             label-placement="left"
             size="small"
           >
-            <n-descriptions-item label="版本号">
-              {{ detail.version }}
-            </n-descriptions-item>
-            <n-descriptions-item label="序列号">
-              <span class="mono">{{ detail.serial }}</span>
-            </n-descriptions-item>
-            <n-descriptions-item label="颁发者">
-              {{ detail.issuer }}
-            </n-descriptions-item>
-            <n-descriptions-item label="使用者">
-              {{ detail.subject }}
-            </n-descriptions-item>
+            <n-descriptions-item label="版本号">{{ detail.version }}</n-descriptions-item>
+            <n-descriptions-item label="序列号"><span class="mono">{{ detail.serial }}</span></n-descriptions-item>
+            <n-descriptions-item label="颁发者">{{ detail.issuer }}</n-descriptions-item>
+            <n-descriptions-item label="使用者">{{ detail.subject }}</n-descriptions-item>
             <n-descriptions-item label="摘要值">
               <n-popover trigger="click" :width="640" style="max-width: 90vw">
                 <template #trigger>
@@ -314,18 +334,10 @@
                 <div class="full-value mono">{{ detail.fingerprint }}</div>
               </n-popover>
             </n-descriptions-item>
-            <n-descriptions-item label="有效期（起）">
-              {{ detail.not_before }}
-            </n-descriptions-item>
-            <n-descriptions-item label="有效期（止）">
-              {{ detail.not_after }}
-            </n-descriptions-item>
-            <n-descriptions-item label="公钥算法">
-              {{ detail.public_key_algorithm }}
-            </n-descriptions-item>
-            <n-descriptions-item label="签名摘要算法">
-              {{ detail.signature_algorithm }}
-            </n-descriptions-item>
+            <n-descriptions-item label="有效期（起）">{{ detail.not_before }}</n-descriptions-item>
+            <n-descriptions-item label="有效期（止）">{{ detail.not_after }}</n-descriptions-item>
+            <n-descriptions-item label="公钥算法">{{ detail.public_key_algorithm }}</n-descriptions-item>
+            <n-descriptions-item label="签名摘要算法">{{ detail.signature_algorithm }}</n-descriptions-item>
             <n-descriptions-item label="签名摘要值">
               <n-popover trigger="click" :width="640" style="max-width: 90vw">
                 <template #trigger>
@@ -353,38 +365,16 @@
 <script setup lang="ts">
 import { ref, onMounted, reactive, computed, h } from 'vue';
 import {
-  NButton,
-  NCard,
-  NDataTable,
-  NForm,
-  NFormItem,
-  NInput,
-  NInputNumber,
-  NModal,
-  NSelect,
-  NSpace,
-  NPopover,
-  NAlert,
-  NTag,
-  NRadioGroup,
-  NRadio,
-  NPopconfirm,
-  NDrawer,
-  NDrawerContent,
-  NDescriptions,
-  NDescriptionsItem,
-  NSpin,
-  NEmpty,
-  useMessage,
+  NButton, NCard, NDataTable, NForm, NFormItem, NInput, NInputNumber,
+  NModal, NSelect, NSpace, NPopover, NAlert, NTag, NRadioGroup, NRadio,
+  NPopconfirm, NDrawer, NDrawerContent, NDescriptions, NDescriptionsItem,
+  NSpin, NEmpty, NList, NListItem, NDivider, useMessage,
+  type DataTableColumns,
 } from 'naive-ui';
 import { cryptoApi, type CAExportType, type CADetail } from '@/api/crypto';
 import { useOperation } from '@/composables/useOperation';
 import {
-  DEFAULT_DN_SEPARATOR,
-  DN_HELP_KEYS,
-  DN_HELP_EXAMPLE,
-  validateDN,
-  parseDN,
+  DEFAULT_DN_SEPARATOR, DN_HELP_KEYS, DN_HELP_EXAMPLE, validateDN, parseDN,
 } from '@/utils/dn';
 
 const message = useMessage();
@@ -400,14 +390,21 @@ const showCreate = ref(false);
 const showImport = ref(false);
 const showExport = ref(false);
 const showDetail = ref(false);
+const showDomainManager = ref(false);
 
 const list = ref<any[]>([]);
 const detail = ref<CADetail | null>(null);
+
+const domains = ref<string[]>(['safe']);
+const domainLoading = ref(false);
+const newDomainName = ref('');
+const creatingDomain = ref(false);
 
 const certFileInputRef = ref<HTMLInputElement | null>(null);
 const keyFileInputRef = ref<HTMLInputElement | null>(null);
 
 const form = reactive({
+  domain: 'safe',
   algorithm: 'SM2',
   dn: '',
   dnSeparator: DEFAULT_DN_SEPARATOR,
@@ -416,6 +413,7 @@ const form = reactive({
 });
 
 const importForm = reactive({
+  domain: 'safe',
   cert_pem: '',
   cert_file_name: '',
   key_pem: '',
@@ -430,6 +428,26 @@ const exportForm = reactive({
 });
 
 const dnPreview = computed(() => parseDN(form.dn, form.dnSeparator));
+
+const domainOptions = computed(() =>
+  domains.value.map((d) => ({
+    label: d,
+    value: d,
+  }))
+);
+
+const newDomainError = computed(() => {
+  const v = newDomainName.value.trim();
+  if (!v) return '';
+  if (v.length > 64) return '长度不能超过 64';
+  if (!/^[A-Za-z0-9_-]+$/.test(v)) return '仅支持字母、数字、下划线、短横线';
+  if (domains.value.includes(v)) return '该域已存在';
+  return '';
+});
+
+const newDomainValid = computed(
+  () => newDomainName.value.trim() !== '' && newDomainError.value === ''
+);
 
 const algorithmOptions = [
   { label: 'SM2', value: 'SM2' },
@@ -448,35 +466,103 @@ const eccCurveOptions = [
 ];
 
 // ============================================================================
-// 表格列（本次修改：去掉 “CA ID” 列，改为“使用者”）
+// 时间格式化
 // ============================================================================
-const columns = [
+function fmtTime(t: any): string {
+  if (!t) return '-';
+  if (typeof t !== 'string') {
+    const d = new Date(t as any);
+    if (isNaN(d.getTime())) return '-';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(t)) return t;
+  const d = new Date(t);
+  if (isNaN(d.getTime())) return t;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+// ============================================================================
+// 表格列
+// 列顺序：使用者 | 信任域 | 公钥算法 | 序列号 | 生效时间 | 失效时间
+//        | 状态 | 创建时间 | 私钥文件 | 操作
+// ============================================================================
+const columns: DataTableColumns<any> = [
   {
     title: '使用者',
     key: 'subject_cn',
+    width: 180,
     ellipsis: { tooltip: true },
   },
-  { title: '算法', key: 'algorithm' },
-  { title: '序列号', key: 'serial', ellipsis: { tooltip: true } },
-  { title: '状态', key: 'status' },
-  { title: '创建时间', key: 'created_at' },
+  {
+    title: '信任域',
+    key: 'domain',
+    width: 100,
+    render(row: any) {
+      const d = row.domain || '-';
+      if (d === '-') return d;
+      return h(
+        NTag,
+        { size: 'small', type: 'info' },
+        { default: () => d }
+      );
+    },
+  },
+  {
+    title: '公钥算法',
+    key: 'public_key_algorithm',
+    width: 110,
+    render(row: any) {
+      return row.public_key_algorithm || row.algorithm || '';
+    },
+  },
+  {
+    title: '序列号',
+    key: 'serial',
+    width: 160,
+    ellipsis: { tooltip: true },
+  },
+  {
+    title: '生效时间',
+    key: 'not_before',
+    width: 170,
+    render(row: any) {
+      return fmtTime(row.not_before);
+    },
+  },
+  {
+    title: '失效时间',
+    key: 'not_after',
+    width: 170,
+    render(row: any) {
+      return fmtTime(row.not_after);
+    },
+  },
+  { title: '状态', key: 'status', width: 90 },
+  { title: '创建时间', key: 'created_at', width: 170 },
+  {
+    title: '私钥文件',
+    key: 'has_private_key',
+    width: 100,
+    render(row: any) {
+      return h(
+        NTag,
+        { size: 'small', type: row.has_private_key ? 'success' : 'default' },
+        { default: () => (row.has_private_key ? '有' : '无') }
+      );
+    },
+  },
   {
     title: '操作',
     key: 'actions',
-    width: 240,
+    width: 220,
+    fixed: 'right',
     render(row: any) {
       return h(NSpace, null, {
         default: () => [
-          h(
-            NButton,
-            { size: 'small', onClick: () => handleDetail(row) },
-            { default: () => '详情' }
-          ),
-          h(
-            NButton,
-            { size: 'small', onClick: () => openExport(row) },
-            { default: () => '导出' }
-          ),
+          h(NButton, { size: 'small', onClick: () => handleDetail(row) }, { default: () => '详情' }),
+          h(NButton, { size: 'small', onClick: () => openExport(row) }, { default: () => '导出' }),
           h(
             NPopconfirm,
             {
@@ -485,12 +571,7 @@ const columns = [
               negativeText: '取消',
             },
             {
-              trigger: () =>
-                h(
-                  NButton,
-                  { size: 'small', type: 'error' },
-                  { default: () => '删除' }
-                ),
+              trigger: () => h(NButton, { size: 'small', type: 'error' }, { default: () => '删除' }),
               default: () =>
                 `确认删除 CA「${row.subject_cn || row.ca_id}」？该操作不可恢复，且会写审计日志。`,
             }
@@ -506,6 +587,23 @@ function truncate(s: string | undefined | null, n: number): string {
   return s.length > n ? s.slice(0, n) + '...' : s;
 }
 
+// ============================================================================
+// 数据加载
+// ============================================================================
+async function fetchDomains() {
+  domainLoading.value = true;
+  try {
+    const res: any = await cryptoApi.listDomains();
+    const arr = (res.data?.domains as string[]) || [];
+    domains.value = arr.length ? arr : ['safe'];
+  } catch (e: any) {
+    console.warn('[ca] fetch domains failed', e);
+    domains.value = ['safe'];
+  } finally {
+    domainLoading.value = false;
+  }
+}
+
 async function fetchList() {
   loading.value = true;
   try {
@@ -518,17 +616,57 @@ async function fetchList() {
   }
 }
 
+// ============================================================================
+// 创建
+// ============================================================================
 function openCreate() {
+  form.domain = 'safe';
   form.algorithm = 'SM2';
   form.dn = '';
   form.dnSeparator = DEFAULT_DN_SEPARATOR;
   form.validity_days = 3650;
   form.key_params.key_size = 2048;
   form.key_params.curve = 'prime256v1';
+  if (domains.value.length === 0) fetchDomains();
   showCreate.value = true;
 }
 
+async function handleCreate() {
+  const result = validateDN(form.dn, form.dnSeparator);
+  if (result.errors.length) {
+    message.error(result.errors[0]);
+    return;
+  }
+
+  submitting.value = true;
+  try {
+    const params: Record<string, unknown> = {
+      domain: form.domain,
+      algorithm: form.algorithm,
+      subject: result.subject,
+      validity_days: form.validity_days,
+      key_protection: { cipher: 'AES-256-GCM' },
+    };
+    if (form.algorithm === 'RSA') {
+      params.key_params = { key_size: form.key_params.key_size };
+    } else if (form.algorithm === 'ECC') {
+      params.key_params = { curve: form.key_params.curve };
+    }
+    await run('ca.create', params);
+    showCreate.value = false;
+    form.dn = '';
+    form.dnSeparator = DEFAULT_DN_SEPARATOR;
+    await fetchList();
+  } finally {
+    submitting.value = false;
+  }
+}
+
+// ============================================================================
+// 导入
+// ============================================================================
 function openImport() {
+  importForm.domain = 'safe';
   importForm.cert_pem = '';
   importForm.cert_file_name = '';
   importForm.key_pem = '';
@@ -536,14 +674,8 @@ function openImport() {
   importForm.key_password = '';
   if (certFileInputRef.value) certFileInputRef.value.value = '';
   if (keyFileInputRef.value) keyFileInputRef.value.value = '';
+  if (domains.value.length === 0) fetchDomains();
   showImport.value = true;
-}
-
-function openExport(row: any) {
-  exportForm.ca_id = row.ca_id;
-  exportForm.type = 'cert';
-  exportForm.password = '';
-  showExport.value = true;
 }
 
 async function onCertFileChange(e: Event) {
@@ -591,51 +723,6 @@ function clearKeyFile() {
   if (keyFileInputRef.value) keyFileInputRef.value.value = '';
 }
 
-async function handleDetail(row: any) {
-  showDetail.value = true;
-  detail.value = null;
-  detailLoading.value = true;
-  try {
-    const res = await cryptoApi.getCADetail(row.ca_id);
-    detail.value = (res.data as any) || null;
-  } catch (e: any) {
-    message.error(e.message || '加载详情失败');
-    showDetail.value = false;
-  } finally {
-    detailLoading.value = false;
-  }
-}
-
-async function handleCreate() {
-  const result = validateDN(form.dn, form.dnSeparator);
-  if (result.errors.length) {
-    message.error(result.errors[0]);
-    return;
-  }
-
-  submitting.value = true;
-  try {
-    const params: Record<string, unknown> = {
-      algorithm: form.algorithm,
-      subject: result.subject,
-      validity_days: form.validity_days,
-      key_protection: { cipher: 'AES-256-GCM' },
-    };
-    if (form.algorithm === 'RSA') {
-      params.key_params = { key_size: form.key_params.key_size };
-    } else if (form.algorithm === 'ECC') {
-      params.key_params = { curve: form.key_params.curve };
-    }
-    await run('ca.create', params);
-    showCreate.value = false;
-    form.dn = '';
-    form.dnSeparator = DEFAULT_DN_SEPARATOR;
-    await fetchList();
-  } finally {
-    submitting.value = false;
-  }
-}
-
 async function handleImport() {
   if (!importForm.cert_pem.trim()) {
     message.warning('请选择 CA 证书文件');
@@ -653,6 +740,7 @@ async function handleImport() {
   importing.value = true;
   try {
     const payload: Record<string, string> = {
+      domain: importForm.domain,
       cert_pem: importForm.cert_pem.trim(),
     };
     if (importForm.key_pem.trim()) {
@@ -670,6 +758,54 @@ async function handleImport() {
   } finally {
     importing.value = false;
   }
+}
+
+// ============================================================================
+// 域管理
+// ============================================================================
+function openDomainManager() {
+  newDomainName.value = '';
+  fetchDomains();
+  showDomainManager.value = true;
+}
+
+async function handleCreateDomain() {
+  if (!newDomainValid.value) return;
+  creatingDomain.value = true;
+  try {
+    await cryptoApi.createDomain(newDomainName.value.trim());
+    message.success('域创建成功');
+    newDomainName.value = '';
+    await fetchDomains();
+  } catch (e: any) {
+    message.error(e.message || '创建域失败');
+  } finally {
+    creatingDomain.value = false;
+  }
+}
+
+async function handleDeleteDomain(name: string) {
+  if (!name || name === 'safe') {
+    message.warning('默认域 safe 不允许删除');
+    return;
+  }
+  try {
+    await cryptoApi.deleteDomain(name);
+    message.success('删除成功');
+    await fetchDomains();
+  } catch (e: any) {
+    message.error(e.message || '删除域失败');
+  }
+}
+
+// ============================================================================
+// 导出
+// ============================================================================
+function openExport(row: any) {
+  exportForm.ca_id = row.ca_id;
+  exportForm.type = 'cert';
+  exportForm.password = '';
+  showExport.value = true;
 }
 
 async function handleExport() {
@@ -728,6 +864,24 @@ async function handleExport() {
   }
 }
 
+// ============================================================================
+// 详情 / 删除
+// ============================================================================
+async function handleDetail(row: any) {
+  showDetail.value = true;
+  detail.value = null;
+  detailLoading.value = true;
+  try {
+    const res = await cryptoApi.getCADetail(row.ca_id);
+    detail.value = (res.data as any) || null;
+  } catch (e: any) {
+    message.error(e.message || '加载详情失败');
+    showDetail.value = false;
+  } finally {
+    detailLoading.value = false;
+  }
+}
+
 async function handleDelete(row: any) {
   try {
     await cryptoApi.deleteCA(row.ca_id);
@@ -738,105 +892,27 @@ async function handleDelete(row: any) {
   }
 }
 
-onMounted(fetchList);
+onMounted(async () => {
+  await Promise.all([fetchList(), fetchDomains()]);
+});
 </script>
 
 <style scoped>
-.dn-row {
-  display: flex;
-  gap: 8px;
-  width: 100%;
-  align-items: flex-start;
-}
-.dn-row .n-input {
-  flex: 1;
-  min-width: 0;
-}
-.dn-help-btn {
-  margin-top: 6px;
-  flex-shrink: 0;
-  font-weight: 700;
-}
-.dn-help {
-  line-height: 1.7;
-  font-size: 13px;
-}
-.dn-help__title {
-  margin: 0 0 4px;
-  font-weight: 600;
-  color: #111827;
-}
-.dn-help__keys {
-  margin: 0 0 10px;
-  color: #2563eb;
-  word-break: break-all;
-}
-.dn-help__example {
-  margin: 0 0 10px;
-  color: #374151;
-  background: #f3f4f6;
-  padding: 6px 8px;
-  border-radius: 4px;
-  word-break: break-all;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-}
-.dn-help__tip {
-  margin: 0;
-  color: #6b7280;
-  font-size: 12px;
-}
-.dn-sep-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.dn-sep-hint {
-  color: #6b7280;
-  font-size: 12px;
-}
-.dn-preview {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  width: 100%;
-}
-.file-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  width: 100%;
-}
-.file-name {
-  color: #2563eb;
-  font-size: 13px;
-  word-break: break-all;
-}
-.file-placeholder {
-  color: #9ca3af;
-  font-size: 13px;
-}
-.truncated {
-  display: inline-block;
-  max-width: 100%;
-  cursor: pointer;
-  color: #2563eb;
-  border-bottom: 1px dashed #2563eb;
-  word-break: break-all;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  vertical-align: bottom;
-}
-.full-value {
-  word-break: break-all;
-  line-height: 1.6;
-  font-size: 12px;
-  max-height: 400px;
-  overflow-y: auto;
-}
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
+.dn-row { display: flex; gap: 8px; width: 100%; align-items: flex-start; }
+.dn-row .n-input { flex: 1; min-width: 0; }
+.dn-help-btn { margin-top: 6px; flex-shrink: 0; font-weight: 700; }
+.dn-help { line-height: 1.7; font-size: 13px; }
+.dn-help__title { margin: 0 0 4px; font-weight: 600; color: #111827; }
+.dn-help__keys { margin: 0 0 10px; color: #2563eb; word-break: break-all; }
+.dn-help__example { margin: 0 0 10px; color: #374151; background: #f3f4f6; padding: 6px 8px; border-radius: 4px; word-break: break-all; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.dn-help__tip { margin: 0; color: #6b7280; font-size: 12px; }
+.dn-sep-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.dn-sep-hint { color: #6b7280; font-size: 12px; }
+.dn-preview { display: flex; flex-wrap: wrap; align-items: center; width: 100%; }
+.file-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; width: 100%; }
+.file-name { color: #2563eb; font-size: 13px; word-break: break-all; }
+.file-placeholder { color: #9ca3af; font-size: 13px; }
+.truncated { display: inline-block; max-width: 100%; cursor: pointer; color: #2563eb; border-bottom: 1px dashed #2563eb; word-break: break-all; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+.full-value { word-break: break-all; line-height: 1.6; font-size: 12px; max-height: 400px; overflow-y: auto; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 </style>

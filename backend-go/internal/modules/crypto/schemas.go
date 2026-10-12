@@ -142,7 +142,7 @@ type SignCertRequest struct {
 	ReturnKey         bool   `json:"return_key,omitempty"`
 	KeyExportPassword string `json:"key_export_password,omitempty"`
 
-	// ---------- ★ 证书路径改造新增 ----------
+	// ---------- 证书路径改造新增 ----------
 	// Domain 域名目录（可选）。
 	//   - 用于 CA 场景 / 目录标识；
 	//   - 为空时由 core 或 layout 默认处理。
@@ -161,8 +161,7 @@ type ImportCertRequest struct {
 // 落盘规则（证书路径改造）：
 //   - 签名证书：server/<csr_dir_no>/<sign_pub_sm3>.cert.pem；
 //   - 加密证书：server/<new_dir_no>/<enc_pub_sm3>.cert.pem；
-//   - 加密私钥：server/<new_dir_no>/<enc_pub_sm3>.key.pem（白盒密文）
-//     与 <enc_pub_sm3>.key.pem.pass（0600）。
+//   - 加密私钥：server/<new_dir_no>/<enc_pub_sm3>.key.pem（白盒密文）。
 type ImportDualCertRequest struct {
 	CSRPubSM3      string `json:"csr_pub_sm3"   binding:"required"`
 	SignCertPEM    string `json:"sign_cert_pem" binding:"required"`
@@ -233,9 +232,6 @@ type SignCertResult struct {
 //
 // 两种模式：
 //   - mode=cert   ：从签名证书反查私钥。
-//                   若签名证书有 KeyRef（客户导入 P10 时上传过私钥），
-//                   从 core 导出私钥解密。
-//                   若签名证书没有 KeyRef，返回明确错误引导用 manual 模式。
 //   - mode=manual ：客户上传自己的 CSR 私钥 s_pri，Server B 临时解密。
 //
 // ★ 去掉 binding:"required"，允许不同模式下选择性传参；
@@ -260,4 +256,18 @@ type QueryEnvelopeResponse struct {
 	IV                  string `json:"iv"`
 	EncryptedPrivateKey string `json:"encrypted_private_key"`
 	DecryptedKeyPEM     string `json:"decrypted_key_pem,omitempty"`
+}
+
+// =============================================================================
+// ★ 域管理
+// =============================================================================
+
+// CreateDomainRequest 新建域。
+type CreateDomainRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
+// DomainListResponse 域列表。
+type DomainListResponse struct {
+	Domains []string `json:"domains"`
 }

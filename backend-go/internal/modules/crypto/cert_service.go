@@ -91,7 +91,18 @@ func (s *CertService) List(
 		q = q.Where("ca_id = ?", caID)
 	}
 	var certs []models.Certificate
-	return paginateQuery(q, &certs, page, pageSize)
+	result, err := paginateQuery(q, &certs, page, pageSize)
+	if err != nil {
+		return nil, err
+	}
+	// ★ 计算 HasPrivateKey
+	for i := range certs {
+		certs[i].HasPrivateKey =
+			(certs[i].KeyRef != nil && *certs[i].KeyRef != "") ||
+				(certs[i].KeyPath != nil && *certs[i].KeyPath != "")
+	}
+	result["items"] = certs
+	return result, nil
 }
 
 func (s *CertService) Get(certID string) (*models.Certificate, error) {
@@ -102,6 +113,10 @@ func (s *CertService) Get(certID string) (*models.Certificate, error) {
 		}
 		return nil, exception.New(exception.CodeInternalError, "查询证书失败", 500, nil)
 	}
+	// ★ 运行时填充（供 Get / GetDetail 使用）
+	c.HasPrivateKey =
+		(c.KeyRef != nil && *c.KeyRef != "") ||
+			(c.KeyPath != nil && *c.KeyPath != "")
 	return &c, nil
 }
 
@@ -350,11 +365,6 @@ func (s *CertService) resolveSubjectFromCSR(
 // ★ 两种 CA 模式统一走 manual 转换：
 //   - 旧模式（KeyRef 非空）：从 keystore 导出私钥 → 拷 core/tmp → 切 manual
 //   - 新模式（KeyPath 非空）：解密白盒私钥 → 拷 core/tmp → 切 manual
-//
-// 原因：core 的 pathguard 只允许 coreRoot/data 与 coreRoot/tmp，
-//       而 CA 证书位于 <CertRoot>/ca/<domain>/，必须转换。
-//
-// cleanup 用于注册需要在请求结束后清理的 core 相对路径。
 func (s *CertService) resolveCASource(
 	ctx context.Context, req *SignCertRequest, params map[string]interface{},
 	cleanup *[]string,
@@ -375,11 +385,9 @@ func (s *CertService) resolveCASource(
 
 		params["ca_id"] = ca.CAID
 
-		// 旧模式：keystore 引用 → 导出 + 拷 core/tmp
 		if ca.KeyRef != "" {
 			return s.prepareManualCAFromKeystore(ctx, &ca, params, cleanup)
 		}
-		// 新模式：白盒密文 → 解密 + 拷 core/tmp
 		if ca.KeyPath != "" {
 			return s.prepareManualCAFromWhitebox(ctx, &ca, params, cleanup)
 		}
@@ -430,14 +438,6 @@ func (s *CertService) resolveCASource(
 
 // prepareManualCAFromKeystore 把 core keystore 中的 CA 私钥导出，
 // 连同 CA 证书一起拷到 core/tmp/，并把 params 切换为 manual 模式。
-//
-// 适用场景：**旧模式 CA**（DB 中 ca.KeyRef 非空、KeyPath 空）。
-//
-// 核心问题：
-//   - 旧模式 CA 的 CertPath 在新规范下是绝对路径（<CertRoot>/ca/<domain>/...），
-//     core 的 pathguard 只允许 coreRoot/data 和 coreRoot/tmp；
-//   - 所以必须先把证书与私钥拷到 core/tmp/ 再喂给 core；
-//   - 私钥通过 core 的 key.manage export 拿到明文（allow_plain_export=true）。
 func (s *CertService) prepareManualCAFromKeystore(
 	ctx context.Context, ca *models.CA, params map[string]interface{},
 	cleanup *[]string,
@@ -446,7 +446,6 @@ func (s *CertService) prepareManualCAFromKeystore(
 		return exception.New(exception.CodeInternalError, "CA keyRef 为空", 500, nil)
 	}
 
-	// 1. 从 core keystore 导出私钥明文
 	plainKey, err := s.caller.ExportKey(ctx, ca.KeyRef)
 	if err != nil {
 		return exception.New(exception.CodeInternalError,
@@ -458,7 +457,6 @@ func (s *CertService) prepareManualCAFromKeystore(
 
 	id := newShortID()
 
-	// 2. 拷私钥到 core/tmp/
 	coreKeyRel := fmt.Sprintf("tmp/ca-sign-key-%s.pem", id)
 	if err := s.files.WriteCoreFile(coreKeyRel, plainKey, 0600); err != nil {
 		return exception.New(exception.CodeInternalError,
@@ -468,7 +466,6 @@ func (s *CertService) prepareManualCAFromKeystore(
 		*cleanup = append(*cleanup, coreKeyRel)
 	}
 
-	// 3. 拷 CA 证书到 core/tmp/
 	certAbs, err := s.resolveCACertPathForSign(ca.CertPath)
 	if err != nil {
 		return err
@@ -487,7 +484,6 @@ func (s *CertService) prepareManualCAFromKeystore(
 		*cleanup = append(*cleanup, coreCertRel)
 	}
 
-	// 4. 切 manual 模式
 	params["ca_source"] = "manual"
 	params["ca_cert_path"] = coreCertRel
 	params["ca_key_path"] = coreKeyRel
@@ -502,8 +498,6 @@ func (s *CertService) prepareManualCAFromKeystore(
 
 // prepareManualCAFromWhitebox 把白盒 CA 私钥解密并转入 core/tmp/，
 // 使 params 切换为 manual 模式。
-//
-// 适用场景：**新模式 CA**（DB 中 ca.KeyPath 非空、KeyRef 空）。
 func (s *CertService) prepareManualCAFromWhitebox(
 	ctx context.Context, ca *models.CA, params map[string]interface{},
 	cleanup *[]string,
@@ -849,6 +843,11 @@ func (s *CertService) persistCertFromCore(
 	if keyRef != "" {
 		cert.KeyRef = &keyRef
 	}
+	// ★ 运行时填充展示字段
+	cert.HasPrivateKey =
+		(cert.KeyRef != nil && *cert.KeyRef != "") ||
+			(cert.KeyPath != nil && *cert.KeyPath != "")
+
 	if err := s.db.Create(cert).Error; err != nil {
 		return nil, exception.New(exception.CodeInternalError,
 			fmt.Sprintf("证书元数据落库失败: %v", err), 500, nil)
@@ -1188,6 +1187,9 @@ func (s *CertService) persistDualCertFromCore(
 		signCert.PublicKeyAlgorithm = signDetail.PublicKeyAlgorithm
 		signCert.SignatureAlgorithm = signDetail.SignatureAlgorithm
 	}
+	// ★ 运行时填充
+	signCert.HasPrivateKey = signCert.KeyRef != nil && *signCert.KeyRef != ""
+
 	if err := s.db.Create(signCert).Error; err != nil {
 		return nil, exception.New(exception.CodeInternalError,
 			fmt.Sprintf("双证签名证书落库失败: %v", err), 500, nil)
@@ -1233,6 +1235,7 @@ func (s *CertService) persistDualCertFromCore(
 			encCert.PublicKeyAlgorithm = encDetail.PublicKeyAlgorithm
 			encCert.SignatureAlgorithm = encDetail.SignatureAlgorithm
 		}
+		// 此刻还没有 KeyPath，下一段逻辑（persistEncKeyWhitebox）会填
 		_ = s.db.Create(encCert).Error
 	}
 
@@ -1927,6 +1930,11 @@ func (s *CertService) Import(
 	if keyPath != "" {
 		cert.KeyPath = &keyPath
 	}
+	// ★ 运行时填充展示字段
+	cert.HasPrivateKey =
+		(cert.KeyRef != nil && *cert.KeyRef != "") ||
+			(cert.KeyPath != nil && *cert.KeyPath != "")
+
 	if err := s.db.Create(cert).Error; err != nil {
 		return nil, exception.New(exception.CodeInternalError,
 			fmt.Sprintf("证书元数据落库失败: %v", err), 500, nil)
@@ -2047,6 +2055,8 @@ func (s *CertService) ImportDualCert(
 		cert.SignatureAlgorithm = encDetail.SignatureAlgorithm
 	}
 	cert.KeyPath = &encKeyAbs
+	// ★ 运行时填充
+	cert.HasPrivateKey = true
 
 	if err := s.db.Create(cert).Error; err != nil {
 		return nil, exception.New(exception.CodeInternalError,
@@ -2147,13 +2157,34 @@ func (s *CertService) Export(
 		}, nil
 
 	case "pkcs12":
-		if c.KeyRef == nil || *c.KeyRef == "" {
-			return nil, exception.New(exception.CodeParamInvalid, "该证书未关联私钥", 400, nil)
-		}
+		// ★ 修复：支持两种私钥存储模式
+		//
+		//   1) 旧模式：cert.KeyRef 非空（core keystore），走 core 的 cert.convert；
+		//   2) 新模式：cert.KeyPath 非空（白盒密文），本地解密 + openssl pkcs12 -export。
 		if len(password) < 6 {
 			return nil, exception.New(exception.CodeParamInvalid, "PKCS#12 密码至少 6 位", 400, nil)
 		}
-		data, err := s.caller.ExportPKCS12(ctx, c.CertPath, *c.KeyRef, password)
+
+		// 模式 1：keystore 引用
+		if c.KeyRef != nil && *c.KeyRef != "" {
+			data, err := s.caller.ExportPKCS12(ctx, c.CertPath, *c.KeyRef, password)
+			if err != nil {
+				return nil, err
+			}
+			return &ExportResult{
+				Data:        data,
+				Filename:    certID + ".p12",
+				ContentType: "application/x-pkcs12",
+			}, nil
+		}
+
+		// 模式 2：白盒私钥
+		keyAbs := s.resolveCertKeyPath(c)
+		if keyAbs == "" {
+			return nil, exception.New(exception.CodeParamInvalid,
+				"该证书未关联私钥", 400, nil)
+		}
+		data, err := s.exportPKCS12FromWhiteboxKey(ctx, c, keyAbs, password)
 		if err != nil {
 			return nil, err
 		}
@@ -2167,6 +2198,75 @@ func (s *CertService) Export(
 		return nil, exception.New(exception.CodeParamInvalid,
 			"不支持的导出类型: "+exportType, 400, nil)
 	}
+}
+
+// exportPKCS12FromWhiteboxKey 用白盒私钥 + 证书本地组装 PKCS#12。
+//
+// 适用场景：**新模式证书**（cert.KeyPath 非空、cert.KeyRef 空）。
+func (s *CertService) exportPKCS12FromWhiteboxKey(
+	ctx context.Context, c *models.Certificate, keyAbs, password string,
+) ([]byte, error) {
+	bin := s.parser.OpensslBin()
+	if bin == "" {
+		return nil, exception.New(exception.CodeInternalError,
+			"铜锁 openssl 不可用", 500, nil)
+	}
+	certAbs, err := s.resolveCertPath(c.CertPath)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(keyAbs); err != nil {
+		return nil, exception.New(exception.CodeNotFound,
+			"白盒私钥文件不存在", 404, nil)
+	}
+
+	// 1. 白盒解密到临时明文私钥
+	plainTmp, err := s.whitebox.DecryptToTemp(ctx, keyAbs, s.layout.TmpDir)
+	if err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("解密白盒私钥失败: %v", err), 500, nil)
+	}
+	defer os.Remove(plainTmp)
+
+	// 2. openssl pkcs12 -export
+	tmpDir, err := os.MkdirTemp("", "p12-")
+	if err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("创建临时目录失败: %v", err), 500, nil)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	pwPath := filepath.Join(tmpDir, "pw.txt")
+	p12Path := filepath.Join(tmpDir, "out.p12")
+	if err := os.WriteFile(pwPath, []byte(password), 0600); err != nil {
+		return nil, exception.New(exception.CodeInternalError, "写口令文件失败", 500, nil)
+	}
+
+	// 说明：
+	//   - -name 用 CN 作为 friendlyName，便于客户端展示；
+	//   - -passout file: 避免口令出现在 argv 中；
+	//   - 铜锁 openssl 默认使用 SM4-CBC 加密 p12 内容，对国密场景兼容。
+	name := c.SubjectCN
+	if name == "" {
+		name = c.CertID
+	}
+	_, stderr, err := RunOpenSSLFull(bin, "pkcs12", "-export",
+		"-inkey", plainTmp,
+		"-in", certAbs,
+		"-name", name,
+		"-out", p12Path,
+		"-passout", "file:"+pwPath,
+	)
+	if err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("生成 PKCS#12 失败: %s", strings.TrimSpace(stderr)), 500, nil)
+	}
+	data, err := os.ReadFile(p12Path)
+	if err != nil {
+		return nil, exception.New(exception.CodeInternalError,
+			fmt.Sprintf("读 PKCS#12 文件失败: %v", err), 500, nil)
+	}
+	return data, nil
 }
 
 func (s *CertService) exportKeyFromStorage(

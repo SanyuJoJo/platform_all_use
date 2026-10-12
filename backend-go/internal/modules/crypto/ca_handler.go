@@ -17,15 +17,57 @@ type CAHandler struct {
 
 func NewCAHandler(svc *CAService) *CAHandler { return &CAHandler{svc: svc} }
 
+// RegisterRoutes 注册 CA 路由。
+//
+// ★ 路由顺序要求：
+//   - 静态段 /cas/domains 必须早于动态段 /cas/:ca_id；
+//   - 否则 "domains" 会被当作 ca_id 处理。
 func (h *CAHandler) RegisterRoutes(r *gin.RouterGroup) {
 	cas := r.Group("/cas")
-	cas.GET("", middleware.RequirePermission("crypto_console:ca:view"), h.List)
-	cas.POST("/import", middleware.RequirePermission("crypto_console:ca:import"), h.Import)
-	cas.GET("/:ca_id", middleware.RequirePermission("crypto_console:ca:view"), h.Get)
-	cas.GET("/:ca_id/detail", middleware.RequirePermission("crypto_console:ca:view"), h.GetDetail)
-	cas.POST("/:ca_id/export", middleware.RequirePermission("crypto_console:ca:export"), h.Export)
-	cas.GET("/:ca_id/download", middleware.RequirePermission("crypto_console:ca:view"), h.Download)
-	cas.DELETE("/:ca_id", middleware.RequirePermission("crypto_console:ca:delete"), h.Delete)
+
+	cas.GET("",
+		middleware.RequirePermission("crypto_console:ca:view"),
+		h.List,
+	)
+	cas.POST("/import",
+		middleware.RequirePermission("crypto_console:ca:import"),
+		h.Import,
+	)
+
+	// ★ 域管理（静态段必须早于 /:ca_id）
+	cas.GET("/domains",
+		middleware.RequirePermission("crypto_console:ca:view"),
+		h.ListDomains,
+	)
+	cas.POST("/domains",
+		middleware.RequirePermission("crypto_console:ca:create"),
+		h.CreateDomain,
+	)
+	cas.DELETE("/domains/:name",
+		middleware.RequirePermission("crypto_console:ca:delete"),
+		h.DeleteDomain,
+	)
+
+	cas.GET("/:ca_id",
+		middleware.RequirePermission("crypto_console:ca:view"),
+		h.Get,
+	)
+	cas.GET("/:ca_id/detail",
+		middleware.RequirePermission("crypto_console:ca:view"),
+		h.GetDetail,
+	)
+	cas.POST("/:ca_id/export",
+		middleware.RequirePermission("crypto_console:ca:export"),
+		h.Export,
+	)
+	cas.GET("/:ca_id/download",
+		middleware.RequirePermission("crypto_console:ca:view"),
+		h.Download,
+	)
+	cas.DELETE("/:ca_id",
+		middleware.RequirePermission("crypto_console:ca:delete"),
+		h.Delete,
+	)
 }
 
 func (h *CAHandler) List(c *gin.Context) {
@@ -105,11 +147,6 @@ func (h *CAHandler) Download(c *gin.Context) {
 }
 
 // Delete 硬删除 CA（不可恢复）。
-//
-// 行为：
-//   - 若仍被证书引用 → 400
-//   - 删除 DB 记录（Unscoped）
-//   - 删除磁盘文件（.cert.pem / -chain.pem，路径必须在 CertRoot 下）
 func (h *CAHandler) Delete(c *gin.Context) {
 	caID := c.Param("ca_id")
 	if caID == "" {
@@ -118,6 +155,54 @@ func (h *CAHandler) Delete(c *gin.Context) {
 		return
 	}
 	if err := h.svc.Delete(caID); err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, nil, "删除成功")
+}
+
+// =============================================================================
+// ★ 域管理 handler
+// =============================================================================
+
+// ListDomains 列出所有可用域。
+func (h *CAHandler) ListDomains(c *gin.Context) {
+	domains, err := h.svc.ListDomains()
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"domains": domains}, "success")
+}
+
+// CreateDomain 新建域。
+func (h *CAHandler) CreateDomain(c *gin.Context) {
+	var req CreateDomainRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusUnprocessableEntity,
+			exception.CodeValidationFail, "请求参数校验失败", nil)
+		return
+	}
+	if err := h.svc.CreateDomain(req.Name); err != nil {
+		handleError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"name": req.Name}, "创建成功")
+}
+
+// DeleteDomain 删除域。
+//
+// 约束：
+//   - safe 为默认域，禁止删除；
+//   - 域目录必须为空（不含任何文件）。
+func (h *CAHandler) DeleteDomain(c *gin.Context) {
+	name := c.Param("name")
+	if name == "" {
+		response.Error(c, http.StatusBadRequest,
+			exception.CodeParamInvalid, "缺少域名称", nil)
+		return
+	}
+	if err := h.svc.DeleteDomain(name); err != nil {
 		handleError(c, err)
 		return
 	}

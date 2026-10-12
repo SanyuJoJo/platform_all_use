@@ -40,6 +40,7 @@
           :loading="loading"
           :pagination="pagination"
           remote
+          :scroll-x="1200"
           @update:page="handlePageChange"
         />
       </n-card>
@@ -187,7 +188,6 @@
             />
           </n-form-item>
 
-          <!-- ★ 是否提供私钥（开关） -->
           <n-form-item label="提供私钥">
             <n-space align="center">
               <n-switch v-model:value="signForm.with_key">
@@ -220,7 +220,6 @@
           </template>
         </template>
 
-        <!-- ★ 使用者 DN（可选，留空则用 P10 里的 DN） -->
         <n-form-item label="使用者 DN">
           <div class="dn-row">
             <n-input
@@ -681,11 +680,9 @@ const signForm = reactive({
   csr_source: 'existing' as 'existing' | 'upload',
   csr_id: '',
   csr_pem: '',
-  // ★ 是否提供 CSR 私钥（开关控制）
   with_key: false,
   csr_key_pem: '',
   csr_key_password: '',
-  // ★ 使用者 DN（可选）
   dn: '', dnSeparator: DEFAULT_DN_SEPARATOR,
   cert_mode: 'normal' as 'normal' | 'dual',
   cert_types: ['server'] as CertTypeItem[],
@@ -752,19 +749,60 @@ const queryDisabled = computed(() => {
 // ---------------------------------------------------------------------------
 const downloadKeyForm = reactive({ csrId: '', encrypt: false, password: '' });
 
-// ---------------------------------------------------------------------------
+// ============================================================================
 // 表格列
-// ---------------------------------------------------------------------------
+// 列顺序：DN | 密钥算法 | 是否为CFCA | 证书配置状态 | 操作
+// （已删除：生效时间 / 失效时间 / 状态 / 创建时间 / 私钥文件）
+// ============================================================================
 const columns: DataTableColumns<any> = [
-  { title: 'P10 ID', key: 'csr_id', ellipsis: { tooltip: true } },
-  { title: '使用者', key: 'subject_cn', ellipsis: { tooltip: true } },
-  { title: '算法', key: 'algorithm' },
-  { title: '状态', key: 'status' },
-  { title: '创建时间', key: 'created_at' },
+  {
+    title: 'DN',
+    key: 'subject',
+    width: 280,
+    ellipsis: { tooltip: true },
+    render(row) {
+      return row.subject || row.subject_cn || '-';
+    },
+  },
+  {
+    title: '密钥算法',
+    key: 'public_key_algorithm',
+    width: 130,
+    render(row) {
+      return row.public_key_algorithm || row.algorithm || '';
+    },
+  },
+  {
+    title: '是否为CFCA',
+    key: 'is_cfca',
+    width: 130,
+    render() {
+      // 仅展示，默认否
+      return h(
+        NTag,
+        { size: 'small', type: 'default' },
+        { default: () => '否' }
+      );
+    },
+  },
+  {
+    title: '证书配置状态',
+    key: 'cert_config_status',
+    width: 150,
+    render() {
+      // 仅展示，默认未配置
+      return h(
+        NTag,
+        { size: 'small', type: 'warning' },
+        { default: () => '未配置' }
+      );
+    },
+  },
   {
     title: '操作',
     key: 'actions',
     width: 280,
+    fixed: 'right',
     render(row) {
       return h(NSpace, null, {
         default: () => [
@@ -776,7 +814,7 @@ const columns: DataTableColumns<any> = [
             negativeText: '取消',
           }, {
             trigger: () => h(NButton, { size: 'small', type: 'error' }, { default: () => '删除' }),
-            default: () => `确认删除 P10「${row.csr_id}」？`,
+            default: () => `确认删除 P10「${row.subject || row.csr_id}」？`,
           }),
         ],
       });
@@ -796,7 +834,7 @@ const algorithmOptions = [
 
 const csrOptions = computed(() =>
   list.value.map((c) => ({
-    label: `${c.subject_cn || c.csr_id} (${c.csr_id})`,
+    label: `${c.subject || c.subject_cn || c.csr_id} (${c.csr_id})`,
     value: c.csr_id,
   }))
 );
@@ -813,7 +851,6 @@ const signDisabled = computed(() => {
 
   if (signForm.csr_source === 'upload') {
     if (!signForm.csr_pem.trim()) return true;
-    // ★ 只有开关打开时才要求私钥
     if (signForm.with_key && !signForm.csr_key_pem.trim()) return true;
   }
 
@@ -1010,7 +1047,7 @@ function openSignCert() {
   signForm.csr_source = 'existing';
   signForm.csr_id = '';
   signForm.csr_pem = '';
-  signForm.with_key = false;          // ★ 重置私钥开关
+  signForm.with_key = false;
   signForm.csr_key_pem = '';
   signForm.csr_key_password = '';
   signForm.dn = '';
@@ -1028,7 +1065,6 @@ function openSignCert() {
 }
 
 async function handleSignCert() {
-  // 若填了 DN，先校验
   let subjectObj: Record<string, string> | undefined = undefined;
   if (signForm.dn.trim()) {
     const r = validateDN(signForm.dn, signForm.dnSeparator);
@@ -1048,7 +1084,6 @@ async function handleSignCert() {
       cert_mode: signForm.cert_mode,
     };
 
-    // ★ 若填写了 DN，作为 subject 传给后端（覆盖 P10 里的默认 DN）
     if (subjectObj) {
       payload.subject = subjectObj;
     }
@@ -1057,7 +1092,6 @@ async function handleSignCert() {
       payload.csr_id = signForm.csr_id;
     } else {
       payload.csr_pem = signForm.csr_pem;
-      // ★ 仅当开关打开且私钥非空时才提交，避免后端收到空字段
       if (signForm.with_key && signForm.csr_key_pem.trim()) {
         payload.csr_key_pem = signForm.csr_key_pem;
         if (signForm.csr_key_password) {

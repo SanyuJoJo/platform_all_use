@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 
 	"backend-go/internal/exception"
@@ -49,12 +50,28 @@ func NewCSRService(
 // 列表 / 详情
 // =============================================================================
 
+// List P10 列表。
+//
+// ★ 运行时填充：
+//   - HasPrivateKey：KeyRef 或磁盘 <csr_dir>/<pubSM3>.key.pem 存在；
+//   - Subject      ：完整 DN（从 CSR 文件解析，RFC2253 规范化）；
+//   - NotBefore    ：CreatedAt（北京时间）；
+//   - NotAfter     ：空（P10 无固有有效期）。
 func (s *CSRService) List(page, pageSize int) (map[string]interface{}, error) {
 	var csrs []models.CSR
 	q := s.db.Model(&models.CSR{}).Where("status <> ?", "DELETED")
-	return paginateQuery(q, &csrs, page, pageSize)
+	result, err := paginateQuery(q, &csrs, page, pageSize)
+	if err != nil {
+		return nil, err
+	}
+	for i := range csrs {
+		s.fillCSRDerivedFields(&csrs[i])
+	}
+	result["items"] = csrs
+	return result, nil
 }
 
+// Get 查询 P10 元数据。
 func (s *CSRService) Get(csrID string) (*models.CSR, error) {
 	var csr models.CSR
 	if err := s.db.Where("csr_id = ?", csrID).First(&csr).Error; err != nil {
@@ -63,7 +80,54 @@ func (s *CSRService) Get(csrID string) (*models.CSR, error) {
 		}
 		return nil, exception.New(exception.CodeInternalError, "查询 P10 失败", 500, nil)
 	}
+	s.fillCSRDerivedFields(&csr)
 	return &csr, nil
+}
+
+// fillCSRDerivedFields 计算 CSR 的非持久化展示字段。
+//
+// 计算项：
+//   - HasPrivateKey：KeyRef 非空 或 磁盘 <csr_dir>/<pubSM3>.key.pem 存在；
+//   - Subject      ：从 CSR 文件解析完整 DN（RFC2253），并规范化顺序；
+//   - NotBefore    ：CreatedAt（北京时间字符串）；
+//   - NotAfter     ：空（P10 无固有有效期）。
+func (s *CSRService) fillCSRDerivedFields(csr *models.CSR) {
+	if csr == nil {
+		return
+	}
+
+	// HasPrivateKey
+	has := csr.KeyRef != nil && *csr.KeyRef != ""
+	if !has {
+		if keyAbs, err := s.deriveWhiteboxKeyPath(csr); err == nil {
+			if st, err := os.Stat(keyAbs); err == nil && !st.IsDir() && st.Size() > 0 {
+				has = true
+			}
+		}
+	}
+	csr.HasPrivateKey = has
+
+	// Subject：从 CSR 文件解析完整 DN
+	if csr.Subject == "" && csr.CSRPath != "" {
+		bin := s.parser.OpensslBin()
+		if bin != "" {
+			if out, err := RunOpenSSL(bin, "req", "-in", csr.CSRPath, "-noout", "-subject", "-nameopt", "RFC2253"); err == nil {
+				subj := strings.TrimSpace(out)
+				subj = strings.TrimSpace(strings.TrimPrefix(subj, "subject="))
+				if subj != "" {
+					csr.Subject = normalizeDNOrder(subj)
+				}
+			}
+		}
+	}
+
+	// NotBefore / NotAfter
+	if !csr.CreatedAt.IsZero() {
+		csr.NotBefore = csr.CreatedAt.In(cstZone).Format("2006-01-02 15:04:05")
+	} else {
+		csr.NotBefore = ""
+	}
+	csr.NotAfter = ""
 }
 
 // =============================================================================
@@ -75,8 +139,7 @@ func (s *CSRService) Get(csrID string) (*models.CSR, error) {
 // ★ 证书路径改造：
 //   - 分配 server/<dir_no>/ 目录；
 //   - CSR 落 server/<dir_no>/<csr_pubkey_sm3>.req.csr（0640）；
-//   - 私钥（若有）白盒加密落 server/<dir_no>/<csr_pubkey_sm3>.key.pem（0600）
-//     （密钥内嵌二进制，无 .pass）。
+//   - 私钥（若有）白盒加密落 server/<dir_no>/<csr_pubkey_sm3>.key.pem（0600）。
 func (s *CSRService) Import(
 	ctx context.Context, req *ImportCsrRequest,
 ) (*models.CSR, error) {
@@ -195,7 +258,7 @@ func (s *CSRService) Import(
 			}
 		}
 
-		// 5.2 白盒加密落盘（无 .pass）
+		// 5.2 白盒加密落盘
 		keyAbs := filepath.Join(dir, pubSM3+".key.pem")
 
 		plainTmp := filepath.Join(dir, ".import.csr.key.plain.tmp")
@@ -227,6 +290,9 @@ func (s *CSRService) Import(
 		Status:    "NEW",
 		CreatedAt: now,
 	}
+	// 填充派生展示字段（Subject / HasPrivateKey / NotBefore / NotAfter）
+	s.fillCSRDerivedFields(csr)
+
 	if err := s.db.Create(csr).Error; err != nil {
 		return nil, exception.New(
 			exception.CodeInternalError,
@@ -296,8 +362,6 @@ func (s *CSRService) Download(csrID string) ([]byte, error) {
 }
 
 // DownloadKey 下载 P10 对应的私钥，可选 AES-256-CBC 口令加密。
-//
-// ★ 无 .pass：白盒密钥内嵌二进制，直接解密/重加密。
 func (s *CSRService) DownloadKey(
 	csrID string, encrypt bool, password string,
 ) ([]byte, error) {
@@ -317,7 +381,6 @@ func (s *CSRService) DownloadKey(
 		)
 	}
 
-	// ★ 无 pass 参数
 	plainTmp, err := s.whitebox.DecryptToTemp(context.Background(), keyAbs, s.layout.TmpDir)
 	if err != nil {
 		return nil, err
@@ -383,7 +446,13 @@ func (s *CSRService) deriveWhiteboxKeyPath(csr *models.CSR) (string, error) {
 // 删除
 // =============================================================================
 
-// Delete 删除 P10（硬删除），同时清理白盒私钥（无 .pass）。
+// Delete 删除 P10（硬删除），同时清理白盒私钥（无 .pass）与空的 server 目录。
+//
+// 执行顺序：
+//  1. 查 DB；
+//  2. 删 DB 记录（Unscoped）；
+//  3. 删磁盘文件（.req.csr + .key.pem）；
+//  4. ★ 若 server/<dir_no>/ 已空，删除之（保留 ServerRoot 本身）。
 func (s *CSRService) Delete(csrID string) error {
 	if strings.TrimSpace(csrID) == "" {
 		return exception.New(exception.CodeParamInvalid, "csr_id 不能为空", 400, nil)
@@ -412,11 +481,61 @@ func (s *CSRService) Delete(csrID string) error {
 	}
 
 	// 清理磁盘文件：CSR + 白盒私钥
+	csrDir := ""
 	if csr.CSRPath != "" {
+		csrDir = filepath.Dir(csr.CSRPath)
 		_ = os.Remove(csr.CSRPath)
 		if keyAbs, err := s.deriveWhiteboxKeyPath(&csr); err == nil {
 			_ = os.Remove(keyAbs)
 		}
 	}
+
+	// ★ 若 server/<dir_no>/ 已空，删除之
+	s.tryRemoveEmptyServerDir(csrDir)
+
 	return nil
+}
+
+// tryRemoveEmptyServerDir 若 dir 是 <ServerRoot>/<4位数字> 且已空，删除之。
+//
+// 安全约束：
+//   - 只处理 <CertRoot> 下、<ServerRoot> 的直接子目录；
+//   - 目录名必须匹配 ^[0-9]{4}$；
+//   - 目录必须为空（不含隐藏文件）；
+//   - 失败仅告警，不阻断主流程。
+func (s *CSRService) tryRemoveEmptyServerDir(dir string) {
+	if dir == "" || s.layout == nil {
+		return
+	}
+	abs := filepath.Clean(dir)
+	root := filepath.Clean(s.layout.CertRoot)
+
+	if abs == root {
+		return
+	}
+	if !strings.HasPrefix(abs, root+string(os.PathSeparator)) {
+		return
+	}
+
+	base := filepath.Base(abs)
+	parent := filepath.Dir(abs)
+
+	if parent != filepath.Clean(s.layout.ServerRoot) || !dirNoRe.MatchString(base) {
+		return
+	}
+
+	entries, err := os.ReadDir(abs)
+	if err != nil {
+		return
+	}
+	if len(entries) > 0 {
+		return
+	}
+
+	if err := os.Remove(abs); err != nil {
+		log.Warn().Str("dir", abs).Err(err).
+			Msg("CSR Delete: 删除空目录失败（忽略）")
+		return
+	}
+	log.Info().Str("dir", abs).Msg("CSR Delete: 已删除空 server 目录")
 }

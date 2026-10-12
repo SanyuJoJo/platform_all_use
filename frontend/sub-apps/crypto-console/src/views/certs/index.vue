@@ -27,6 +27,7 @@
           :loading="loading"
           :pagination="pagination"
           remote
+          :scroll-x="1500"
           @update:page="handlePageChange"
         />
       </n-card>
@@ -75,7 +76,7 @@
                 {{ selectedCA.ca_id }}
               </n-descriptions-item>
               <n-descriptions-item label="算法">
-                {{ selectedCA.algorithm }}
+                {{ selectedCA.public_key_algorithm || selectedCA.algorithm }}
               </n-descriptions-item>
               <n-descriptions-item label="状态">
                 {{ selectedCA.status }}
@@ -614,31 +615,95 @@ function formatCertType(t: string | undefined | null): string {
   return parts.map((p) => CERT_TYPE_LABEL[p] || p).join('、');
 }
 
+// ============================================================================
+// 时间格式化
+// ============================================================================
+function fmtTime(t: any): string {
+  if (!t) return '-';
+  if (typeof t !== 'string') {
+    const d = new Date(t as any);
+    if (isNaN(d.getTime())) return '-';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+  // 后端已经格式化为 "2026-10-10 16:35:04"，直接使用
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(t)) return t;
+  // RFC3339 兜底
+  const d = new Date(t);
+  if (isNaN(d.getTime())) return t;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+// ============================================================================
+// 表格列
+// 列顺序：使用者 | 类型 | 公钥算法 | 序列号 | 生效时间 | 失效时间
+//        | 状态 | 创建时间 | 私钥文件 | 操作
+// ============================================================================
 const columns: DataTableColumns<any> = [
   {
     title: '使用者',
     key: 'subject_cn',
+    width: 180,
     ellipsis: { tooltip: true },
   },
   {
     title: '类型',
     key: 'cert_type',
+    width: 140,
     render(row: any) {
       return formatCertType(row.cert_type);
     },
   },
   {
+    title: '公钥算法',
+    key: 'public_key_algorithm',
+    width: 110,
+    render(row: any) {
+      return row.public_key_algorithm || row.algorithm || '';
+    },
+  },
+  {
     title: '序列号',
     key: 'serial',
+    width: 160,
     ellipsis: { tooltip: true },
   },
-  { title: '算法', key: 'algorithm' },
-  { title: '状态', key: 'status' },
-  { title: '创建时间', key: 'created_at' },
+  {
+    title: '生效时间',
+    key: 'not_before',
+    width: 170,
+    render(row: any) {
+      return fmtTime(row.not_before);
+    },
+  },
+  {
+    title: '失效时间',
+    key: 'not_after',
+    width: 170,
+    render(row: any) {
+      return fmtTime(row.not_after);
+    },
+  },
+  { title: '状态', key: 'status', width: 90 },
+  { title: '创建时间', key: 'created_at', width: 170 },
+  {
+    title: '私钥文件',
+    key: 'has_private_key',
+    width: 100,
+    render(row: any) {
+      return h(
+        NTag,
+        { size: 'small', type: row.has_private_key ? 'success' : 'default' },
+        { default: () => (row.has_private_key ? '有' : '无') }
+      );
+    },
+  },
   {
     title: '操作',
     key: 'actions',
     width: 220,
+    fixed: 'right',
     render(row: any) {
       return h(NSpace, null, {
         default: () => [
@@ -691,9 +756,14 @@ async function fetchCAOptions() {
       ca_id: c.ca_id,
       subject_cn: c.subject_cn || c.subject || '',
       subject: c.subject,
+      public_key_algorithm: c.public_key_algorithm || c.algorithm || '',
       algorithm: c.algorithm,
       cert_path: c.cert_path,
       status: c.status,
+      has_private_key: c.has_private_key,
+      domain: c.domain,
+      not_before: c.not_before,
+      not_after: c.not_after,
     }));
   } catch (e: any) {
     console.warn('[cert] fetch CA options failed', e);
