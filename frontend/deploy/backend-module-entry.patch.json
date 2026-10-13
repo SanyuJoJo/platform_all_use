@@ -12,6 +12,12 @@
     "static_base": "/sub-apps/auth/"
   },
   {
+    "module_id": "crypto_console",
+    "entry_frontend": "/sub-apps/crypto-console/",
+    "active_rule": "/crypto_console",
+    "static_base": "/sub-apps/crypto-console/"
+  },
+  {
     "module_id": "license",
     "entry_frontend": "/sub-apps/license/",
     "active_rule": "/license",

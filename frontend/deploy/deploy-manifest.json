@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-17T17:34:08.643Z",
+  "generatedAt": "2026-10-13T05:10:29.524Z",
   "mainApp": {
     "dir": "main-app",
     "base": "/",
@@ -21,6 +21,14 @@
       "entry": "/sub-apps/auth/",
       "activeRule": "/auth",
       "staticBase": "/sub-apps/auth/"
+    },
+    {
+      "dir": "crypto-console",
+      "pkgName": "module-crypto-console",
+      "moduleId": "crypto_console",
+      "entry": "/sub-apps/crypto-console/",
+      "activeRule": "/crypto_console",
+      "staticBase": "/sub-apps/crypto-console/"
     },
     {
       "dir": "license",
