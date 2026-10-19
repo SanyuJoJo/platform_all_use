@@ -1,24 +1,23 @@
 #!/usr/bin/env bash
 # =============================================================================
-# core 临时部署脚本（Go 化改造后）
+# core 临时部署脚本（Go 化改造后 + SSL 代理扩展）
 #
 # 用途：
-#   把开发目录的「铜锁 openssl + C 工具」部署到 CoreRoot 下对应位置：
-#     <root>/core/bin/keycrypt
+#   把开发目录的「铜锁 openssl + Tengine + 模板 + mime.types + C 工具」
+#   部署到 CoreRoot：
+#     <root>/core/sbin/nginx                       ← Tengine 二进制
+#     <root>/core/conf/mime.types                  ← nginx mime 映射（模板引用绝对路径）
+#     <root>/core/conf/template/*.tmpl             ← SSL 代理模板
+#     <root>/core/bin/keycrypt                     ← C 工具
 #     <root>/core/bin/whitebox_sm4
-#     <root>/core/libs/tongsuo/bin/openssl
+#     <root>/core/libs/tongsuo/bin/openssl         ← 铜锁
 #
-# ★ 部署结构说明：
-#   CoreRoot = <root>/core  （与 core.yaml 中 core.* 相对路径基准一致）
-#   - C 工具 → <CoreRoot>/bin/           （与 core 二进制同目录）
-#   - 铜锁   → <CoreRoot>/libs/tongsuo/  （与 core.yaml 中 "libs/tongsuo" 一致）
-#
-#   C 工具 RPATH = $ORIGIN/../libs/tongsuo/libs
-#     $ORIGIN = <CoreRoot>/bin
-#     库      = <CoreRoot>/libs/tongsuo/libs/
-#
-# ★ 关键规则：
-#   - C 工具必须真拷贝（不能软链），否则 $ORIGIN 会解析到开发目录
+# 源路径（固定）：
+#   Tengine     : <core>/src/tengine/bin/sbin/nginx
+#   mime.types  : <core>/src/tengine/bin/conf/mime.types
+#   模板        : <core>/src/tengine/conf/template/*.tmpl
+#   C 工具      : <core>/src/tool/bin/
+#   铜锁        : <core>/libs/bin/tongsuo/
 #
 # 用法：
 #   sudo ./tests/deploy_tmp.sh
@@ -55,7 +54,7 @@ UNINSTALL=0
 DO_BUILD=1
 
 usage() {
-  sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
@@ -94,19 +93,26 @@ esac
 TARGET="${TARGET%/}"
 
 # -----------------------------------------------------------------------------
-# ★ 目标路径（与 core.yaml 相对路径基准严格对齐）
+# 目标路径
 # -----------------------------------------------------------------------------
-# CoreRoot = <root>/core
 TARGET_CORE_ROOT="$TARGET/core"
 TARGET_CORE_BIN="$TARGET_CORE_ROOT/bin"
+TARGET_CORE_SBIN="$TARGET_CORE_ROOT/sbin"
+TARGET_CORE_CONF_DIR="$TARGET_CORE_ROOT/conf"
+TARGET_CORE_CONF="$TARGET_CORE_ROOT/conf/template"
 TARGET_CORE_LIBS="$TARGET_CORE_ROOT/libs"
 TARGET_TONGSUO="$TARGET_CORE_LIBS/tongsuo"
 TARGET_OPENSSL="$TARGET_TONGSUO/bin/openssl"
+TARGET_NGINX="$TARGET_CORE_SBIN/nginx"
+TARGET_MIME="$TARGET_CORE_CONF_DIR/mime.types"
 
 # 源路径
 SOURCE_TOOL_DIR="$SOURCE/src/tool"
 SOURCE_TOOL_BIN="$SOURCE_TOOL_DIR/bin"
 SOURCE_TONGSUO="$SOURCE/libs/bin/tongsuo"
+SOURCE_NGINX="$SOURCE/src/tengine-3.1.0/bin/sbin/nginx"
+SOURCE_MIME="$SOURCE/src/tengine-3.1.0/bin/conf/mime.types"
+SOURCE_TEMPLATES="$SOURCE/src/tengine-3.1.0/conf/template"
 
 # -----------------------------------------------------------------------------
 # 卸载
@@ -115,12 +121,13 @@ if [ "$UNINSTALL" -eq 1 ]; then
   log "开始卸载：$TARGET"
   removed=0
 
+  # C 工具
   if [ -d "$TARGET_CORE_BIN" ]; then
     shopt -s nullglob
     for f in "$TARGET_CORE_BIN"/*; do
       base="$(basename "$f")"
       case "$base" in
-        core|core.exe) continue ;;  # 不动 core 二进制
+        core|core.exe) continue ;;
       esac
       log "  移除工具：$f"
       rm -f "$f"
@@ -129,6 +136,32 @@ if [ "$UNINSTALL" -eq 1 ]; then
     shopt -u nullglob
   fi
 
+  # Tengine
+  if [ -f "$TARGET_NGINX" ]; then
+    log "  移除 Tengine：$TARGET_NGINX"
+    rm -f "$TARGET_NGINX"
+    removed=$((removed+1))
+  fi
+
+  # mime.types
+  if [ -f "$TARGET_MIME" ]; then
+    log "  移除 mime.types：$TARGET_MIME"
+    rm -f "$TARGET_MIME"
+    removed=$((removed+1))
+  fi
+
+  # 模板
+  if [ -d "$TARGET_CORE_CONF" ]; then
+    shopt -s nullglob
+    for f in "$TARGET_CORE_CONF"/*.tmpl; do
+      log "  移除模板：$f"
+      rm -f "$f"
+      removed=$((removed+1))
+    done
+    shopt -u nullglob
+  fi
+
+  # 铜锁
   if [ -L "$TARGET_TONGSUO" ]; then
     log "  移除铜锁链接：$TARGET_TONGSUO"
     rm -f "$TARGET_TONGSUO"
@@ -174,7 +207,6 @@ if [ ! -d "$SOURCE_TOOL_BIN" ]; then
   exit 3
 fi
 
-# 收集工具列表（排除 core、core.exe）
 TOOLS=()
 shopt -s nullglob
 for f in "$SOURCE_TOOL_BIN"/*; do
@@ -197,10 +229,13 @@ fi
 # -----------------------------------------------------------------------------
 info "准备目标目录..."
 mkdir -p "$TARGET_CORE_BIN"
+mkdir -p "$TARGET_CORE_SBIN"
+mkdir -p "$TARGET_CORE_CONF_DIR"
+mkdir -p "$TARGET_CORE_CONF"
 mkdir -p "$TARGET_CORE_LIBS"
 
 # -----------------------------------------------------------------------------
-# 部署 C 工具（★ 始终真拷贝，不用软链）
+# 部署 C 工具
 # -----------------------------------------------------------------------------
 info "部署 C 工具 → $TARGET_CORE_BIN/"
 for name in "${TOOLS[@]}"; do
@@ -218,6 +253,77 @@ for name in "${TOOLS[@]}"; do
   install -m 0755 "$src" "$dst"
   log "  install: $dst"
 done
+
+# -----------------------------------------------------------------------------
+# 部署 Tengine
+# -----------------------------------------------------------------------------
+if [ -x "$SOURCE_NGINX" ]; then
+  info "部署 Tengine → $TARGET_NGINX"
+  if [ -e "$TARGET_NGINX" ]; then
+    if [ "$FORCE" -ne 1 ]; then
+      warn "  已存在，跳过：$TARGET_NGINX（加 --force 覆盖）"
+    else
+      rm -f "$TARGET_NGINX"
+    fi
+  fi
+  if [ ! -e "$TARGET_NGINX" ]; then
+    install -m 0755 "$SOURCE_NGINX" "$TARGET_NGINX"
+    log "  install: $TARGET_NGINX"
+  fi
+else
+  warn "Tengine 二进制不存在：$SOURCE_NGINX"
+  warn "  请先执行：cd $SOURCE && make tengine"
+fi
+
+# -----------------------------------------------------------------------------
+# 部署 mime.types
+# -----------------------------------------------------------------------------
+if [ -f "$SOURCE_MIME" ]; then
+  info "部署 mime.types → $TARGET_MIME"
+  if [ -e "$TARGET_MIME" ]; then
+    if [ "$FORCE" -ne 1 ]; then
+      warn "  已存在，跳过：$TARGET_MIME（加 --force 覆盖）"
+    else
+      rm -f "$TARGET_MIME"
+    fi
+  fi
+  if [ ! -e "$TARGET_MIME" ]; then
+    install -m 0644 "$SOURCE_MIME" "$TARGET_MIME"
+    log "  install: $TARGET_MIME"
+  fi
+else
+  warn "mime.types 不存在：$SOURCE_MIME"
+  warn "  请先执行：cd $SOURCE && make tengine"
+fi
+
+# -----------------------------------------------------------------------------
+# 部署模板
+# -----------------------------------------------------------------------------
+if [ -d "$SOURCE_TEMPLATES" ]; then
+  info "部署模板 → $TARGET_CORE_CONF"
+  info "  模板源：$SOURCE_TEMPLATES"
+
+  shopt -s nullglob
+  tmpls=("$SOURCE_TEMPLATES"/*.tmpl)
+  shopt -u nullglob
+
+  if [ "${#tmpls[@]}" -eq 0 ]; then
+    warn "  模板目录为空：$SOURCE_TEMPLATES"
+  else
+    for t in "${tmpls[@]}"; do
+      bn="$(basename "$t")"
+      dst="$TARGET_CORE_CONF/$bn"
+      if [ -e "$dst" ] && [ "$FORCE" -ne 1 ]; then
+        warn "  已存在，跳过：$dst（加 --force 覆盖）"
+        continue
+      fi
+      install -m 0644 "$t" "$dst"
+      log "  install: $dst"
+    done
+  fi
+else
+  warn "模板目录不存在：$SOURCE_TEMPLATES"
+fi
 
 # -----------------------------------------------------------------------------
 # 部署铜锁
@@ -260,12 +366,16 @@ for name in "${TOOLS[@]}"; do
   [ -e "$TARGET_CORE_BIN/$name" ] && chmod 0755 "$TARGET_CORE_BIN/$name" 2>/dev/null || true
 done
 [ -f "$TARGET_OPENSSL" ] && chmod 0755 "$TARGET_OPENSSL" 2>/dev/null || true
+[ -f "$TARGET_NGINX" ]   && chmod 0755 "$TARGET_NGINX"   2>/dev/null || true
+[ -f "$TARGET_MIME" ]    && chmod 0644 "$TARGET_MIME"    2>/dev/null || true
 
 # -----------------------------------------------------------------------------
 # 校验 1：文件存在
 # -----------------------------------------------------------------------------
 info "校验文件..."
 FAIL=0
+
+# C 工具
 for name in "${TOOLS[@]}"; do
   bin="$TARGET_CORE_BIN/$name"
   if [ -x "$bin" ]; then
@@ -276,6 +386,40 @@ for name in "${TOOLS[@]}"; do
   fi
 done
 
+# Tengine
+if [ -x "$TARGET_NGINX" ]; then
+  log "  Tengine：$TARGET_NGINX"
+  log "  版本：$("$TARGET_NGINX" -v 2>&1 | head -1 || echo unknown)"
+else
+  err "  Tengine 缺失或不可执行：$TARGET_NGINX"
+  FAIL=1
+fi
+
+# mime.types
+if [ -f "$TARGET_MIME" ]; then
+  log "  mime.types：$TARGET_MIME"
+else
+  err "  mime.types 缺失：$TARGET_MIME"
+  FAIL=1
+fi
+
+# 模板
+if [ -d "$TARGET_CORE_CONF" ]; then
+  shopt -s nullglob
+  tmpl_files=("$TARGET_CORE_CONF"/*.tmpl)
+  shopt -u nullglob
+  tmpl_count=${#tmpl_files[@]}
+  if [ "$tmpl_count" -ge 2 ]; then
+    log "  模板：$tmpl_count 个（$TARGET_CORE_CONF）"
+    for f in "${tmpl_files[@]}"; do
+      log "    - $(basename "$f")"
+    done
+  else
+    warn "  模板数不足（期望 2 个）：$tmpl_count"
+  fi
+fi
+
+# 铜锁
 if [ -x "$TARGET_OPENSSL" ]; then
   log "  铜锁 openssl：$TARGET_OPENSSL"
   log "  版本：$("$TARGET_OPENSSL" version 2>/dev/null | head -1 || echo unknown)"
@@ -286,15 +430,31 @@ fi
 [ "$FAIL" -ne 0 ] && { err "部署校验失败（文件缺失）"; exit 3; }
 
 # -----------------------------------------------------------------------------
-# 校验 2：动态库可达性
+# 校验 2：模板 include mime.types 引用检查
+# -----------------------------------------------------------------------------
+info "校验模板 include 配置..."
+if [ -d "$TARGET_CORE_CONF" ]; then
+  shopt -s nullglob
+  for t in "$TARGET_CORE_CONF"/*.tmpl; do
+    # 检查 include 行是否是绝对路径（避免 -p 相对路径陷阱）
+    if grep -qE '^\s*include\s+mime\.types\s*;' "$t"; then
+      warn "  $(basename "$t") 使用相对路径 'include mime.types;'"
+      warn "    建议改为：include {{mime_types_path}};"
+    fi
+  done
+  shopt -u nullglob
+fi
+
+# -----------------------------------------------------------------------------
+# 校验 3：动态库可达性
 # -----------------------------------------------------------------------------
 info "校验动态库可达性..."
 if command -v ldd >/dev/null 2>&1; then
   LIBFAIL=0
+
   for name in "${TOOLS[@]}"; do
     bin="$TARGET_CORE_BIN/$name"
     [ -x "$bin" ] || continue
-
     missing="$(ldd "$bin" 2>/dev/null | grep 'not found' || true)"
     if [ -n "$missing" ]; then
       err "  $name 动态库缺失："
@@ -305,15 +465,26 @@ if command -v ldd >/dev/null 2>&1; then
     fi
   done
 
+  if [ -x "$TARGET_NGINX" ]; then
+    missing="$(ldd "$TARGET_NGINX" 2>/dev/null | grep 'not found' || true)"
+    if [ -n "$missing" ]; then
+      err "  nginx 动态库缺失："
+      echo "$missing" | sed 's/^/    /' >&2
+      LIBFAIL=1
+    else
+      log "  动态库可达：nginx"
+    fi
+  fi
+
   if [ "$LIBFAIL" -ne 0 ]; then
     echo
     err "动态库校验失败"
-    for name in "${TOOLS[@]}"; do
-      bin="$TARGET_CORE_BIN/$name"
-      [ -x "$bin" ] || continue
-      err "  readelf -d $bin | grep -iE 'rpath|runpath'"
-      err "  ldd $bin"
-    done
+    err "  排查："
+    err "    readelf -d $TARGET_NGINX | grep -iE 'rpath|runpath'"
+    err "    ldd $TARGET_NGINX | grep 'not found'"
+    err "  常见修复："
+    err "    1) 设置 LD_LIBRARY_PATH=$TARGET_TONGSUO/libs"
+    err "    2) 或 patchelf --set-rpath '$TARGET_TONGSUO/libs' $TARGET_NGINX"
     exit 3
   fi
 else
@@ -327,10 +498,14 @@ echo
 echo "============================================================"
 echo -e "${GREEN}✅ core 库与工具临时部署完成${NC}"
 echo "============================================================"
-echo "部署模式：     $MODE（C 工具始终真拷贝）"
+echo "部署模式：     $MODE（C 工具与 Tengine 始终真拷贝）"
 echo "源目录：       $SOURCE"
 echo "目标根：       $TARGET"
 echo "CoreRoot：     $TARGET_CORE_ROOT"
+echo "Tengine：      $TARGET_NGINX"
+echo "mime.types：   $TARGET_MIME"
+echo "模板源：       $SOURCE_TEMPLATES"
+echo "模板目标：     $TARGET_CORE_CONF"
 echo "C 工具目录：   $TARGET_CORE_BIN"
 echo "铜锁目录：     $TARGET_TONGSUO"
 echo
@@ -340,9 +515,10 @@ for name in "${TOOLS[@]}"; do
 done
 echo
 echo "验证命令："
-echo "  readelf -d $TARGET_CORE_BIN/whitebox_sm4 | grep -i runpath"
-echo "  ldd $TARGET_CORE_BIN/whitebox_sm4 | grep -E 'libcrypto|not found'"
-echo "  $TARGET_CORE_BIN/whitebox_sm4 2>&1 | head -3"
+echo "  $TARGET_NGINX -V 2>&1 | head -2"
+echo "  ldd $TARGET_NGINX | grep -iE 'ssl|crypto|not found'"
+echo "  ls -la $TARGET_CORE_CONF_DIR/"
+echo "  ls -la $TARGET_CORE_CONF/"
 echo
 echo "卸载："
 echo "  sudo $0 --uninstall"

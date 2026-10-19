@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -43,18 +44,124 @@ func NewCAService(
 }
 
 // =============================================================================
+// ★ 域 bundle 维护
+// =============================================================================
+
+// RebuildDomainBundle 重建域内的"全量根证书"文件 <CARoot>/<domain>/bundle.crt。
+//
+// ★ 数据来源：**磁盘文件系统**，而非 DB
+//   - 目录下所有 *.cert.pem（跳过 .0 rehash 软链、.key.pem、bundle.crt 自身）；
+//   - 按文件名排序，保证多次重建的输出稳定；
+//   - 与 DB 记录解耦：即使 DB 记录与磁盘文件不一致（如手工导入的 CA），
+//     bundle.crt 也忠实反映磁盘现状，与 openssl -CApath 语义一致。
+//
+// ★ 空域处理：写 0 字节文件，表示"该域无 CA"。
+//
+// ★ 调用时机：
+//   - CA Import 成功后（新增 CA 自动进 bundle）；
+//   - CA Import 撞到"已存在"时（幂等重建，保证历史数据兼容）；
+//   - CA Delete 成功后（删除 CA 自动从 bundle 移除）；
+//   - 后端启动时可遍历所有域做一次全量重建。
+func (s *CAService) RebuildDomainBundle(domain string) error {
+	if s.layout == nil {
+		return fmt.Errorf("PathLayout 未初始化")
+	}
+	domain = strings.TrimSpace(domain)
+	if domain == "" {
+		return fmt.Errorf("domain 为空")
+	}
+
+	dir := filepath.Join(s.layout.CARoot, domain)
+	st, err := os.Stat(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("域目录不存在: %s", dir)
+		}
+		return fmt.Errorf("访问域目录失败: %s: %w", dir, err)
+	}
+	if !st.IsDir() {
+		return fmt.Errorf("域路径不是目录: %s", dir)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("读取域目录失败: %w", err)
+	}
+	// 按文件名字典序排序，保证 bundle 内容稳定可 diff
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Name() < entries[j].Name()
+	})
+
+	var (
+		buf   []byte
+		count int
+	)
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		// 排除 bundle.crt 自身
+		if name == "bundle.crt" {
+			continue
+		}
+		// 只收集 .cert.pem
+		if !strings.HasSuffix(name, ".cert.pem") {
+			continue
+		}
+		// 跳过 rehash 软链（.0）
+		if e.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		abs := filepath.Join(dir, name)
+		data, err := os.ReadFile(abs)
+		if err != nil {
+			log.Warn().Str("file", abs).Err(err).
+				Msg("RebuildDomainBundle: 读取 CA 证书失败，跳过")
+			continue
+		}
+		if len(data) == 0 {
+			continue
+		}
+		// 相邻证书之间保证换行分隔，避免 PEM 头尾粘连
+		if len(buf) > 0 && buf[len(buf)-1] != '\n' {
+			buf = append(buf, '\n')
+		}
+		buf = append(buf, data...)
+		count++
+	}
+
+	bundlePath := filepath.Join(dir, "bundle.crt")
+	if err := os.WriteFile(bundlePath, buf, 0644); err != nil {
+		return fmt.Errorf("写入 bundle.crt 失败: %w", err)
+	}
+
+	log.Info().
+		Str("domain", domain).
+		Str("bundle", bundlePath).
+		Int("certs", count).
+		Int("bytes", len(buf)).
+		Msg("CA 域 bundle 已重建")
+	return nil
+}
+
+// =============================================================================
+// ★ 路径查询（供 SSL 代理使用）
+// =============================================================================
+
+// GetCAPath 返回 CA 证书的绝对路径，供 nginx ssl_client_certificate 直接引用。
+func (s *CAService) GetCAPath(caID string) (string, error) {
+	ca, err := s.Get(caID)
+	if err != nil {
+		return "", err
+	}
+	return s.resolveCAPath(ca.CertPath)
+}
+
+// =============================================================================
 // 列表 / 详情
 // =============================================================================
 
-// List 返回 CA 列表（不含已软删）。
-//
-// ★ 运行时填充：
-//   - HasPrivateKey：KeyRef / KeyPath 非空；
-//   - Domain       ：从 CertPath 推导（<CertRoot>/ca/<domain>/<pubkey_sm3>.cert.pem）；
-//   - NotBefore / NotAfter：解析证书获得（"2006-01-02 15:04:05" 北京时间）；
-//   - Algorithm    ：★ 用证书解析出的 PublicKeyAlgorithm 覆盖（如 "ECC(256)"），
-//                     确保与 GetDetail 返回一致；
-//                     仅内存覆盖，不写回 DB。
 func (s *CAService) List(page, pageSize int) (map[string]interface{}, error) {
 	var cas []models.CA
 	result, err := paginateQuery(
@@ -71,7 +178,6 @@ func (s *CAService) List(page, pageSize int) (map[string]interface{}, error) {
 	return result, nil
 }
 
-// Get 查询 CA 元数据。
 func (s *CAService) Get(caID string) (*models.CA, error) {
 	var ca models.CA
 	if err := s.db.Where("ca_id = ?", caID).First(&ca).Error; err != nil {
@@ -84,7 +190,6 @@ func (s *CAService) Get(caID string) (*models.CA, error) {
 	return &ca, nil
 }
 
-// GetDetail 解析 CA 证书，返回结构化字段。
 func (s *CAService) GetDetail(caID string) (*CADetail, error) {
 	ca, err := s.Get(caID)
 	if err != nil {
@@ -97,36 +202,17 @@ func (s *CAService) GetDetail(caID string) (*CADetail, error) {
 	return s.parser.Parse(abs)
 }
 
-// fillCADerivedFields 计算 CA 的非持久化展示字段。
-//
-// 计算项：
-//   - HasPrivateKey：KeyRef / KeyPath 非空；
-//   - Domain       ：从 CertPath 推导；
-//   - NotBefore / NotAfter / Algorithm：从证书解析获得。
-//
-// ★ Algorithm 覆盖规则：
-//   - 解析成功且 PublicKeyAlgorithm 非空 → 覆盖为解析结果（如 "ECC(256)"）；
-//   - 解析失败或字段为空 → 保留 DB 原值（如 "SM2"）；
-//   - 仅内存修改，不回写 DB。
 func (s *CAService) fillCADerivedFields(ca *models.CA) {
 	if ca == nil {
 		return
 	}
-
-	// 私钥
 	ca.HasPrivateKey = ca.KeyRef != "" || ca.KeyPath != ""
-
-	// 域
 	ca.Domain = extractDomainFromCertPath(ca.CertPath)
-
-	// 从证书解析：生效/失效时间、公钥算法
 	if abs, err := s.resolveCAPath(ca.CertPath); err == nil {
 		if d, err := s.parser.Parse(abs); err == nil {
 			ca.NotBefore = d.NotBefore
 			ca.NotAfter = d.NotAfter
 			if strings.TrimSpace(d.PublicKeyAlgorithm) != "" {
-				// ★ 仅内存覆盖：让列表返回的 public_key_algorithm
-				//   与详情（getCADetail）保持一致。
 				ca.Algorithm = d.PublicKeyAlgorithm
 			}
 		}
@@ -134,10 +220,9 @@ func (s *CAService) fillCADerivedFields(ca *models.CA) {
 }
 
 // =============================================================================
-// ★ 域管理
+// 域管理
 // =============================================================================
 
-// ListDomains 列出所有可用域。
 func (s *CAService) ListDomains() ([]string, error) {
 	if s.layout == nil {
 		return []string{"safe"}, nil
@@ -145,7 +230,6 @@ func (s *CAService) ListDomains() ([]string, error) {
 	return s.layout.ListDomains()
 }
 
-// CreateDomain 创建新域。
 func (s *CAService) CreateDomain(name string) error {
 	if s.layout == nil {
 		return exception.New(exception.CodeInternalError, "PathLayout 未初始化", 500, nil)
@@ -153,11 +237,6 @@ func (s *CAService) CreateDomain(name string) error {
 	return s.layout.CreateDomain(name)
 }
 
-// DeleteDomain 删除域。
-//
-// 约束：
-//   - safe 禁止删除；
-//   - 域目录必须为空（不含任何文件）。
 func (s *CAService) DeleteDomain(name string) error {
 	if s.layout == nil {
 		return exception.New(exception.CodeInternalError, "PathLayout 未初始化", 500, nil)
@@ -169,7 +248,6 @@ func (s *CAService) DeleteDomain(name string) error {
 // 路径解析
 // =============================================================================
 
-// resolveCAPath 解析 CA 证书文件绝对路径。
 func (s *CAService) resolveCAPath(certPath string) (string, error) {
 	if certPath == "" {
 		return "", exception.New(exception.CodeInternalError, "CA 证书路径为空", 500, nil)
@@ -198,7 +276,6 @@ func (s *CAService) resolveCAPath(certPath string) (string, error) {
 	)
 }
 
-// ReadCACert 读取 CA 证书内容。
 func (s *CAService) ReadCACert(ca *models.CA) ([]byte, error) {
 	if ca == nil {
 		return nil, exception.New(exception.CodeInternalError, "CA 为空", 500, nil)
@@ -210,7 +287,6 @@ func (s *CAService) ReadCACert(ca *models.CA) ([]byte, error) {
 	return os.ReadFile(abs)
 }
 
-// underCertRoot 校验路径位于 CertRoot 下。
 func (s *CAService) underCertRoot(p string) bool {
 	if s.layout == nil || s.layout.CertRoot == "" {
 		return false
@@ -221,10 +297,10 @@ func (s *CAService) underCertRoot(p string) bool {
 }
 
 // =============================================================================
-// 删除（硬删除）
+// 删除
 // =============================================================================
 
-// Delete 硬删除 CA：DB 记录 + 磁盘文件全部清除。
+// Delete 硬删除 CA：DB 记录 + 磁盘文件全部清除，随后重建域 bundle。
 func (s *CAService) Delete(caID string) error {
 	var ca models.CA
 	if err := s.db.Where("ca_id = ?", caID).First(&ca).Error; err != nil {
@@ -234,6 +310,9 @@ func (s *CAService) Delete(caID string) error {
 		return exception.New(exception.CodeInternalError,
 			fmt.Sprintf("查询 CA 失败: %v", err), 500, nil)
 	}
+
+	// ★ 先提取 domain（删除 DB 记录后仍可用，但提前取更清晰）
+	domain := extractDomainFromCertPath(ca.CertPath)
 
 	var refCount int64
 	_ = s.db.Model(&models.Certificate{}).
@@ -261,8 +340,17 @@ func (s *CAService) Delete(caID string) error {
 		}
 	}
 
+	// ★ 重建域 bundle（磁盘证书变了，bundle 必须同步刷新）
+	if domain != "" {
+		if err := s.RebuildDomainBundle(domain); err != nil {
+			log.Warn().Err(err).Str("domain", domain).
+				Msg("Delete: 重建 bundle 失败（不阻断）")
+		}
+	}
+
 	log.Info().
 		Str("ca_id", caID).
+		Str("domain", domain).
 		Int("files_removed", removed).
 		Int("files_total", len(files)).
 		Int64("referenced_certs", refCount).
@@ -270,7 +358,6 @@ func (s *CAService) Delete(caID string) error {
 	return nil
 }
 
-// collectCAFiles 收集 CA 关联的所有磁盘文件（绝对路径，去重）。
 func (s *CAService) collectCAFiles(ca *models.CA) []string {
 	if ca == nil {
 		return nil
@@ -316,7 +403,6 @@ func (s *CAService) collectCAFiles(ca *models.CA) []string {
 	if certAbs != "" && strings.HasSuffix(certAbs, ".cert.pem") {
 		base := strings.TrimSuffix(certAbs, ".cert.pem")
 		add(base + ".key.pem")
-
 		for _, link := range findRehashLinksInDir(filepath.Dir(certAbs), filepath.Base(certAbs)) {
 			add(link)
 		}
@@ -333,7 +419,6 @@ func (s *CAService) collectCAFiles(ca *models.CA) []string {
 	return out
 }
 
-// findRehashLinksInDir 查找 dir 下所有指向 targetBase 的 <hash>.0 软链。
 func findRehashLinksInDir(dir, targetBase string) []string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -361,14 +446,6 @@ func findRehashLinksInDir(dir, targetBase string) []string {
 	return links
 }
 
-// extractDomainFromCertPath 从证书路径中提取域目录名。
-//
-// 典型输入：
-//
-//	<CertRoot>/ca/safe/a2426eed....cert.pem   → "safe"
-//	<CertRoot>/ca/biz-01/xxx.cert.pem         → "biz-01"
-//	relative/ca/safe/xxx.cert.pem             → "safe"
-//	xxx.cert.pem                              → ""
 func extractDomainFromCertPath(certPath string) string {
 	if certPath == "" {
 		return ""

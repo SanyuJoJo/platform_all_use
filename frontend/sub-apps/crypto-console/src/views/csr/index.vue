@@ -283,14 +283,13 @@
           </n-radio-group>
         </n-form-item>
 
+        <!-- ★ 修改：证书类型只保留签名 / 加密两类 -->
         <template v-if="signForm.cert_mode === 'normal'">
           <n-form-item label="证书类型">
             <n-checkbox-group v-model:value="signForm.cert_types">
               <n-space>
-                <n-checkbox value="server">服务端</n-checkbox>
-                <n-checkbox value="client">客户端</n-checkbox>
-                <n-checkbox value="signature">签名</n-checkbox>
-                <n-checkbox value="encryption">加密</n-checkbox>
+                <n-checkbox value="signature">签名 signature</n-checkbox>
+                <n-checkbox value="encryption">加密 encryption</n-checkbox>
               </n-space>
             </n-checkbox-group>
           </n-form-item>
@@ -685,7 +684,8 @@ const signForm = reactive({
   csr_key_password: '',
   dn: '', dnSeparator: DEFAULT_DN_SEPARATOR,
   cert_mode: 'normal' as 'normal' | 'dual',
-  cert_types: ['server'] as CertTypeItem[],
+  // ★ 修改：默认类型从 server → signature
+  cert_types: ['signature'] as CertTypeItem[],
   ca_source: 'local' as 'local' | 'manual',
   ca_id: '', ca_cert_pem: '', ca_key_pem: '', ca_key_password: '',
   validity_days: 365,
@@ -752,7 +752,6 @@ const downloadKeyForm = reactive({ csrId: '', encrypt: false, password: '' });
 // ============================================================================
 // 表格列
 // 列顺序：DN | 密钥算法 | 是否为CFCA | 证书配置状态 | 操作
-// （已删除：生效时间 / 失效时间 / 状态 / 创建时间 / 私钥文件）
 // ============================================================================
 const columns: DataTableColumns<any> = [
   {
@@ -1053,7 +1052,8 @@ function openSignCert() {
   signForm.dn = '';
   signForm.dnSeparator = DEFAULT_DN_SEPARATOR;
   signForm.cert_mode = 'normal';
-  signForm.cert_types = ['server'];
+  // ★ 修改：重置默认类型 server → signature
+  signForm.cert_types = ['signature'];
   signForm.ca_source = 'local';
   signForm.ca_id = '';
   signForm.ca_cert_pem = '';

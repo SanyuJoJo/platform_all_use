@@ -58,14 +58,13 @@ func (s *Service) persistCA(op string, params, data map[string]interface{}) {
 		Algorithm:    getString(params, "algorithm"),
 		CertPath:     getString(data, "cert_path"),
 		KeyRef:       getString(data, "key_ref"),
-		KeyPath:      getString(data, "key_path"), // ★ 白盒私钥路径（新模式）
+		KeyPath:      getString(data, "key_path"),
 		ValidityDays: getInt(params, "validity_days"),
 		Status:       "ACTIVE",
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
 
-	// 可选字段
 	if v := getNestedString(params, "subject", "O"); v != "" {
 		ca.SubjectO = &v
 	}
@@ -75,13 +74,11 @@ func (s *Service) persistCA(op string, params, data map[string]interface{}) {
 	if v := getString(data, "serial"); v != "" {
 		ca.Serial = &v
 	}
-	// ca.intermediate.create 的父 CA
 	if op == "ca.intermediate.create" {
 		if v := getString(params, "parent_ca_id"); v != "" {
 			ca.ParentCAID = &v
 		}
 	}
-	// key_params 原样落库
 	if kp, ok := params["key_params"].(map[string]interface{}); ok {
 		ca.KeyParams = models.JSONMap(kp)
 	}
@@ -89,7 +86,7 @@ func (s *Service) persistCA(op string, params, data map[string]interface{}) {
 	err := s.db.Clauses(clauseOnConflict("ca_id", []string{
 		"parent_ca_id", "subject_cn", "subject_o", "algorithm",
 		"key_params", "validity_days", "cert_path", "key_ref",
-		"key_path", // ★ 新增
+		"key_path",
 		"chain_path", "serial", "status", "updated_at",
 	})).Create(ca).Error
 	if err != nil {
@@ -156,9 +153,12 @@ func (s *Service) persistCert(params, data map[string]interface{}) {
 		NotAfter:  now.AddDate(0, 0, getIntDefault(params, "validity_days", 365)),
 		CreatedAt: now,
 	}
+	// ★ 修复：默认 cert_type 从 "signature" 改为 "unknown"。
+	//   这里只针对旧路径（core 侧调用 cert.sign 后由本函数落库），
+	//   不再假定任何默认业务分类。
 	certType := getString(params, "cert_type")
 	if certType == "" {
-		certType = "server"
+		certType = "unknown"
 	}
 	cert.CertType = certType
 	if v := getString(data, "chain_path"); v != "" {

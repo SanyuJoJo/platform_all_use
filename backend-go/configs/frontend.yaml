@@ -61,7 +61,80 @@ module_menus:
           permission: auth:permission:view
           order: 30
 
-  # 说明：module_manager / audit_log / license 未列出，
+  crypto_console:
+    - id: crypto_console:security
+      title: 安全管理
+      icon: Shield
+      path: /security
+      component: views/security/index.vue   # 目录占位，可留空
+      order: 60
+      children:
+        - id: crypto_console:cert-ops
+          title: 证书运维
+          icon: Certificate
+          path: /security/cert-ops
+          component: views/cert-ops/index.vue
+          order: 10
+          children:
+            - id: crypto_console:ca
+              title: CA 管理
+              icon: Certificate
+              path: /ca
+              component: views/ca/index.vue
+              permission: crypto_console:ca:view
+              order: 10
+            - id: crypto_console:cert
+              title: 证书管理
+              icon: Document
+              path: /certs
+              component: views/certs/index.vue
+              permission: crypto_console:cert:view
+              order: 20
+            - id: crypto_console:csr
+              title: CSR 管理
+              icon: DocumentText
+              path: /csr
+              component: views/csr/index.vue
+              permission: crypto_console:csr:view
+              order: 30
+            - id: crypto_console:crl
+              title: CRL 管理
+              icon: List
+              path: /crl
+              component: views/crl/index.vue
+              permission: crypto_console:crl:view
+              order: 40
+            - id: crypto_console:key
+              title: 密钥管理
+              icon: Key
+              path: /keys
+              component: views/keys/index.vue
+              permission: crypto_console:key:view
+              order: 50
+            - id: crypto_console:task
+              title: 任务中心
+              icon: Time
+              path: /tasks
+              component: views/tasks/index.vue
+              permission: crypto_console:task:view
+              order: 60
+            - id: crypto_console:audit
+              title: 审计日志
+              icon: Search
+              path: /audits
+              component: views/audits/index.vue
+              permission: crypto_console:audit:view
+              order: 70
+
+        - id: crypto_console:business
+          title: 业务管理
+          icon: Apps
+          path: /security/business
+          component: views/business/index.vue
+          order: 20
+          children: []   # 暂时留空，后续可在此添加业务管理相关菜单
+
+  # 说明：module_manager / audit_log / license / ssl_proxy 未列出，
   #      将自动加载 DB manifest 里的菜单。
 
 # ---------------- 覆盖 entry_frontend ----------------
@@ -72,3 +145,4 @@ entry_frontend_overrides:
   audit_log: /sub-apps/audit-log/
   license: /sub-apps/license/
   crypto_console: /sub-apps/crypto-console/
+  ssl_proxy: /sub-apps/ssl-proxy/

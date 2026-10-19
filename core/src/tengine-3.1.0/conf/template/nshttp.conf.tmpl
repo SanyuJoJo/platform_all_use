@@ -1,0 +1,71 @@
+# ============================================================
+# nshttp 服务端代理 — 全量配置模板
+#
+# 约定：
+#   - 普通行：直接输出（先做变量替换）
+#   - "#@ cmd"：条件行。后端按 shouldEnable() 判定后，
+#               命中则去 "#@" 输出；否则保留为 "# cmd"
+#   - listen 行的 " ssl" 后缀由 {{listen_ssl_suffix}} 控制：
+#       listen_ssl=true  → " ssl"（TLS 服务端）
+#       listen_ssl=false → ""（明文 HTTP 反代）
+# ============================================================
+worker_processes auto;
+pid {{pid_path}};
+error_log {{log_dir}}/error.log warn;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       {{mime_types_path}};
+    default_type  application/octet-stream;
+    access_log    {{log_dir}}/access.log;
+
+    server {
+        listen       {{listen_ip}}:{{listen_port}}{{listen_ssl_suffix}};
+        server_name  {{ssl_server_name}};
+
+        # ---------- 标准 TLS 服务端证书（listen_ssl + http/pqc，或双栈） ----------
+        #@ ssl_certificate      {{cert_path}};
+        #@ ssl_certificate_key  {{key_path}};
+
+        # ---------- 国密 NTLS 服务端双证书（listen_ssl + gmssl 启用） ----------
+        #@ enable_ntls on;
+        #@ ssl_sign_certificate      {{server_sign_cert}};
+        #@ ssl_sign_certificate_key  {{server_sign_key}};
+        #@ ssl_enc_certificate       {{server_enc_cert}};
+        #@ ssl_enc_certificate_key   {{server_enc_key}};
+
+        # ---------- SSL 协议与套件（listen_ssl 启用） ----------
+        #@ ssl_protocols        {{ssl_protocols}};
+        #@ ssl_ciphers          {{ssl_ciphers}};
+        #@ ssl_prefer_server_ciphers on;
+
+        # ---------- SSL 会话缓存（listen_ssl + 会话缓存开启） ----------
+        #@ ssl_session_cache    {{ssl_session_cache_value}};
+        #@ ssl_session_timeout  {{ssl_session_timeout_value}};
+
+        # ---------- SSL 会话票据（listen_ssl 启用，值由开关控制） ----------
+        #@ ssl_session_tickets  {{ssl_session_tickets_value}};
+
+        # ---------- SSL 会话重协商（listen_ssl 启用，值由开关控制） ----------
+        #@ ssl_session_renegotiation {{ssl_session_renegotiation_value}};
+
+        # ---------- SSL 扩展指令（Groups 等） ----------
+        #@ ssl_conf_command {{ssl_conf_command}};
+
+        # ---------- 双向认证（listen_ssl + 双向认证开启 + ca_cert_id 非空） ----------
+        #@ ssl_client_certificate {{ca_cert_path}};
+        #@ ssl_verify_client {{ssl_verify_client_value}};
+
+        # ---------- 反向代理到后端服务 ----------
+        location / {
+            proxy_pass {{backend_scheme}}://{{backend_ip}}:{{backend_port}};
+            proxy_set_header Host              $host;
+            proxy_set_header X-Real-IP         $remote_addr;
+            proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto {{backend_scheme}};
+        }
+    }
+}

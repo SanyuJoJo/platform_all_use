@@ -52,17 +52,46 @@ func (c *WhiteboxClient) run(ctx context.Context, args ...string) error {
 //
 // plain 内容会被拷贝到 enc 路径，然后 whitebox_sm4 就地在 enc 上加密。
 func (c *WhiteboxClient) EncryptFile(ctx context.Context, plain, enc string) error {
-	// 拷贝明文 → 目标路径
 	if err := copyFileMode(plain, enc, 0600); err != nil {
 		return exception.New(exception.CodeInternalError,
 			fmt.Sprintf("copy plain → enc: %v", err), 500, nil)
 	}
-	// 就地加密
 	if err := c.run(ctx, enc); err != nil {
 		_ = os.Remove(enc)
 		return err
 	}
 	return os.Chmod(enc, 0600)
+}
+
+// ★ EncryptInPlace 就地加密（明文文件 → 加密后覆盖自身）。
+//
+// 相比 EncryptFile（拷贝明文到目标再加密），本方法直接在原文件上加密：
+//
+//	whitebox_sm4 <path>
+//
+// 适用场景：nginx 启动后立即把临时落盘的明文私钥就地加密，
+// 明文生命周期缩短到 nginx 加载私钥的那一瞬间。
+func (c *WhiteboxClient) EncryptInPlace(ctx context.Context, path string) error {
+	if path == "" {
+		return exception.New(exception.CodeParamInvalid, "路径为空", 400, nil)
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return exception.New(exception.CodeNotFound,
+				"文件不存在: "+path, 404, nil)
+		}
+		return exception.New(exception.CodeInternalError,
+			fmt.Sprintf("访问文件失败: %v", err), 500, nil)
+	}
+	if st.IsDir() || st.Size() == 0 {
+		return exception.New(exception.CodeParamInvalid,
+			"文件非法（空或目录）: "+path, 400, nil)
+	}
+	if err := c.run(ctx, path); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0600)
 }
 
 // DecryptToTemp 解密到临时文件（0600），返回临时明文路径。
@@ -76,7 +105,7 @@ func (c *WhiteboxClient) DecryptToTemp(ctx context.Context, enc, tmpDir string) 
 	}
 	tmp := f.Name()
 	f.Close()
-	_ = os.Remove(tmp) // whitebox_sm4 会重新创建输出文件
+	_ = os.Remove(tmp)
 	_ = os.Chmod(tmp, 0600)
 	if err := c.run(ctx, enc, tmp); err != nil {
 		_ = os.Remove(tmp)
@@ -87,11 +116,9 @@ func (c *WhiteboxClient) DecryptToTemp(ctx context.Context, enc, tmpDir string) 
 
 // ReEncrypt 就地重新加密（明文临时文件 → 密文原位置）。
 func (c *WhiteboxClient) ReEncrypt(ctx context.Context, plainTmp, enc string) error {
-	// 拷贝明文临时文件 → 密文原位置
 	if err := copyFileMode(plainTmp, enc, 0600); err != nil {
 		return err
 	}
-	// 就地加密
 	if err := c.run(ctx, enc); err != nil {
 		return err
 	}
@@ -107,15 +134,9 @@ func (c *WhiteboxClient) HasPrivateKey(keyPath string) bool {
 }
 
 // =============================================================================
-// 文件辅助（本地定义，避免与其它包冲突）
+// 文件辅助
 // =============================================================================
 
-// copyFileMode 拷贝文件并设置权限。
-//
-// 说明：
-//   - 目标目录不存在时自动创建（0750）；
-//   - 拷贝过程出错时清理目标文件，避免残留半成品；
-//   - 拷贝完成后显式 chmod，因为 umask 可能影响初始权限。
 func copyFileMode(src, dst string, mode os.FileMode) error {
 	in, err := os.Open(src)
 	if err != nil {

@@ -206,11 +206,10 @@
           />
         </n-form-item>
 
+        <!-- ★ 修改：证书类型只保留 signature / encryption -->
         <n-form-item label="证书类型（可多选）">
           <n-checkbox-group v-model:value="signForm.cert_types">
             <n-space>
-              <n-checkbox value="server">服务端 server</n-checkbox>
-              <n-checkbox value="client">客户端 client</n-checkbox>
               <n-checkbox value="signature">签名 signature</n-checkbox>
               <n-checkbox value="encryption">加密 encryption</n-checkbox>
             </n-space>
@@ -539,7 +538,8 @@ const signForm = reactive({
   dn: '',
   dnSeparator: DEFAULT_DN_SEPARATOR,
   san: '',
-  cert_types: ['server'] as CertTypeItem[],
+  // ★ 修改：默认类型从 server → signature
+  cert_types: ['signature'] as CertTypeItem[],
   validity_days: 365,
 });
 
@@ -594,25 +594,53 @@ const algorithmOptions = [
   { label: 'ML-DSA', value: 'ML-DSA' },
 ];
 
+// ★ 修改：展示映射新增 unknown；
+//   server / client 仅用于兼容历史脏数据展示，不再作为可选项。
 const CERT_TYPE_LABEL: Record<string, string> = {
-  server: '服务端',
-  client: '客户端',
   signature: '签名',
   encryption: '加密',
   imported: '导入',
-  ca: 'CA',
+  unknown: '未知',
   dual_sign: '双证签名',
   dual_enc: '双证加密',
+  // 兼容历史数据（只用于展示，不再作为可选项）
+  server: '服务端',
+  client: '客户端',
 };
 
+// formatCertType
+//
+// 输入可能是：
+//   - 平台业务分类："signature" / "encryption" / "dual_sign" / "unknown" ...
+//   - 证书原始扩展："Digital Signature, Key Encipherment" /
+//     "Digital Signature; TLS Web Server Authentication" ...
+//
+// 处理策略：
+//   1. 先按分号拆（平台保存原始扩展时的拼接符），每段独立映射；
+//   2. 每段内再按逗号拆，逐项映射；
+//   3. 映射表命中则用中文标签，否则原样返回。
 function formatCertType(t: string | undefined | null): string {
   if (!t) return '';
-  const parts = t
-    .split(',')
+  const segments = t
+    .split(';')
     .map((s) => s.trim())
     .filter(Boolean);
-  if (parts.length === 0) return '';
-  return parts.map((p) => CERT_TYPE_LABEL[p] || p).join('、');
+  if (segments.length === 0) return '';
+  const out: string[] = [];
+  for (const seg of segments) {
+    const parts = seg
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (parts.length === 0) {
+      out.push(CERT_TYPE_LABEL[seg] || seg);
+      continue;
+    }
+    for (const p of parts) {
+      out.push(CERT_TYPE_LABEL[p] || p);
+    }
+  }
+  return out.join('、');
 }
 
 // ============================================================================
@@ -626,9 +654,7 @@ function fmtTime(t: any): string {
     const pad = (n: number) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
-  // 后端已经格式化为 "2026-10-10 16:35:04"，直接使用
   if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(t)) return t;
-  // RFC3339 兜底
   const d = new Date(t);
   if (isNaN(d.getTime())) return t;
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -637,8 +663,6 @@ function fmtTime(t: any): string {
 
 // ============================================================================
 // 表格列
-// 列顺序：使用者 | 类型 | 公钥算法 | 序列号 | 生效时间 | 失效时间
-//        | 状态 | 创建时间 | 私钥文件 | 操作
 // ============================================================================
 const columns: DataTableColumns<any> = [
   {
@@ -650,7 +674,7 @@ const columns: DataTableColumns<any> = [
   {
     title: '类型',
     key: 'cert_type',
-    width: 140,
+    width: 200,
     render(row: any) {
       return formatCertType(row.cert_type);
     },
@@ -805,7 +829,8 @@ function openSign() {
   signForm.dn = '';
   signForm.dnSeparator = DEFAULT_DN_SEPARATOR;
   signForm.san = '';
-  signForm.cert_types = ['server'];
+  // ★ 修改：重置默认类型 server → signature
+  signForm.cert_types = ['signature'];
   signForm.validity_days = 365;
 
   if (caList.value.length === 0) {

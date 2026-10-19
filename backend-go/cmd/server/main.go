@@ -1,3 +1,4 @@
+// backend-go/cmd/server/main.go
 package main
 
 import (
@@ -27,6 +28,7 @@ import (
 	"backend-go/internal/modules/crypto"
 	"backend-go/internal/modules/license"
 	"backend-go/internal/modules/module_manager"
+	"backend-go/internal/modules/ssl_proxy"
 )
 
 func main() {
@@ -71,6 +73,10 @@ func main() {
 		if err := models.EnsureLicenseTable(db); err != nil {
 			log.Fatal().Err(err).Msg("License 表迁移失败")
 		}
+		// ★ SSL 代理表迁移
+		if err := ssl_proxy.Migrate(db); err != nil {
+			log.Fatal().Err(err).Msg("SSL 代理表迁移失败")
+		}
 	} else {
 		log.Info().Msg("生产环境跳过 AutoMigrate，请使用 make migrate-up 执行 goose 迁移")
 	}
@@ -106,14 +112,12 @@ func main() {
 	// ---------------------------------------------------------------------
 	// 业务服务初始化
 	//
-	// 顺序很重要：
-	//   auditLogSvc 先创建（crypto 依赖它做审计写入）
-	//   cryptoSvc 后创建
+	// 顺序：
+	//   auditLogSvc → licenseSvc → cryptoSvc → cryptoHandler
+	//   → cryptoMeta（供 SSL 代理复用）→ sslProxySvc → sslProxyHandler
 	// ---------------------------------------------------------------------
 	auditLogSvc := audit_log.NewService(db, cfg)
 	licenseSvc := license.NewService(db, cfg)
-
-	// ★ crypto.NewService 的实际签名：(cfg, auditSvc, db)
 	cryptoSvc := crypto.NewService(cfg, auditLogSvc, db)
 
 	if cfg.AppEnv == "production" {
@@ -171,6 +175,18 @@ func main() {
 	// ---- Crypto 控制台路由 ----
 	cryptoHandler := crypto.NewHandler(cryptoSvc)
 	cryptoHandler.RegisterRoutes(protected)
+
+	// ---- SSL 代理路由 ----
+	//
+	// ★ 从一期证书模块的 MetaRegistry 取出 CAService / CertService，
+	//   构造 SSL 代理专属的 CertProvider，避免在 SSL 代理侧重复装配。
+	cryptoMeta := cryptoHandler.Meta()
+	certProvider := ssl_proxy.NewCryptoCertProvider(cryptoMeta.CA, cryptoMeta.Cert)
+	certResolver := ssl_proxy.NewCertResolver(certProvider)
+	sslProxySvc := ssl_proxy.NewService(db, certResolver)
+
+	sslProxyHandler := ssl_proxy.NewHandler(sslProxySvc)
+	sslProxyHandler.Register(protected)
 
 	// =====================================================================
 	// 前端静态资源自托管（必须在所有 API 路由注册之后）

@@ -8,6 +8,7 @@ var CORE_MODULE_IDS = map[string]struct{}{
 	"audit_log":      {},
 	"license":        {},
 	"crypto_console": {},
+	"ssl_proxy":      {},
 }
 
 // ZIP 安全默认值（可被 settings 覆盖）。
@@ -176,25 +177,6 @@ var CoreModules = []CoreModuleSeed{
 		},
 		Config: map[string]interface{}{},
 	},
-	// ========================================================================
-	// 证书管理控制台（P0 平台后端新增）
-	//
-	// 菜单结构（与 auth 模块结构对齐）：
-	//   证书管理（父，parent_id=null，有真实 path）
-	//     ├── CA 管理
-	//     ├── 证书管理
-	//     ├── CSR 管理
-	//     ├── CRL 管理
-	//     ├── 密钥管理
-	//     ├── 任务中心
-	//     └── 审计日志
-	//
-	// ★ 关键约束（前端 menu.ts 排序+建树的实现决定）：
-	//   前端把父菜单与子菜单混合后按 order 全局排序，
-	//   遍历时父节点必须已经在 map 中，子节点才能正确挂载。
-	//   因此：父菜单 order 必须 < 所有子菜单 order。
-	//   这里：父菜单 order = 60，子菜单 order = 61 ~ 67。
-	// ========================================================================
 	{
 		ID: "crypto_console", Name: "证书管理控制台", Version: "1.0.0",
 		Description:   "CA、证书、CSR、CRL、密钥、任务、审计",
@@ -212,7 +194,6 @@ var CoreModules = []CoreModuleSeed{
 			},
 			"permissions": []interface{}{},
 			"menus": []interface{}{
-				// ---- 父菜单：证书管理（order=60，必须小于所有子菜单） ----
 				map[string]interface{}{
 					"id":         "crypto_console:dashboard",
 					"parent_id":  nil,
@@ -223,7 +204,6 @@ var CoreModules = []CoreModuleSeed{
 					"permission": "crypto_console:ca:view",
 					"order":      60,
 				},
-				// ---- 子菜单：CA 管理 ----
 				map[string]interface{}{
 					"id":         "crypto_console:ca",
 					"parent_id":  "crypto_console:dashboard",
@@ -234,7 +214,6 @@ var CoreModules = []CoreModuleSeed{
 					"permission": "crypto_console:ca:view",
 					"order":      61,
 				},
-				// ---- 子菜单：证书管理 ----
 				map[string]interface{}{
 					"id":         "crypto_console:cert",
 					"parent_id":  "crypto_console:dashboard",
@@ -245,7 +224,6 @@ var CoreModules = []CoreModuleSeed{
 					"permission": "crypto_console:cert:view",
 					"order":      62,
 				},
-				// ---- 子菜单：CSR 管理 ----
 				map[string]interface{}{
 					"id":         "crypto_console:csr",
 					"parent_id":  "crypto_console:dashboard",
@@ -256,7 +234,6 @@ var CoreModules = []CoreModuleSeed{
 					"permission": "crypto_console:csr:view",
 					"order":      63,
 				},
-				// ---- 子菜单：CRL 管理 ----
 				map[string]interface{}{
 					"id":         "crypto_console:crl",
 					"parent_id":  "crypto_console:dashboard",
@@ -267,7 +244,6 @@ var CoreModules = []CoreModuleSeed{
 					"permission": "crypto_console:crl:view",
 					"order":      64,
 				},
-				// ---- 子菜单：密钥管理 ----
 				map[string]interface{}{
 					"id":         "crypto_console:key",
 					"parent_id":  "crypto_console:dashboard",
@@ -278,7 +254,6 @@ var CoreModules = []CoreModuleSeed{
 					"permission": "crypto_console:key:view",
 					"order":      65,
 				},
-				// ---- 子菜单：任务中心 ----
 				map[string]interface{}{
 					"id":         "crypto_console:task",
 					"parent_id":  "crypto_console:dashboard",
@@ -289,7 +264,6 @@ var CoreModules = []CoreModuleSeed{
 					"permission": "crypto_console:task:view",
 					"order":      66,
 				},
-				// ---- 子菜单：审计日志 ----
 				map[string]interface{}{
 					"id":         "crypto_console:audit",
 					"parent_id":  "crypto_console:dashboard",
@@ -299,6 +273,46 @@ var CoreModules = []CoreModuleSeed{
 					"component":  "views/audits/index.vue",
 					"permission": "crypto_console:audit:view",
 					"order":      67,
+				},
+			},
+		},
+		Config: map[string]interface{}{},
+	},
+	// ========================================================================
+	// SSL 代理
+	//
+	// 菜单挂在"业务管理"（crypto_console:business）下作为子项。
+	//
+	// ★ path=/list 与子应用路由 /list 对应；子应用 router base=/ssl_proxy，
+	//   所以最终 URL 是 /ssl_proxy/list，内部匹配到 /list，渲染列表页。
+	// ========================================================================
+	{
+		ID: "ssl_proxy", Name: "SSL 代理", Version: "1.0.0",
+		Description:   "SSL 代理服务，支持 HTTP over TLS、后量子 SSL、国密 SSL",
+		Author:        "平台团队",
+		Status:        "active",
+		EntryBackend:  "router:router",
+		EntryFrontend: strPtr("/sub-apps/ssl-proxy/"),
+		Manifest: map[string]interface{}{
+			"id":          "ssl_proxy",
+			"name":        "SSL 代理",
+			"version":     "1.0.0",
+			"description": "SSL 代理服务，支持 HTTP over TLS、后量子 SSL、国密 SSL",
+			"dependencies": []interface{}{
+				"auth",
+				"crypto_console",
+			},
+			"permissions": []interface{}{},
+			"menus": []interface{}{
+				map[string]interface{}{
+					"id":         "ssl_proxy:list",
+					"parent_id":  "crypto_console:business",
+					"title":      "HTTP 管理",
+					"icon":       "Connection",
+					"path":       "/list",
+					"component":  "views/list/index.vue",
+					"permission": "ssl_proxy:proxy:view",
+					"order":      21,
 				},
 			},
 		},

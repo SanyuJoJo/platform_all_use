@@ -79,7 +79,9 @@ export interface DomainListResponse {
   domains: string[];
 }
 
-export type CertTypeItem = 'server' | 'client' | 'signature' | 'encryption';
+// ★ 修改：证书类型只保留签名 / 加密两类
+//   - 移除 'server' / 'client'（属于 X.509 EKU 语义，不属于平台业务分类）
+export type CertTypeItem = 'signature' | 'encryption';
 
 export interface SignCertParams {
   ca_source: 'local' | 'manual';

@@ -20,7 +20,6 @@ type ImportCARequest struct {
 	KeyPassword string `json:"key_password,omitempty"`
 	KeyRef      string `json:"key_ref,omitempty"`
 	// Domain 指定域目录，默认 "safe"。
-	// 合法字符 [A-Za-z0-9_-]，长度 1~64。
 	Domain string `json:"domain,omitempty"`
 }
 
@@ -31,11 +30,7 @@ type ImportCARequest struct {
 //	<CertRoot>/ca/<domain>/<pubkey_sm3>.cert.pem     证书（0640）
 //	<CertRoot>/ca/<domain>/<pubkey_sm3>.key.pem      白盒私钥（0600，若提供）
 //	<CertRoot>/ca/<domain>/<subject_hash>.0          rehash 软链
-//
-// ★ 不再调用 core 的 cert.parse：
-//   - core 的 pathguard 只允许 coreRoot/data 和 coreRoot/tmp，
-//     无法解析位于 CertRoot 下的证书；
-//   - 改为 backend-go 侧 CertParser.Parse()（铜锁 openssl 直接解析）。
+//	<CertRoot>/ca/<domain>/bundle.crt                全量根证书（0644，自动重建）
 //
 // ★ 私钥三种模式：
 //   - KeyRef 非空 → 引用 core keystore（旧模式），DB 只记 KeyRef
@@ -89,7 +84,7 @@ func (s *CAService) Import(ctx context.Context, req *ImportCARequest) (*models.C
 		}
 	}()
 
-	// 4. 解析证书（backend-go 侧，不经过 core）
+	// 4. 解析证书
 	detail, err := s.parser.Parse(certAbs)
 	if err != nil {
 		return nil, exception.New(exception.CodeParamInvalid,
@@ -99,9 +94,8 @@ func (s *CAService) Import(ctx context.Context, req *ImportCARequest) (*models.C
 	serial := detail.Serial
 	algorithm := detail.PublicKeyAlgorithm
 
-	// 5. 生成 rehash 软链（<subject_hash>.0）
+	// 5. 生成 rehash 软链
 	if err := s.ensureRehash(certAbs); err != nil {
-		// 失败仅告警，不阻断导入
 		log.Warn().
 			Str("cert", certAbs).
 			Err(err).
@@ -118,20 +112,25 @@ func (s *CAService) Import(ctx context.Context, req *ImportCARequest) (*models.C
 	now := timeNowUTC()
 	caID := "ca-" + pubSM3[:12]
 
-	// 冲突检查（同一 pubkey 的 CA 已存在时拒绝）
+	// ★ 冲突检查：同一 pubkey 的 CA 已存在时拒绝，但**仍触发 bundle 重建**
+	//   （保证历史数据 / 手工补充的证书自动进 bundle）
 	var existing models.CA
 	if e := s.db.Where("ca_id = ?", caID).First(&existing).Error; e == nil {
+		if err := s.RebuildDomainBundle(domain); err != nil {
+			log.Warn().Err(err).Str("domain", domain).
+				Msg("Import: 已存在 CA 触发 bundle 重建失败（不阻断）")
+		}
 		return nil, exception.New(exception.CodeParamInvalid,
 			"该 CA 已存在（相同公钥 SM3）", 409, nil)
 	}
 
 	ca := &models.CA{
 		CAID:         caID,
-		SubjectCN:    extractCNFromSubject(subject), // CA 导入保留 fallback（imported-ca）
+		SubjectCN:    extractCNFromSubject(subject),
 		Algorithm:    algorithm,
-		CertPath:     certAbs, // ★ 绝对路径
-		KeyRef:       keyRef,  // 旧模式非空
-		KeyPath:      keyPath, // 新模式非空
+		CertPath:     certAbs,
+		KeyRef:       keyRef,
+		KeyPath:      keyPath,
 		ValidityDays: 0,
 		Status:       "ACTIVE",
 		CreatedAt:    now,
@@ -146,9 +145,15 @@ func (s *CAService) Import(ctx context.Context, req *ImportCARequest) (*models.C
 	}
 	success = true
 
-	// 日志（不打印私钥/口令明文）
+	// ★ 重建域 bundle（新增 CA 自动进全量根证书）
+	if err := s.RebuildDomainBundle(domain); err != nil {
+		log.Warn().Err(err).Str("domain", domain).
+			Msg("Import: 重建 bundle 失败（不阻断）")
+	}
+
 	log.Info().
 		Str("ca_id", caID).
+		Str("domain", domain).
 		Str("cert_path", certAbs).
 		Bool("has_key_ref", keyRef != "").
 		Bool("has_key_path", keyPath != "").
@@ -158,15 +163,9 @@ func (s *CAService) Import(ctx context.Context, req *ImportCARequest) (*models.C
 }
 
 // resolveImportedKeyNew 处理导入私钥。
-//
-// 三种模式：
-//  1. KeyRef 非空 → 走 core keystore（旧模式），返回 (keyRef, "", nil)
-//  2. KeyPEM 非空 → 白盒加密落盘（新模式），返回 ("", keyPath, nil)
-//  3. 都空 → 无私钥，返回 ("", "", nil)
 func (s *CAService) resolveImportedKeyNew(
 	ctx context.Context, req *ImportCARequest, caDir, pubSM3 string,
 ) (string, string, error) {
-	// 模式 1：外部 keyRef
 	if ref := strings.TrimSpace(req.KeyRef); ref != "" {
 		return ref, "", nil
 	}
@@ -184,7 +183,6 @@ func (s *CAService) resolveImportedKeyNew(
 		return "", "", exception.New(exception.CodeInternalError, "铜锁 openssl 不可用", 500, nil)
 	}
 
-	// 解密（若已加密）
 	plainKeyPEM := []byte(keyPEM)
 	tmpDir, _ := os.MkdirTemp("", "import-ca-key-")
 	defer os.RemoveAll(tmpDir)
@@ -218,7 +216,6 @@ func (s *CAService) resolveImportedKeyNew(
 		}
 	}
 
-	// 白盒加密落盘
 	if s.whitebox == nil {
 		return "", "", exception.New(exception.CodeInternalError,
 			"whitebox 未初始化", 500, nil)
@@ -241,9 +238,6 @@ func (s *CAService) resolveImportedKeyNew(
 	return "", keyAbs, nil
 }
 
-// ensureRehash 生成 <subject_hash>.0 软链，兼容 openssl verify -CApath。
-//
-// 失败仅告警，不阻断导入（导入完成后再手工修复亦可）。
 func (s *CAService) ensureRehash(certAbs string) error {
 	bin := s.parser.OpensslBin()
 	if bin == "" {
@@ -252,8 +246,6 @@ func (s *CAService) ensureRehash(certAbs string) error {
 	dir := filepath.Dir(certAbs)
 	base := filepath.Base(certAbs)
 
-	// 优先用 c_rehash（若系统提供）
-	// 否则用 openssl x509 -subject_hash 手工计算
 	out, err := RunOpenSSL(bin, "x509", "-in", certAbs, "-noout", "-subject_hash")
 	if err != nil {
 		return fmt.Errorf("subject_hash: %w", err)

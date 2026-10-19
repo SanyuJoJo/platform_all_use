@@ -1,3 +1,4 @@
+// backend-go/internal/modules/crypto/handler.go
 package crypto
 
 import (
@@ -35,6 +36,14 @@ func NewHandler(svc *Service) *Handler {
 		svc:  svc,
 		meta: NewMetaRegistry(svc.db, svc.cfg),
 	}
+}
+
+// Meta 返回内部 MetaRegistry，供其它模块复用 CA/Cert Service。
+//
+// ★ 用途：SSL 代理模块需要访问一期证书模块的 CA/Cert Service，
+//   通过本方法获取已装配的实例，避免重复构造。
+func (h *Handler) Meta() *MetaRegistry {
+	return h.meta
 }
 
 // RegisterRoutes 注册密码操作路由（受保护）。

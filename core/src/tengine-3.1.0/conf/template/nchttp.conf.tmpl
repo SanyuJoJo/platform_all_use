@@ -1,0 +1,66 @@
+# ============================================================
+# nchttp 客户端代理 — 全量配置模板
+# ============================================================
+worker_processes auto;
+pid {{pid_path}};
+error_log {{log_dir}}/error.log warn;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include       {{mime_types_path}};
+    default_type  application/octet-stream;
+    access_log    {{log_dir}}/access.log;
+
+    # ---------- 临时目录（业务隔离） ----------
+    client_body_temp_path {{tmp_dir}}/client_body;
+    proxy_temp_path       {{tmp_dir}}/proxy;
+    fastcgi_temp_path     {{tmp_dir}}/fastcgi;
+    uwsgi_temp_path       {{tmp_dir}}/uwsgi;
+    scgi_temp_path        {{tmp_dir}}/scgi;
+
+    server {
+        listen       {{listen_ip}}:{{listen_port}};
+        server_name  {{ssl_server_name}};
+
+        location / {
+            proxy_pass {{backend_scheme}}://{{backend_ip}}:{{backend_port}};
+
+            # ---------- TLS 客户端参数 ----------
+            #@ proxy_ssl_protocols {{ssl_protocols}};
+            #@ proxy_ssl_ciphers {{ssl_ciphers}};
+            #@ proxy_ssl_server_name on;
+            #@ proxy_ssl_name {{ssl_server_name}};
+
+            # ---------- SSL 会话复用 ----------
+            #@ proxy_ssl_session_reuse {{proxy_ssl_session_reuse_value}};
+
+            # ---------- 国密 NTLS 客户端双证书 ----------
+            #@ proxy_enable_ntls on;
+            #@ proxy_ssl_sign_certificate     {{client_sign_cert}};
+            #@ proxy_ssl_sign_certificate_key {{client_sign_key}};
+            #@ proxy_ssl_enc_certificate      {{client_enc_cert}};
+            #@ proxy_ssl_enc_certificate_key  {{client_enc_key}};
+
+            # ---------- 标准双向认证客户端证书 ----------
+            #@ proxy_ssl_certificate     {{client_cert_path}};
+            #@ proxy_ssl_certificate_key {{client_key_path}};
+
+            # ---------- CA 证书校验 ----------
+            #@ proxy_ssl_trusted_certificate {{ca_cert_path}};
+            #@ proxy_ssl_verify on;
+            #@ proxy_ssl_verify_depth 2;
+
+            # ---------- SSL 扩展指令 ----------
+            #@ proxy_ssl_conf_command {{ssl_conf_command}};
+
+            # ---------- 转发头 ----------
+            proxy_set_header Host              $host;
+            proxy_set_header X-Real-IP         $remote_addr;
+            proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto {{backend_scheme}};
+        }
+    }
+}
