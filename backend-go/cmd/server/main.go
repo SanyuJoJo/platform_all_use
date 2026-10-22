@@ -27,7 +27,9 @@ import (
 	"backend-go/internal/modules/auth"
 	"backend-go/internal/modules/crypto"
 	"backend-go/internal/modules/license"
+	"backend-go/internal/modules/menu"
 	"backend-go/internal/modules/module_manager"
+	"backend-go/internal/modules/route_perm"
 	"backend-go/internal/modules/ssl_proxy"
 )
 
@@ -73,9 +75,20 @@ func main() {
 		if err := models.EnsureLicenseTable(db); err != nil {
 			log.Fatal().Err(err).Msg("License 表迁移失败")
 		}
+		// ★ 方案 A：角色-菜单关联表
+		if err := models.EnsureAuthRoleMenuTable(db); err != nil {
+			log.Fatal().Err(err).Msg("auth_role_menu 表迁移失败")
+		}
 		// ★ SSL 代理表迁移
 		if err := ssl_proxy.Migrate(db); err != nil {
 			log.Fatal().Err(err).Msg("SSL 代理表迁移失败")
+		}
+		// ★ 动态路由：菜单 + 路由权限表迁移
+		if err := models.EnsureMenuSchema(db); err != nil {
+			log.Fatal().Err(err).Msg("菜单表迁移失败")
+		}
+		if err := models.EnsureRoutePermissionSchema(db); err != nil {
+			log.Fatal().Err(err).Msg("路由权限表迁移失败")
 		}
 	} else {
 		log.Info().Msg("生产环境跳过 AutoMigrate，请使用 make migrate-up 执行 goose 迁移")
@@ -83,12 +96,30 @@ func main() {
 
 	// ---------------------------------------------------------------------
 	// 种子数据（幂等、增量）
+	//
+	// 顺序约束：
+	//   1. auth.EnsureAuthSeedData   → 旧表 auth_permission + admin/guest 角色
+	//   2. module_manager.EnsureModuleSeedData
+	//   3. menu.EnsureMenuSeedData   → platform_menu
+	//   4. auth.EnsureAdminRoleMenus → 依赖 platform_menu 已有数据，
+	//                                   把全部启用菜单同步给 admin 角色
+	//   5. route_perm.EnsureSeedData
 	// ---------------------------------------------------------------------
 	if err := auth.EnsureAuthSeedData(db); err != nil {
 		log.Error().Err(err).Msg("认证种子数据初始化失败")
 	}
 	if err := module_manager.EnsureModuleSeedData(db); err != nil {
 		log.Error().Err(err).Msg("模块管理种子数据初始化失败")
+	}
+	if err := menu.EnsureMenuSeedData(db); err != nil {
+		log.Error().Err(err).Msg("菜单种子数据初始化失败")
+	}
+	// ★ 必须在 menu seed 之后：把全部启用菜单同步给 admin 角色
+	if err := auth.EnsureAdminRoleMenus(db); err != nil {
+		log.Error().Err(err).Msg("admin 角色菜单同步失败")
+	}
+	if err := route_perm.EnsureSeedData(db); err != nil {
+		log.Error().Err(err).Msg("路由权限种子数据初始化失败")
 	}
 
 	// ---------------------------------------------------------------------
@@ -111,14 +142,14 @@ func main() {
 
 	// ---------------------------------------------------------------------
 	// 业务服务初始化
-	//
-	// 顺序：
-	//   auditLogSvc → licenseSvc → cryptoSvc → cryptoHandler
-	//   → cryptoMeta（供 SSL 代理复用）→ sslProxySvc → sslProxyHandler
 	// ---------------------------------------------------------------------
 	auditLogSvc := audit_log.NewService(db, cfg)
 	licenseSvc := license.NewService(db, cfg)
 	cryptoSvc := crypto.NewService(cfg, auditLogSvc, db)
+
+	// ★ 动态路由 / 权限服务
+	menuSvc := menu.NewService(db)
+	routePermSvc := route_perm.NewService(db)
 
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
@@ -155,6 +186,9 @@ func main() {
 
 	protected := api.Group("")
 	protected.Use(middleware.AuthMiddleware(db, cfg.SecretKey))
+	// ★ 动态权限校验：AuthMiddleware 之后，业务路由之前
+	protected.Use(middleware.DynamicPermission(routePermSvc))
+
 	authHandler.RegisterProtectedRoutes(protected)
 	authHandler.RegisterUserRoutes(protected)
 	authHandler.RegisterRoleRoutes(protected)
@@ -177,9 +211,6 @@ func main() {
 	cryptoHandler.RegisterRoutes(protected)
 
 	// ---- SSL 代理路由 ----
-	//
-	// ★ 从一期证书模块的 MetaRegistry 取出 CAService / CertService，
-	//   构造 SSL 代理专属的 CertProvider，避免在 SSL 代理侧重复装配。
 	cryptoMeta := cryptoHandler.Meta()
 	certProvider := ssl_proxy.NewCryptoCertProvider(cryptoMeta.CA, cryptoMeta.Cert)
 	certResolver := ssl_proxy.NewCertResolver(certProvider)
@@ -187,6 +218,14 @@ func main() {
 
 	sslProxyHandler := ssl_proxy.NewHandler(sslProxySvc)
 	sslProxyHandler.Register(protected)
+
+	// ★ 菜单管理与动态路由
+	menuHandler := menu.NewHandler(menuSvc)
+	menuHandler.RegisterRoutes(protected)
+
+	// ★ 路由权限管理
+	routePermHandler := route_perm.NewHandler(routePermSvc)
+	routePermHandler.RegisterRoutes(protected)
 
 	// =====================================================================
 	// 前端静态资源自托管（必须在所有 API 路由注册之后）

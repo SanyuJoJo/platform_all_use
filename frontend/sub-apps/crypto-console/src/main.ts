@@ -1,93 +1,146 @@
-import { createApp } from 'vue';
-import App from './App.vue';
+import { createApp, type App as VueApp } from 'vue';
 import { createPinia } from 'pinia';
-import { createAppRouter } from './router';
+import { createRouter, createWebHistory, type Router } from 'vue-router';
 import {
   renderWithQiankun,
   qiankunWindow,
 } from 'vite-plugin-qiankun/dist/helper';
-import naive from 'naive-ui';
-import { usePermissionStore } from './store/permission';
-import { permissionDirective } from './directives/permission';
-let app: any = null;
-let routerInstance: any = null;
-function render(props: any = {}) {
-  const { container, moduleId, targetPath, permissions } = props;
-  const isQiankun = !!qiankunWindow.__POWERED_BY_QIANKUN__;
-  const base = isQiankun ? `/${moduleId || 'crypto_console'}` : '/';
-  console.log('[CryptoConsole] 渲染，base:', base, 'targetPath:', targetPath);
-  if (app) {
-    app.unmount();
-    app = null;
-    routerInstance = null;
-  }
+import App from './App.vue';
+import {
+  setupDynamicRoutes,
+  resetDynamicRoutes,
+  defaultRouters,
+} from './router/dynamic';
+import type { RouteNode } from './types';
+
+const DEFAULT_MODULE_ID = 'crypto_console';
+
+let app: VueApp | null = null;
+let router: Router | null = null;
+let currentModuleId = DEFAULT_MODULE_ID;
+
+function createAppInstance(base: string) {
   const pinia = createPinia();
-  routerInstance = createAppRouter(moduleId || 'crypto_console', isQiankun);
-  app = createApp(App);
-  app.use(pinia);
-  app.use(routerInstance);
-  app.use(naive);
-  app.directive('permission', permissionDirective);
-  if (permissions && Array.isArray(permissions)) {
-    const permissionStore = usePermissionStore();
-    permissionStore.setPermissions(permissions);
-  } else if (!isQiankun && import.meta.env.DEV) {
-    const mockPerms = import.meta.env.VITE_MOCK_PERMISSIONS as string | undefined;
-    if (mockPerms) {
-      const permissionStore = usePermissionStore();
-      permissionStore.setPermissions(
-        mockPerms.split(',').map((s: string) => s.trim()).filter(Boolean)
-      );
-    }
-  }
-  const mountEl = container
-    ? container.querySelector('#app')
-    : document.getElementById('app');
-  if (mountEl) {
-    if (mountEl.hasChildNodes()) {
-      mountEl.innerHTML = '';
-    }
-    app.mount(mountEl);
-  } else {
-    console.error('[CryptoConsole] 找不到挂载容器 #app');
-  }
-  if (targetPath && isQiankun) {
-    const basePath = `/${moduleId || 'crypto_console'}`;
-    const innerPath = targetPath.startsWith(basePath)
-      ? targetPath.slice(basePath.length) || '/'
-      : targetPath;
-    routerInstance.replace(innerPath);
-  }
+  const _router = createRouter({
+    history: createWebHistory(base),
+    routes: [
+      // 父目录 /crypto 是 directory 节点，不注册路由，重定向到第一个子菜单
+      { path: '/', redirect: '/crypto/keys' },
+      { path: '/crypto', redirect: '/crypto/keys' },
+      {
+        path: '/:pathMatch(.*)*',
+        name: 'SubNotFound',
+        component: () => import('./views/404.vue'),
+      },
+    ],
+  });
+  const _app = createApp(App);
+  _app.use(pinia);
+  _app.use(_router);
+  return { app: _app, router: _router };
 }
-if (!qiankunWindow.__POWERED_BY_QIANKUN__) {
-  console.log('[CryptoConsole] 独立运行模式');
-  render();
+
+function resolveRouters(props: any): RouteNode[] {
+  if (Array.isArray(props?.routers) && props.routers.length > 0) {
+    return props.routers as RouteNode[];
+  }
+  return defaultRouters;
 }
+
+async function bootstrapApp(props: any) {
+  const moduleId =
+    typeof props?.moduleId === 'string' ? props.moduleId : DEFAULT_MODULE_ID;
+  currentModuleId = moduleId;
+
+  const base = qiankunWindow.__POWERED_BY_QIANKUN__ ? `/${moduleId}` : '/';
+  console.warn(
+    `[crypto-console] bootstrapApp: base = ${base}, moduleId = ${moduleId}, ` +
+      `__POWERED_BY_QIANKUN__ = ${qiankunWindow.__POWERED_BY_QIANKUN__}`
+  );
+
+  const { app: _app, router: _router } = createAppInstance(base);
+  app = _app;
+  router = _router;
+
+  const routers = resolveRouters(props);
+  setupDynamicRoutes(_router, routers, moduleId);
+
+  try {
+    await _router.isReady();
+    console.warn(
+      '[crypto-console] router.isReady() 完成, current =',
+      _router.currentRoute.value.fullPath
+    );
+  } catch (e) {
+    console.error('[crypto-console] router.isReady() 失败', e);
+  }
+
+  return { app: _app, router: _router };
+}
+
+async function mountApp(props: any) {
+  console.warn('[crypto-console] mountApp 开始');
+  const { app: _app, router: _router } = await bootstrapApp(props);
+
+  const container = props?.container
+    ? (props.container as HTMLElement).querySelector('#app')
+    : document.querySelector('#app');
+  if (!container) {
+    console.error('[crypto-console] 未找到挂载容器 #app');
+    return;
+  }
+  _app.mount(container);
+  console.warn('[crypto-console] app.mount() 完成');
+
+  props?.onGlobalStateChange?.((state: any) => {
+    if (!state?.routers?.length) return;
+    console.warn('[crypto-console] 收到主应用下发的路由树，重建动态路由');
+    resetDynamicRoutes(_router);
+    setupDynamicRoutes(_router, state.routers, currentModuleId);
+    const cur = _router.currentRoute.value;
+    if (cur.name === 'SubNotFound') _router.replace(cur.fullPath);
+  }, true);
+}
+
+function unmountApp() {
+  console.warn('[crypto-console] unmountApp 开始');
+  app?.unmount();
+  app = null;
+  router = null;
+}
+
+console.warn(
+  '[crypto-console] main.ts 开始执行, __POWERED_BY_QIANKUN__ =',
+  qiankunWindow.__POWERED_BY_QIANKUN__
+);
+
+/* ============================================================================
+ * ★ 关键：必须用 renderWithQiankun 注册生命周期
+ * ========================================================================== */
 renderWithQiankun({
   bootstrap() {
-    console.log('[CryptoConsole] bootstrap');
-    return Promise.resolve();
+    console.warn('[crypto-console] bootstrap 生命周期被调用');
   },
-  mount(props: any) {
-    console.log('[CryptoConsole] mount', props);
-    render(props);
-    return Promise.resolve();
+  mount(props) {
+    console.warn('[crypto-console] mount 生命周期被调用');
+    mountApp(props).catch((e) =>
+      console.error('[crypto-console] mountApp 异常', e)
+    );
   },
   unmount() {
-    console.log('[CryptoConsole] unmount');
-    if (app) {
-      app.unmount();
-      app = null;
-      routerInstance = null;
-    }
-    return Promise.resolve();
+    console.warn('[crypto-console] unmount 生命周期被调用');
+    unmountApp();
   },
-  update(props: any) {
-    console.log('[CryptoConsole] update', props);
-    if (props?.permissions && Array.isArray(props.permissions)) {
-      const permissionStore = usePermissionStore();
-      permissionStore.setPermissions(props.permissions);
-    }
-    return Promise.resolve();
+  update(props) {
+    console.warn('[crypto-console] update 生命周期被调用', props);
   },
 });
+
+/* ============ 独立运行入口 ============ */
+
+if (!qiankunWindow.__POWERED_BY_QIANKUN__) {
+  console.warn('[crypto-console] 独立运行模式');
+  mountApp({}).catch((e) =>
+    console.error('[crypto-console] 独立运行 mount 异常', e)
+  );
+}

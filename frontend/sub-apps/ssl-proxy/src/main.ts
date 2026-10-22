@@ -1,93 +1,155 @@
-import { createApp } from 'vue';
-import App from './App.vue';
+import { createApp, type App as VueApp } from 'vue';
 import { createPinia } from 'pinia';
-import { createAppRouter } from './router';
+import { createRouter, createWebHistory, type Router } from 'vue-router';
 import {
   renderWithQiankun,
   qiankunWindow,
 } from 'vite-plugin-qiankun/dist/helper';
-import naive from 'naive-ui';
-import { usePermissionStore } from './store/permission';
-import { permissionDirective } from './directives/permission';
-let app: any = null;
-let routerInstance: any = null;
-function render(props: any = {}) {
-  const { container, moduleId, targetPath, permissions } = props;
-  const isQiankun = !!qiankunWindow.__POWERED_BY_QIANKUN__;
-  const base = isQiankun ? `/${moduleId || 'ssl_proxy'}` : '/';
-  console.log('[SSLProxy] 渲染，base:', base, 'targetPath:', targetPath);
-  if (app) {
-    app.unmount();
-    app = null;
-    routerInstance = null;
-  }
+import App from './App.vue';
+import {
+  setupDynamicRoutes,
+  resetDynamicRoutes,
+  defaultRouters,
+} from './router/dynamic';
+import { usePermissionStore } from './store/permission'; // ★ 引入权限Store
+import type { RouteNode } from './types';
+
+const DEFAULT_MODULE_ID = 'ssl_proxy';
+
+let app: VueApp | null = null;
+let router: Router | null = null;
+let currentModuleId = DEFAULT_MODULE_ID;
+
+function createAppInstance(base: string, props: any = {}) {
   const pinia = createPinia();
-  routerInstance = createAppRouter(moduleId || 'ssl_proxy', isQiankun);
-  app = createApp(App);
-  app.use(pinia);
-  app.use(routerInstance);
-  app.use(naive);
-  app.directive('permission', permissionDirective);
-  if (permissions && Array.isArray(permissions)) {
-    const permissionStore = usePermissionStore();
-    permissionStore.setPermissions(permissions);
-  } else if (!isQiankun && import.meta.env.DEV) {
-    const mockPerms = import.meta.env.VITE_MOCK_PERMISSIONS as string | undefined;
-    if (mockPerms) {
-      const permissionStore = usePermissionStore();
-      permissionStore.setPermissions(
-        mockPerms.split(',').map((s: string) => s.trim()).filter(Boolean)
-      );
-    }
-  }
-  const mountEl = container
-    ? container.querySelector('#app')
-    : document.getElementById('app');
-  if (mountEl) {
-    if (mountEl.hasChildNodes()) {
-      mountEl.innerHTML = '';
-    }
-    app.mount(mountEl);
-  } else {
-    console.error('[SSLProxy] 找不到挂载容器 #app');
-  }
-  if (targetPath && isQiankun) {
-    const basePath = `/${moduleId || 'ssl_proxy'}`;
-    const innerPath = targetPath.startsWith(basePath)
-      ? targetPath.slice(basePath.length) || '/'
-      : targetPath;
-    routerInstance.replace(innerPath);
-  }
+  const _router = createRouter({
+    history: createWebHistory(base),
+    routes: [
+      { path: '/', redirect: '/list' },
+      {
+        path: '/:pathMatch(.*)*',
+        name: 'SubNotFound',
+        component: () => import('./views/404.vue'),
+      },
+    ],
+  });
+  const _app = createApp(App);
+  _app.use(pinia);
+  _app.use(_router);
+  
+  // ★ 关键：将主应用传来的权限注入 Pinia
+  const permissionStore = usePermissionStore(pinia);
+  permissionStore.setPermissions(props?.permissions || []);
+
+  return { app: _app, router: _router };
 }
-if (!qiankunWindow.__POWERED_BY_QIANKUN__) {
-  console.log('[SSLProxy] 独立运行模式');
-  render();
+
+function resolveRouters(props: any): RouteNode[] {
+  const r = props?.routers;
+  if (Array.isArray(r) && r.length > 0) {
+    console.warn('[ssl-proxy] resolveRouters 使用 props.routers, 长度 =', r.length);
+    return r as RouteNode[];
+  }
+  console.warn('[ssl-proxy] resolveRouters props.routers 为空，使用 defaultRouters');
+  return defaultRouters;
 }
+
+async function bootstrapApp(props: any) {
+  const moduleId =
+    typeof props?.moduleId === 'string' ? props.moduleId : DEFAULT_MODULE_ID;
+  currentModuleId = moduleId;
+
+  const base = qiankunWindow.__POWERED_BY_QIANKUN__ ? `/${moduleId}` : '/';
+  console.warn(
+    `[ssl-proxy] bootstrapApp: base = ${base}, moduleId = ${moduleId}, ` +
+      `__POWERED_BY_QIANKUN__ = ${qiankunWindow.__POWERED_BY_QIANKUN__}`
+  );
+
+  // ★ 传入 props 用于初始化权限 Store
+  const { app: _app, router: _router } = createAppInstance(base, props);
+  app = _app;
+  router = _router;
+
+  const routers = resolveRouters(props);
+  setupDynamicRoutes(_router, routers, moduleId);
+
+  try {
+    await _router.isReady();
+    console.warn(
+      '[ssl-proxy] router.isReady() 完成, current =',
+      _router.currentRoute.value.fullPath
+    );
+  } catch (e) {
+    console.error('[ssl-proxy] router.isReady() 失败', e);
+  }
+
+  return { app: _app, router: _router };
+}
+
+async function mountApp(props: any) {
+  console.warn('[ssl-proxy] mountApp 开始');
+  const { app: _app, router: _router } = await bootstrapApp(props);
+
+  const container = props?.container
+    ? (props.container as HTMLElement).querySelector('#app')
+    : document.querySelector('#app');
+  if (!container) {
+    console.error('[ssl-proxy] 未找到挂载容器 #app');
+    return;
+  }
+  _app.mount(container);
+  console.warn('[ssl-proxy] app.mount() 完成');
+
+  props?.onGlobalStateChange?.((state: any) => {
+    // ★ 如果主应用动态更新了权限，同步更新 Pinia
+    if (state?.permissions) {
+      const permissionStore = usePermissionStore(_app.config.globalProperties.$pinia as any);
+      permissionStore.setPermissions(state.permissions);
+    }
+
+    if (!state?.routers?.length) return;
+    console.warn('[ssl-proxy] 收到主应用下发的路由树，重建动态路由');
+    resetDynamicRoutes(_router);
+    setupDynamicRoutes(_router, state.routers, currentModuleId);
+    const cur = _router.currentRoute.value;
+    if (cur.name === 'SubNotFound') _router.replace(cur.fullPath);
+  }, true);
+}
+
+function unmountApp() {
+  console.warn('[ssl-proxy] unmountApp 开始');
+  app?.unmount();
+  app = null;
+  router = null;
+}
+
+console.warn(
+  '[ssl-proxy] main.ts 开始执行, __POWERED_BY_QIANKUN__ =',
+  qiankunWindow.__POWERED_BY_QIANKUN__
+);
+
 renderWithQiankun({
   bootstrap() {
-    console.log('[SSLProxy] bootstrap');
-    return Promise.resolve();
+    console.warn('[ssl-proxy] bootstrap 生命周期被调用');
   },
-  mount(props: any) {
-    console.log('[SSLProxy] mount', props);
-    render(props);
-    return Promise.resolve();
+  mount(props) {
+    console.warn('[ssl-proxy] mount 生命周期被调用');
+    mountApp(props).catch((e) =>
+      console.error('[ssl-proxy] mountApp 异常', e)
+    );
   },
   unmount() {
-    console.log('[SSLProxy] unmount');
-    if (app) {
-      app.unmount();
-      app = null;
-      routerInstance = null;
-    }
-    return Promise.resolve();
+    console.warn('[ssl-proxy] unmount 生命周期被调用');
+    unmountApp();
   },
-  update(props: any) {
-    console.log('[SSLProxy] update', props);
-    if (props?.permissions && Array.isArray(props.permissions)) {
-      const permissionStore = usePermissionStore();
-      permissionStore.setPermissions(props.permissions);
-    }
-    return Promise.resolve();
+  update(props) {
+    console.warn('[ssl-proxy] update 生命周期被调用', props);
   },
 });
+
+if (!qiankunWindow.__POWERED_BY_QIANKUN__) {
+  console.warn('[ssl-proxy] 独立运行模式');
+  mountApp({}).catch((e) =>
+    console.error('[ssl-proxy] 独立运行 mount 异常', e)
+  );
+}

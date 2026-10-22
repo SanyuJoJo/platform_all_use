@@ -23,7 +23,7 @@
           <n-space class="drawer-header__actions">
             <template v-if="!isEditing">
               <n-button
-                v-permission="'ssl_proxy:proxy:update'"
+                v-if="hasPerm('ssl_proxy:proxy:update')"
                 size="small"
                 type="primary"
                 @click="enterEdit"
@@ -638,6 +638,7 @@ import {
 } from 'naive-ui';
 import proxyApi from '@/api/proxy';
 import { useCertMap } from '@/composables/useCertMap';
+import { usePermissionStore } from '@/store/permission';
 import {
   CERT_TYPE_OPTIONS,
   LISTEN_IP_OPTIONS,
@@ -676,12 +677,17 @@ const emit = defineEmits<{
 
 const message = useMessage();
 const { load: loadCertMap, certName } = useCertMap();
+const permissionStore = usePermissionStore();
+const hasPerm = (code: string) => permissionStore.hasPermission(code);
 
 const loading = ref(false);
 const submitting = ref(false);
 const detail = ref<PlatformSSLProxy | null>(null);
 const isEditing = ref(false);
 const activeSection = ref<'basic' | 'backend' | 'ssl'>('basic');
+
+// ★ 默认 Tab 设置：如果没有 config 权限，就不给 kv
+const activeTab = ref<'kv' | 'nginx' | 'logs'>('logs');
 
 const formRef = ref<FormInst | null>(null);
 const backendFormRef = ref<FormInst | null>(null);
@@ -717,7 +723,6 @@ const backendSslUI = computed<boolean>({
   },
 });
 
-// GMTLSv1.1 仅在国密协议下展示（value 仍为 NTLSv1.1）
 const sslProtocolOptions = computed(() => {
   return SSL_PROTOCOL_OPTIONS.filter((opt) => {
     if (opt.value === GM_SSL_PROTOCOL_VALUE) {
@@ -863,7 +868,6 @@ function clearAllCertSlots() {
   form.enc_cert_id = '';
 }
 
-// 切换证书类型：按 protocol 更新默认协议
 function handleCertTypeChange(t: CertTypeOption) {
   if (t === 'intl') {
     form.cert_id = '';
@@ -1035,7 +1039,6 @@ function pickEncCert(d: PlatformSSLProxy): string {
     : d.enc_cert_id || '';
 }
 
-// ★ 只读态展示：把 NTLSv1.1 显示为 GMTLSv1.1
 function formatProtocolsForDisplay(raw: string | undefined): string {
   const list = protocolsToUI(raw);
   if (list.length === 0) return '—';
@@ -1090,7 +1093,6 @@ function syncFormFromDetail() {
       d.ssl_session_tickets ?? (d.mode === 'server' ? false : undefined),
   });
 
-  // ★ 直接 split，不做任何补全/剔除
   sslProtocolsUI.value = protocolsToUI(form.ssl_protocols);
 
   sslCiphersModeUI.value = (d.ssl_ciphers_mode as SSLCiphersMode) || 'default';
@@ -1164,6 +1166,14 @@ watch(
     }
     isEditing.value = false;
     activeSection.value = 'basic';
+    
+    // 重置 activeTab，根据权限决定
+    if (hasPerm('ssl_proxy:proxy:config')) {
+      activeTab.value = 'kv';
+    } else {
+      activeTab.value = 'logs';
+    }
+
     if (sid) {
       await Promise.all([fetchDetail(sid), loadCertMap(), loadDomains()]);
       syncFormFromDetail();
@@ -1269,7 +1279,6 @@ function buildPayload(): ProxyCreateReq {
     }
   }
 
-  // ★ 纯 join，NTLSv1.1 原样提交，后端 sanitizeSSLProtocols 处理
   payload.ssl_protocols = protocolsFromUI(sslProtocolsUI.value, protocol);
 
   if (sslCiphersModeUI.value === 'default') {

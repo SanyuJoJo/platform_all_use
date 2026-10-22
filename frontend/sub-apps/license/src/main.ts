@@ -1,114 +1,144 @@
-import { createApp } from 'vue';
-import App from './App.vue';
+import { createApp, type App as VueApp } from 'vue';
 import { createPinia } from 'pinia';
-import { createAppRouter } from './router';
+import { createRouter, createWebHistory, type Router } from 'vue-router';
 import {
   renderWithQiankun,
   qiankunWindow,
 } from 'vite-plugin-qiankun/dist/helper';
-import naive from 'naive-ui';
-import { usePermissionStore } from './store/permission';
-import { setupPermissionDirective } from './directives/permission';
+import App from './App.vue';
+import {
+  setupDynamicRoutes,
+  resetDynamicRoutes,
+  defaultRouters,
+} from './router/dynamic';
+import type { RouteNode } from './types';
 
-let app: any = null;
-let routerInstance: any = null;
+const DEFAULT_MODULE_ID = 'license';
 
-function render(props: any = {}) {
-  const { container, moduleId, targetPath, permissions, user, token } = props;
-  const isQiankun = !!qiankunWindow.__POWERED_BY_QIANKUN__;
-  const base = isQiankun ? `/${moduleId || 'license'}` : '/';
-  console.log('[License] 渲染，base:', base, 'targetPath:', targetPath);
+let app: VueApp | null = null;
+let router: Router | null = null;
+let currentModuleId = DEFAULT_MODULE_ID;
 
-  if (app) {
-    app.unmount();
-    app = null;
-    routerInstance = null;
-  }
-
+function createAppInstance(base: string) {
   const pinia = createPinia();
-  routerInstance = createAppRouter(moduleId || 'license', isQiankun);
-  app = createApp(App);
-  app.use(pinia);
-  app.use(routerInstance);
-  app.use(naive);
-  setupPermissionDirective(app);
-
-  // 处理权限：优先使用 props；独立运行时从环境变量读取 Mock 权限
-  let finalPermissions: string[] = [];
-  if (permissions && Array.isArray(permissions)) {
-    finalPermissions = permissions;
-  } else if (!isQiankun && import.meta.env.DEV) {
-    const mockPerms = import.meta.env.VITE_MOCK_PERMISSIONS;
-    if (mockPerms) {
-      // 显式标注 s: string，避免隐式 any
-      finalPermissions = mockPerms.split(',').map((s: string) => s.trim());
-    } else {
-      finalPermissions = ['license:license:view', 'license:license:create'];
-    }
-    console.warn('[License] 独立运行模式，使用 Mock 权限:', finalPermissions);
-  }
-
-  if (finalPermissions.length > 0) {
-    const permissionStore = usePermissionStore();
-    permissionStore.setPermissions(finalPermissions);
-  }
-
-  // 保留 user / token 供后续扩展
-  void user;
-  void token;
-
-  const mountEl = container
-    ? container.querySelector('#app')
-    : document.getElementById('app');
-  if (mountEl) {
-    if (mountEl.hasChildNodes()) {
-      mountEl.innerHTML = '';
-    }
-    app.mount(mountEl);
-  } else {
-    console.error('[License] 找不到挂载容器 #app');
-  }
-
-  if (targetPath && isQiankun) {
-    const basePath = `/${moduleId || 'license'}`;
-    const innerPath = targetPath.startsWith(basePath)
-      ? targetPath.slice(basePath.length) || '/'
-      : targetPath;
-    routerInstance.replace(innerPath);
-  }
+  const _router = createRouter({
+    history: createWebHistory(base),
+    routes: [
+      { path: '/', redirect: '/licenses' },
+      {
+        path: '/:pathMatch(.*)*',
+        name: 'SubNotFound',
+        component: () => import('./views/404.vue'),
+      },
+    ],
+  });
+  const _app = createApp(App);
+  _app.use(pinia);
+  _app.use(_router);
+  return { app: _app, router: _router };
 }
 
-if (!qiankunWindow.__POWERED_BY_QIANKUN__) {
-  console.log('[License] 独立运行模式');
-  render();
+function resolveRouters(props: any): RouteNode[] {
+  if (Array.isArray(props?.routers) && props.routers.length > 0) {
+    return props.routers as RouteNode[];
+  }
+  return defaultRouters;
 }
 
+async function bootstrapApp(props: any) {
+  const moduleId =
+    typeof props?.moduleId === 'string' ? props.moduleId : DEFAULT_MODULE_ID;
+  currentModuleId = moduleId;
+
+  const base = qiankunWindow.__POWERED_BY_QIANKUN__ ? `/${moduleId}` : '/';
+  console.warn(
+    `[license] bootstrapApp: base = ${base}, moduleId = ${moduleId}, ` +
+      `__POWERED_BY_QIANKUN__ = ${qiankunWindow.__POWERED_BY_QIANKUN__}`
+  );
+
+  const { app: _app, router: _router } = createAppInstance(base);
+  app = _app;
+  router = _router;
+
+  const routers = resolveRouters(props);
+  setupDynamicRoutes(_router, routers, moduleId);
+
+  try {
+    await _router.isReady();
+    console.warn(
+      '[license] router.isReady() 完成, current =',
+      _router.currentRoute.value.fullPath
+    );
+  } catch (e) {
+    console.error('[license] router.isReady() 失败', e);
+  }
+
+  return { app: _app, router: _router };
+}
+
+async function mountApp(props: any) {
+  console.warn('[license] mountApp 开始');
+  const { app: _app, router: _router } = await bootstrapApp(props);
+
+  const container = props?.container
+    ? (props.container as HTMLElement).querySelector('#app')
+    : document.querySelector('#app');
+  if (!container) {
+    console.error('[license] 未找到挂载容器 #app');
+    return;
+  }
+  _app.mount(container);
+  console.warn('[license] app.mount() 完成');
+
+  props?.onGlobalStateChange?.((state: any) => {
+    if (!state?.routers?.length) return;
+    console.warn('[license] 收到主应用下发的路由树，重建动态路由');
+    resetDynamicRoutes(_router);
+    setupDynamicRoutes(_router, state.routers, currentModuleId);
+    const cur = _router.currentRoute.value;
+    if (cur.name === 'SubNotFound') _router.replace(cur.fullPath);
+  }, true);
+}
+
+function unmountApp() {
+  console.warn('[license] unmountApp 开始');
+  app?.unmount();
+  app = null;
+  router = null;
+}
+
+console.warn(
+  '[license] main.ts 开始执行, __POWERED_BY_QIANKUN__ =',
+  qiankunWindow.__POWERED_BY_QIANKUN__
+);
+
+/* ============================================================================
+ * ★ 关键：必须用 renderWithQiankun 注册生命周期
+ *   vite-plugin-qiankun 只识别 renderWithQiankun 里的生命周期，
+ *   不支持 export function bootstrap 这种 webpack 写法。
+ * ========================================================================== */
 renderWithQiankun({
   bootstrap() {
-    console.log('[License] bootstrap');
-    return Promise.resolve();
+    console.warn('[license] bootstrap 生命周期被调用');
   },
-  mount(props: any) {
-    console.log('[License] mount', props);
-    render(props);
-    return Promise.resolve();
+  mount(props) {
+    console.warn('[license] mount 生命周期被调用');
+    mountApp(props).catch((e) => console.error('[license] mountApp 异常', e));
   },
   unmount() {
-    console.log('[License] unmount');
-    if (app) {
-      app.unmount();
-      app = null;
-      routerInstance = null;
-    }
-    return Promise.resolve();
+    console.warn('[license] unmount 生命周期被调用');
+    unmountApp();
   },
-  // 补齐 update 生命周期
-  update(props: any) {
-    console.log('[License] update', props);
-    if (props?.permissions && Array.isArray(props.permissions)) {
-      const permissionStore = usePermissionStore();
-      permissionStore.setPermissions(props.permissions);
-    }
-    return Promise.resolve();
+  update(props) {
+    console.warn('[license] update 生命周期被调用', props);
   },
 });
+
+/* ============ 独立运行入口 ============ */
+
+if (!qiankunWindow.__POWERED_BY_QIANKUN__) {
+  console.warn('[license] 独立运行模式');
+  mountApp({}).catch((e) =>
+    console.error('[license] 独立运行 mount 异常', e)
+  );
+}

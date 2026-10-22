@@ -8,8 +8,11 @@ import {
 } from 'qiankun';
 import type { Router } from 'vue-router';
 import type { Module } from '@/types/module';
+import type { RouteNode } from '@/types/permission';
 import { message } from '@/utils/naive';
 import { useUserStore } from '@/store/user';
+import { usePermissionStore } from '@/store/permission';
+import { MAIN_APP_IDS } from '@/types/permission';
 
 let actions: MicroAppStateActions | null = null;
 let isStarted = false;
@@ -17,18 +20,21 @@ let isRegistered = false;
 let errorHandlerBound = false;
 let lastModules: Module[] = [];
 
-/**
- * 子应用模块 ID → 部署目录名 映射
- */
 const SUB_APP_DIR_MAP: Record<string, string> = {
   auth: 'auth',
   module_manager: 'module-manager',
   audit_log: 'audit-log',
   license: 'license',
+  crypto_console: 'crypto-console',
+  ssl_proxy: 'ssl-proxy',
 };
 
 function getSubAppDir(moduleId: string): string {
   return SUB_APP_DIR_MAP[moduleId] || moduleId.replace(/_/g, '-');
+}
+
+function isMainAppModule(moduleId: string): boolean {
+  return MAIN_APP_IDS.includes(moduleId);
 }
 
 interface SubAppProps {
@@ -37,6 +43,7 @@ interface SubAppProps {
   permissions: string[];
   user: unknown;
   token: string;
+  routers: RouteNode[];
 }
 
 function resolveEntry(module: Module): string {
@@ -44,26 +51,19 @@ function resolveEntry(module: Module): string {
 
   if (raw) {
     let resolved = '';
-    if (/^https?:\/\//i.test(raw)) {
-      resolved = raw;
-    } else if (raw.startsWith('//')) {
-      resolved = `${window.location.protocol}${raw}`;
-    } else if (raw.startsWith('/')) {
-      resolved = new URL(raw, window.location.origin).href;
-    } else {
-      resolved = new URL(`/${raw}`, window.location.origin).href;
-    }
+    if (/^https?:\/\//i.test(raw)) resolved = raw;
+    else if (raw.startsWith('//')) resolved = `${window.location.protocol}${raw}`;
+    else if (raw.startsWith('/')) resolved = new URL(raw, window.location.origin).href;
+    else resolved = new URL(`/${raw}`, window.location.origin).href;
 
     if (
       import.meta.env.PROD &&
       /(^https?:\/\/)(localhost|127\.0\.0\.1)(:|\/)/i.test(resolved)
     ) {
       console.warn(
-        `[qiankun] 模块 ${module.id} 的 entry_frontend 指向开发地址：${resolved}，` +
-          `请后端更新为生产路径（参考 backend-module-entry.patch.json）`
+        `[qiankun] 模块 ${module.id} 的 entry_frontend 指向开发地址：${resolved}`
       );
     }
-
     return resolved;
   }
 
@@ -76,38 +76,18 @@ function resolveEntry(module: Module): string {
   return fallback;
 }
 
-function ensureContainer(): HTMLElement {
-  let container = document.getElementById('subapp-container');
-  if (!container) {
-    container = document.createElement('div');
-    container.id = 'subapp-container';
-    container.style.height = '100%';
-    container.style.minHeight = '300px';
-    container.style.background = '#fff';
-    container.style.zIndex = '10';
-
-    const content = document.querySelector('.n-layout-content');
-    if (content) {
-      content.prepend(container);
-    } else {
-      document.body.appendChild(container);
-    }
-    console.log('[qiankun] 已创建缺失的 #subapp-container');
+function ensureContainer(): HTMLElement | null {
+  const el = document.getElementById('subapp-container');
+  if (!el) {
+    console.warn('[qiankun] 未找到 #subapp-container，Layout 可能尚未渲染');
   }
-  return container;
+  return el;
 }
 
-/**
- * 绑定 qiankun 全局未捕获错误处理器。
- *
- * qiankun 的 registerMicroApps 第二个参数（FrameworkLifeCycles）
- * 不支持 error 回调，子应用加载错误通过 addGlobalUncaughtErrorHandler 捕获。
- */
 function bindGlobalErrorHandler(): void {
   if (errorHandlerBound) return;
   addGlobalUncaughtErrorHandler((event) => {
     console.error('[qiankun] 未捕获异常:', event);
-    // event 可能是 ErrorEvent / PromiseRejectionEvent / string
     const errMsg =
       (event as ErrorEvent)?.message ||
       (event as PromiseRejectionEvent)?.reason?.message ||
@@ -119,15 +99,31 @@ function bindGlobalErrorHandler(): void {
   errorHandlerBound = true;
 }
 
+/**
+ * 深拷贝：把 Pinia reactive Proxy 转成纯 JSON。
+ * qiankun 跨沙箱传递 props 时，Proxy 可能导致部分字段丢失，
+ * 深拷贝后再传可确保子应用拿到完整数据。
+ */
+function toPlain<T>(value: T): T {
+  try {
+    return JSON.parse(JSON.stringify(value)) as T;
+  } catch (e) {
+    console.error('[qiankun] toPlain 失败', e);
+    return value;
+  }
+}
+
 export function registerModules(modules: Module[], router: Router) {
   if (!modules || modules.length === 0) {
     console.warn('[qiankun] 没有模块可注册');
     return;
   }
 
-  const activeModules = modules.filter((m) => m.status === 'active');
+  const activeModules = modules.filter(
+    (m) => m.status === 'active' && !isMainAppModule(m.id)
+  );
   if (activeModules.length === 0) {
-    console.warn('[qiankun] 没有激活的模块');
+    console.warn('[qiankun] 过滤后没有需要注册的子应用');
     return;
   }
 
@@ -136,19 +132,20 @@ export function registerModules(modules: Module[], router: Router) {
     return;
   }
 
-  try {
-    ensureContainer();
-  } catch (err) {
-    console.error('[qiankun] 容器创建失败:', err);
-    return;
-  }
-
   lastModules = modules;
 
   const userStore = useUserStore();
-  const permissions = userStore.permissions || [];
-  const user = userStore.user || null;
+  const permissionStore = usePermissionStore();
+  // ★ 深拷贝，确保跨 qiankun 沙箱能完整传递
+  const permissions = toPlain(userStore.permissions || []);
+  const user = userStore.user ? toPlain(userStore.user) : null;
   const token = userStore.token || '';
+  const routers = toPlain(permissionStore.routeTree);
+
+  console.warn(
+    `[qiankun] 准备下发 routers: 根节点数 = ${routers.length}, ` +
+      `第 1 个根节点 name = ${routers[0]?.name ?? '-'}`
+  );
 
   const apps: RegistrableApp<SubAppProps>[] = activeModules.map((module) => ({
     name: module.id,
@@ -161,15 +158,15 @@ export function registerModules(modules: Module[], router: Router) {
       permissions,
       user,
       token,
+      routers,
     },
   }));
 
-  console.log(
+  console.warn(
     '[qiankun] 注册子应用：',
     apps.map((a) => `${a.name} -> ${a.entry}`)
   );
 
-  // 只传 qiankun 支持的 5 个生命周期钩子
   registerMicroApps<SubAppProps>(apps, {
     beforeLoad: (app) => {
       console.log(`[qiankun] before load ${app.name}`);
@@ -194,21 +191,20 @@ export function registerModules(modules: Module[], router: Router) {
     },
   });
 
-  // 全局错误处理通过 addGlobalUncaughtErrorHandler
   bindGlobalErrorHandler();
 
   if (!isStarted) {
     start({
       prefetch: false,
-      sandbox: {
-        experimentalStyleIsolation: true,
-      },
+      sandbox: { experimentalStyleIsolation: true },
     });
     isStarted = true;
   }
 
   if (!actions) {
-    actions = initGlobalState({ user: null });
+    actions = initGlobalState({ user, permissions, token, routers });
+  } else {
+    actions.setGlobalState({ user, permissions, token, routers });
   }
 
   isRegistered = true;

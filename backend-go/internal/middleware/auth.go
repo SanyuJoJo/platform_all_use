@@ -1,19 +1,26 @@
 package middleware
+
 import (
 	"fmt"
 	"net/http"
 	"strings"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+
 	"backend-go/internal/exception"
 	"backend-go/internal/models"
+	"backend-go/internal/rbac"
 	"backend-go/internal/response"
 	"backend-go/internal/security"
 )
+
 // ContextKeyUserID gin.Context 中用户 ID 的键。
 const ContextKeyUserID = "user_id"
+
 // ContextKeyUserInfo gin.Context 中用户信息的键。
 const ContextKeyUserInfo = "user_info"
+
 // UserContext 当前用户上下文。
 //
 // 字段名与 `auth.UserInfo` 保持一致，JSON 序列化结果相同。
@@ -27,12 +34,21 @@ type UserContext struct {
 	Roles       []string `json:"roles"`
 	Permissions []string `json:"permissions"`
 }
+
 // AuthMiddleware 认证中间件：解析 JWT，加载用户与权限。
 //
+// 权限来源（方案 A）：
+//   - 角色 code：db.Preload("Roles")（仅用于超管判定与前端展示）；
+//   - 权限码  ：rbac.LoadUserPermissions（auth_role_menu + platform_menu，
+//     带 status=0 过滤）。
+//
+// 不再 Preload("Roles.Permissions")，避免旧表 auth_role_permission
+// 参与每个受保护请求的权限校验。
+//
 // 用法（在 main.go 中）：
-//   protected := api.Group("")
-//   protected.Use(middleware.AuthMiddleware(db, cfg.SecretKey))
-//   authHandler.RegisterProtectedRoutes(protected)
+//
+//	protected := api.Group("")
+//	protected.Use(middleware.AuthMiddleware(db, cfg.SecretKey))
 func AuthMiddleware(db *gorm.DB, secretKey string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -55,6 +71,7 @@ func AuthMiddleware(db *gorm.DB, secretKey string) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+
 		claims, err := security.ParseToken(secretKey, token)
 		if err != nil {
 			response.Error(c, http.StatusUnauthorized,
@@ -75,9 +92,10 @@ func AuthMiddleware(db *gorm.DB, secretKey string) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		// 加载用户与 RBAC
+
+		// 1. 用户基本信息 + 角色（★ 不 Preload Permissions）
 		var user models.User
-		if err := db.Preload("Roles.Permissions").First(&user, uid).Error; err != nil {
+		if err := db.Preload("Roles").First(&user, uid).Error; err != nil {
 			response.Error(c, http.StatusNotFound,
 				exception.CodeAuthUserNotFound, "用户不存在", nil)
 			c.Abort()
@@ -89,19 +107,24 @@ func AuthMiddleware(db *gorm.DB, secretKey string) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		// 构建权限集合
+
+		// 2. ★ 新方案：权限码来自 rbac.LoadUserPermissions
+		permissions, err := rbac.LoadUserPermissions(db, user.ID)
+		if err != nil {
+			// 与旧实现语义保持一致：DB 异常时拒绝请求（fail-close），
+			// 而不是放行导致可能绕过权限。
+			response.Error(c, http.StatusInternalServerError,
+				exception.CodeInternalError, "权限加载失败", nil)
+			c.Abort()
+			return
+		}
+
+		// 3. 角色 code 用于超管判定与前端展示
 		roles := make([]string, 0, len(user.Roles))
-		permSet := make(map[string]struct{})
 		for _, role := range user.Roles {
 			roles = append(roles, role.Code)
-			for _, perm := range role.Permissions {
-				permSet[perm.Code] = struct{}{}
-			}
 		}
-		permissions := make([]string, 0, len(permSet))
-		for code := range permSet {
-			permissions = append(permissions, code)
-		}
+
 		uc := UserContext{
 			ID:          user.ID,
 			Username:    user.Username,
@@ -112,11 +135,13 @@ func AuthMiddleware(db *gorm.DB, secretKey string) gin.HandlerFunc {
 			Roles:       roles,
 			Permissions: permissions,
 		}
+
 		c.Set(ContextKeyUserID, user.ID)
 		c.Set(ContextKeyUserInfo, uc)
 		c.Next()
 	}
 }
+
 // RequirePermission 权限校验中间件工厂。
 func RequirePermission(permissionCode string) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -134,6 +159,11 @@ func RequirePermission(permissionCode string) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		// 超管 bypass：与 DynamicPermission 的语义保持一致
+		if isAdminUserContext(&uc) {
+			c.Next()
+			return
+		}
 		for _, p := range uc.Permissions {
 			if p == permissionCode {
 				c.Next()
@@ -145,6 +175,7 @@ func RequirePermission(permissionCode string) gin.HandlerFunc {
 		c.Abort()
 	}
 }
+
 // GetCurrentUser 从 gin.Context 获取当前用户。
 func GetCurrentUser(c *gin.Context) (*UserContext, bool) {
 	val, exists := c.Get(ContextKeyUserInfo)

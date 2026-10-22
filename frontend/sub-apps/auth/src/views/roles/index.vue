@@ -78,10 +78,12 @@ const columns = [
     },
   },
   {
-    title: '权限数',
-    key: 'permission_codes',
+    // 方案 A：permission_codes → menuIds
+    // 列表接口若返回 menuCount 直接显示；否则用 menuIds.length；都没有则显示 0
+    title: '菜单数',
+    key: 'menuCount',
     render(row: Role) {
-      return row.permission_codes.length;
+      return row.menuCount ?? row.menuIds?.length ?? 0;
     },
   },
   {
@@ -95,7 +97,6 @@ const columns = [
     render(row: Role) {
       const canEdit = userStore.hasPermission('auth:role:edit');
       const canDelete = userStore.hasPermission('auth:role:delete');
-      // 显式类型，避免隐式 any[]
       const buttons: VNode[] = [];
 
       if (canEdit) {
@@ -111,19 +112,13 @@ const columns = [
         buttons.push(
           h(
             NPopconfirm,
-            {
-              onPositiveClick: () => handleDelete(row),
-            },
+            { onPositiveClick: () => handleDelete(row) },
             {
               default: () => '确认删除该角色？',
               trigger: () =>
                 h(
                   NButton,
-                  {
-                    size: 'small',
-                    type: 'error',
-                    disabled: Boolean(row.is_system),
-                  },
+                  { size: 'small', type: 'error', disabled: Boolean(row.is_system) },
                   { default: () => '删除' }
                 ),
             }

@@ -21,6 +21,7 @@ export interface ColumnHandlers {
   isPending: (serviceId: string) => boolean;
   pendingAction: (serviceId: string) => ProxyActionKind | null;
   certName: (certId?: string) => string;
+  hasPerm: (code: string) => boolean;
 }
 
 interface StartStopState {
@@ -63,7 +64,7 @@ function resolveStartStopState(
 export function buildColumns(
   handlers: ColumnHandlers
 ): DataTableColumns<ProxyListItem> {
-  const { onDetail, onStart, onStop, onDelete, isPending, certName } = handlers;
+  const { onDetail, onStart, onStop, onDelete, isPending, certName, hasPerm } = handlers;
 
   function signCertId(row: ProxyListItem): string {
     if (row.mode === 'client') {
@@ -155,52 +156,73 @@ export function buildColumns(
         const pend = isPending(row.service_id);
         const children: VNode[] = [];
 
-        children.push(
-          h(
-            NButton,
-            {
-              size: 'small',
-              type: st.type,
-              loading: st.loading,
-              disabled: st.disabled,
-              onClick: () => {
-                if (st.disabled) return;
-                if (st.isStopAction) onStop(row);
-                else onStart(row);
+        // ★ 1. 极强诊断日志：直接打印权限判断结果
+        const canViewConfig = hasPerm('ssl_proxy:proxy:config');
+        console.log(`[诊断] 渲染详情按钮权限 (config) =`, canViewConfig);
+
+        // 2. 启动/停止按钮
+        const canStartStop = st.isStopAction
+          ? hasPerm('ssl_proxy:proxy:stop')
+          : hasPerm('ssl_proxy:proxy:start');
+
+        if (canStartStop) {
+          children.push(
+            h(
+              NButton,
+              {
+                size: 'small',
+                type: st.type,
+                loading: st.loading,
+                disabled: st.disabled,
+                onClick: () => {
+                  if (st.disabled) return;
+                  if (st.isStopAction) onStop(row);
+                  else onStart(row);
+                },
               },
-            },
-            { default: () => st.label }
-          )
-        );
+              { default: () => st.label }
+            )
+          );
+        }
 
-        children.push(
-          h(
-            NButton,
-            { size: 'small', onClick: () => onDetail(row) },
-            { default: () => '详情' }
-          )
-        );
+        // ★ 3. 详情按钮：如果确实没有 config 权限，这里绝对不会进去
+        if (canViewConfig) {
+          children.push(
+            h(
+              NButton,
+              { size: 'small', onClick: () => onDetail(row) },
+              { default: () => '详情' }
+            )
+          );
+        }
 
-        children.push(
-          h(
-            NPopconfirm,
-            {
-              positiveText: '确认删除',
-              negativeText: '取消',
-              onPositiveClick: () => onDelete(row),
-            },
-            {
-              trigger: () =>
-                h(
-                  NButton,
-                  { size: 'small', type: 'error', disabled: pend || st.disabled },
-                  { default: () => '删除' }
-                ),
-              default: () =>
-                `确认删除「${row.service_name}」？该操作不可恢复，且会写审计日志。`,
-            }
-          )
-        );
+        // 4. 删除按钮
+        if (hasPerm('ssl_proxy:proxy:delete')) {
+          children.push(
+            h(
+              NPopconfirm,
+              {
+                positiveText: '确认删除',
+                negativeText: '取消',
+                onPositiveClick: () => onDelete(row),
+              },
+              {
+                trigger: () =>
+                  h(
+                    NButton,
+                    { size: 'small', type: 'error', disabled: pend || st.disabled },
+                    { default: () => '删除' }
+                  ),
+                default: () =>
+                  `确认删除「${row.service_name}」？该操作不可恢复，且会写审计日志。`,
+              }
+            )
+          );
+        }
+
+        if (children.length === 0) {
+          return h('span', { style: 'color: #999; font-size: 12px' }, '无操作权限');
+        }
 
         return h(NSpace, { size: 4 }, { default: () => children });
       },

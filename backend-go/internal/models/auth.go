@@ -90,5 +90,6 @@ func AutoMigrate(db *gorm.DB) error {
 		&UserRole{},
 		&RolePermission{},
 		&RefreshToken{},
+		&AuthRoleMenu{}, // ★ 新增
 	)
 }

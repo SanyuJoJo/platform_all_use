@@ -2,6 +2,7 @@ package exception
 // 统一错误码常量。
 //
 // P5 阶段（License 管理）补充 50001~50010。
+// v1.4 阶段（动态路由/菜单）补充 60001~60102。
 const (
 	// ---- 通用成功 ----
 	CodeSuccess = 0
@@ -66,4 +67,14 @@ const (
 	CodeLicenseUserQuotaExceed = 50008 // 用户数超限
 	CodeLicenseNotFound        = 50009 // License 不存在
 	CodeLicenseTypeUnsupported = 50010 // License 类型不支持
+	// ---- 菜单管理相关（v1.4 新增，动态路由）----
+	CodeMenuNotFound      = 60001 // 菜单不存在
+	CodeMenuHasChildren   = 60002 // 存在子菜单，无法删除
+	CodeMenuNameExists    = 60003 // 同级菜单名已存在
+	CodeMenuPathExists    = 60004 // 路由地址已存在
+	CodeMenuTypeInvalid   = 60005 // 菜单类型无效（M/C/F）
+	CodeMenuParentInvalid = 60006 // 父菜单无效（不存在/环/自身）
+	// ---- 路由权限管理相关（v1.4 新增）----
+	CodeRoutePermNotFound = 60101 // 路由权限不存在
+	CodeRoutePermConflict = 60102 // 路由权限映射已存在
 )

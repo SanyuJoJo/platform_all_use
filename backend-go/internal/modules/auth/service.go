@@ -67,8 +67,6 @@ func truncate(s string, max int) string {
 }
 
 // LogAuthEvent 记录认证事件（导出包装）。
-//
-// v1.1（P0-03）：将原 logAuthEvent 改为导出 LogAuthEvent，供其他模块复用。
 func LogAuthEvent(action string, userID *uint, username, status string, errorCode *int, ip, userAgent, detail string) {
 	evt := log.Info()
 	if status == "fail" {
@@ -92,10 +90,15 @@ func logAuthEvent(action string, userID *uint, username, status string, errorCod
 	LogAuthEvent(action, userID, username, status, errorCode, ip, userAgent, detail)
 }
 
+// loadUserWithRBAC 加载用户及其角色（不预加载 Permissions）。
+//
+// 权限不再来自 auth_role_permission（旧表），而是由 LoadUserPermissions
+// （auth_role_menu + platform_menu，带 status=0 过滤）单独计算。
+// 本函数只负责拿 user + role code，供 serializeUser 组装角色列表。
 func (s *Service) loadUserWithRBAC(userID uint) (*models.User, error) {
 	var user models.User
 	err := s.db.
-		Preload("Roles.Permissions").
+		Preload("Roles").
 		First(&user, userID).Error
 	if err != nil {
 		return nil, err
@@ -103,10 +106,13 @@ func (s *Service) loadUserWithRBAC(userID uint) (*models.User, error) {
 	return &user, nil
 }
 
+// loadUserByUsername 按用户名查询用户（仅基本信息）。
+//
+// 登录校验只需要 user.PasswordHash 与 user.Status，
+// 不需要 Preload 角色/权限，避免登录链路触达旧表。
 func (s *Service) loadUserByUsername(username string) (*models.User, error) {
 	var user models.User
 	err := s.db.
-		Preload("Roles.Permissions").
 		Where("username = ?", username).
 		First(&user).Error
 	if err != nil {
@@ -115,21 +121,26 @@ func (s *Service) loadUserByUsername(username string) (*models.User, error) {
 	return &user, nil
 }
 
-func serializeUser(user *models.User) *UserInfo {
+// serializeUser 将 models.User 序列化为 UserInfo。
+//
+// ★ 关键变更：权限来自 s.LoadUserPermissions（新方案），
+// 不再从 user.Roles[].Permissions（旧表）读取。
+//
+// 由包级函数改为 Service 方法：任何遗漏更新签名的调用方都会编译失败，
+// 从机制上防止旧表路径残留。
+func (s *Service) serializeUser(user *models.User) (*UserInfo, error) {
+	perms, err := s.LoadUserPermissions(user.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	roles := make([]string, 0, len(user.Roles))
-	permSet := make(map[string]struct{})
 	for _, role := range user.Roles {
 		roles = append(roles, role.Code)
-		for _, perm := range role.Permissions {
-			permSet[perm.Code] = struct{}{}
-		}
-	}
-	permissions := make([]string, 0, len(permSet))
-	for code := range permSet {
-		permissions = append(permissions, code)
 	}
 	sort.Strings(roles)
-	sort.Strings(permissions)
+	sort.Strings(perms)
+
 	return &UserInfo{
 		ID:          user.ID,
 		Username:    user.Username,
@@ -138,11 +149,15 @@ func serializeUser(user *models.User) *UserInfo {
 		Avatar:      user.Avatar,
 		Status:      user.Status,
 		Roles:       roles,
-		Permissions: permissions,
-	}
+		Permissions: perms,
+	}, nil
 }
 
 // AuthenticateUser 校验用户名密码，更新最后登录信息，返回用户信息。
+//
+// 权限来源：GetUserInfo → serializeUser → LoadUserPermissions（新方案）。
+// 全程不再 Preload("Roles.Permissions")，避免旧表 auth_role_permission
+// 干扰登录下发的权限码。
 func (s *Service) AuthenticateUser(username, password, ip, userAgent string) (*UserInfo, error) {
 	user, err := s.loadUserByUsername(username)
 	if err != nil || !security.VerifyPassword(password, user.PasswordHash) {
@@ -155,6 +170,7 @@ func (s *Service) AuthenticateUser(username, password, ip, userAgent string) (*U
 			intPtr(exception.CodeAuthForbidden), ip, userAgent, "用户已被禁用")
 		return nil, exception.New(exception.CodeAuthForbidden, "用户已被禁用", 403, nil)
 	}
+
 	now := utcNowNaive()
 	updates := map[string]interface{}{
 		"last_login_at": now,
@@ -164,13 +180,16 @@ func (s *Service) AuthenticateUser(username, password, ip, userAgent string) (*U
 		Updates(updates).Error; err != nil {
 		return nil, exception.New(exception.CodeInternalError, "更新登录信息失败", 500, nil)
 	}
-	user, err = s.loadUserWithRBAC(user.ID)
+
+	// ★ 核心：走新权限方案
+	userInfo, err := s.GetUserInfo(user.ID)
 	if err != nil {
 		return nil, exception.New(exception.CodeInternalError, "加载用户信息失败", 500, nil)
 	}
+
 	logAuthEvent("login", &user.ID, user.Username, "success", nil,
 		ip, userAgent, "登录成功")
-	return serializeUser(user), nil
+	return userInfo, nil
 }
 
 // CreateTokensForUser 为用户签发 access_token 与 refresh_token，并持久化 Refresh Token。
@@ -220,6 +239,9 @@ func (s *Service) CreateTokensForUser(userInfo *UserInfo, ip, userAgent string) 
 }
 
 // RefreshAccessToken 使用 refresh_token 换取新的 access_token。
+//
+// 中部加载用户信息已改为 GetUserInfo（新权限方案），
+// 不再 loadUserWithRBAC + serializeUser（旧表路径）。
 func (s *Service) RefreshAccessToken(refreshToken string) (*RefreshResp, error) {
 	claims, err := security.ParseToken(s.cfg.SecretKey, refreshToken)
 	if err != nil {
@@ -258,14 +280,16 @@ func (s *Service) RefreshAccessToken(refreshToken string) (*RefreshResp, error) 
 			intPtr(exception.CodeAuthUnauthorized), ptrToString(record.IP), ptrToString(record.UserAgent), "Refresh Token 已过期")
 		return nil, exception.New(exception.CodeAuthUnauthorized, "Refresh token 已过期", 401, nil)
 	}
-	user, err := s.loadUserWithRBAC(uid)
+
+	// ★ 核心：走新权限方案
+	userInfo, err := s.GetUserInfo(uid)
 	if err != nil {
 		return nil, exception.New(exception.CodeAuthUserNotFound, "用户不存在", 404, nil)
 	}
-	if user.Status != 1 {
+	if userInfo.Status != 1 {
 		return nil, exception.New(exception.CodeAuthForbidden, "用户已被禁用", 403, nil)
 	}
-	userInfo := serializeUser(user)
+
 	accessToken, err := security.GenerateToken(
 		s.cfg.SecretKey,
 		fmt.Sprintf("%d", userInfo.ID),
@@ -370,13 +394,17 @@ func (s *Service) RevokeAllUserTokens(userID uint) (int64, error) {
 	return result.RowsAffected, result.Error
 }
 
-// GetUserInfo 获取用户完整信息。
+// GetUserInfo 获取用户完整信息（走新权限方案）。
+//
+// 用户 + 角色：loadUserWithRBAC（Preload("Roles")，不含 Permissions）；
+// 权限码：serializeUser → LoadUserPermissions（auth_role_menu + platform_menu，
+// 带 status=0 过滤）。
 func (s *Service) GetUserInfo(userID uint) (*UserInfo, error) {
 	user, err := s.loadUserWithRBAC(userID)
 	if err != nil {
 		return nil, exception.New(exception.CodeAuthUserNotFound, "用户不存在", 404, nil)
 	}
-	return serializeUser(user), nil
+	return s.serializeUser(user)
 }
 
 // ChangePassword 修改当前用户密码。成功后批量撤销该用户全部 Refresh Token。
@@ -427,8 +455,3 @@ func (s *Service) ChangePassword(
 func IsNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
 }
-
-// BUG-02 修复：删除本文件末尾的 intPtr 定义。
-// 该函数在 schemas.go 中已定义（同包可见），本包内所有调用
-// （如 intPtr(exception.CodeAuthUnauthorized)）将自动解析到
-// schemas.go 中的唯一实现。

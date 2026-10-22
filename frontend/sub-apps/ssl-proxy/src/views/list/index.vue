@@ -21,7 +21,7 @@
         <template #header-extra>
           <n-space>
             <n-button
-              v-permission="'ssl_proxy:proxy:create'"
+              v-if="hasPerm('ssl_proxy:proxy:create')"
               type="primary"
               @click="openCreate"
             >
@@ -106,6 +106,7 @@ import { buildColumns } from './ProxyColumns';
 import BatchResultModal from './BatchResultModal.vue';
 import ProxyFormModal from './ProxyFormModal.vue';
 import ProxyDetailDrawer from './ProxyDetailDrawer.vue';
+import { usePermissionStore } from '@/store/permission';
 import type {
   BatchItemResult,
   BatchResp,
@@ -115,7 +116,11 @@ import type {
 } from '@/types';
 
 const message = useMessage();
-// ★ 解构出 pendingAction，供 buildColumns 使用
+
+// ★ 初始化权限 Store
+const permissionStore = usePermissionStore();
+const hasPerm = (code: string) => permissionStore.hasPermission(code);
+
 const {
   start,
   stop,
@@ -217,7 +222,6 @@ function delayedRefresh(delayMs = 250) {
   return () => clearTimeout(t);
 }
 
-// ★ 关键：buildColumns 传入 pendingAction
 const columns = computed(() =>
   buildColumns({
     onDetail: (row) => openDetail(row),
@@ -249,8 +253,9 @@ const columns = computed(() =>
     isRunning,
     isTransitioning,
     isPending,
-    pendingAction, // ★ 补上
+    pendingAction,
     certName,
+    hasPerm, // ★ 补上这一行，解决 TS 报错
   })
 );
 
@@ -396,7 +401,7 @@ async function handleBatchStop() {
 }
 
 // ============================================================
-// 单个重载（带 40902 兜底）
+// 单个重载
 // ============================================================
 async function restartSafe(sid: string): Promise<BatchItemResult> {
   try {
@@ -404,7 +409,6 @@ async function restartSafe(sid: string): Promise<BatchItemResult> {
     return { service_id: sid, success: true, code: 0, message: 'ok' };
   } catch (e: any) {
     if (e?.code === 40902) {
-      // 最多等 4.5s（15 * 300ms）
       for (let i = 0; i < 15; i++) {
         await new Promise((r) => setTimeout(r, 300));
         try {
@@ -426,9 +430,8 @@ async function restartSafe(sid: string): Promise<BatchItemResult> {
           if (st === 'RUNNING') {
             return { service_id: sid, success: true, code: 0, message: 'ok' };
           }
-          // STARTING / STOPPING：继续等待
         } catch {
-          // GET 失败不中断，继续轮询
+          // ignore
         }
       }
       return {

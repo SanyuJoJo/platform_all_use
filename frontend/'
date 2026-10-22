@@ -1,0 +1,71 @@
+import { createApp } from 'vue';
+import { createPinia } from 'pinia';
+import naive from 'naive-ui';
+import App from './App.vue';
+import router, { setupSubAppRoutes } from './router';
+import { useModuleStore } from './store/module';
+import { useMenuStore } from './store/menu';
+import { usePermissionStore } from './store/permission';
+
+console.log('[Main] 应用启动');
+
+const app = createApp(App);
+const pinia = createPinia();
+app.use(pinia);
+app.use(router);
+app.use(naive);
+
+(async () => {
+  const token = localStorage.getItem('token');
+  console.log('[Main] token =', !!token, '| URL =', window.location.pathname);
+
+  if (token) {
+    try {
+      const permissionStore = usePermissionStore();
+      const moduleStore = useModuleStore();
+      const menuStore = useMenuStore();
+
+      // 1. 拉取路由树 + 注册主应用动态路由 + 构建菜单
+      if (!permissionStore.loaded) {
+        await permissionStore.fetchRouters();
+        permissionStore.registerRoutes(router);
+        menuStore.buildMenus(permissionStore.routeTree);
+      }
+
+      // 2. 拉取模块列表
+      if (!moduleStore.loaded) {
+        await moduleStore.fetchModules();
+      }
+
+      // 3. 注册子应用 catch-all（保证刷新 /auth/xxx 能匹配）
+      setupSubAppRoutes();
+    } catch (error) {
+      console.warn('[Main] 预加载失败:', error);
+    }
+  }
+
+  // 4. 关键断言：在 isReady 之前检查 dashboard 是否注册
+  console.log('[Main] ===== 首次导航前的路由表 =====');
+  const allRoutes = router.getRoutes();
+  allRoutes.forEach((r) => {
+    console.log(`[Main]   [${String(r.name).padEnd(28)}] ${r.path}`);
+  });
+  console.log('[Main] ===== 路由表结束 =====');
+
+  if (token && !router.hasRoute('Dashboard')) {
+    console.error(
+      '[Main] ⚠️ 严重问题：/dashboard (name=Dashboard) 未注册到 router！'
+    );
+    console.error('[Main] 刷新后 404 就是因为这个。请检查上方 [dynamic] 和 [PermissionStore] 的日志。');
+  }
+
+  await router.isReady();
+  console.log(
+    '[Main] 路由就绪 | currentRoute =', router.currentRoute.value.fullPath,
+    '| name =', String(router.currentRoute.value.name),
+    '| matched =', router.currentRoute.value.matched.map((m) => String(m.name)).join('/')
+  );
+
+  app.mount('#app');
+  console.log('[Main] 应用挂载完成');
+})();

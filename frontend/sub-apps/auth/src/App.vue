@@ -9,6 +9,14 @@
 </template>
 
 <script setup lang="ts">
-import { NMessageProvider, NDialogProvider, NNotificationProvider } from 'naive-ui';
-console.log('[Auth] App 组件加载（含 Provider）');
+import { onMounted } from 'vue';
+import {
+  NMessageProvider,
+  NDialogProvider,
+  NNotificationProvider,
+} from 'naive-ui';
+
+onMounted(() => {
+  console.warn('[auth] App.vue mounted');
+});
 </script>

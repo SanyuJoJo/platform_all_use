@@ -40,14 +40,18 @@ export interface UserUpdate {
   role_ids?: number[];
   status?: number;
 }
-// ========== 角色 ==========
+
+// ========== 角色（方案 A：permission_codes → menuIds） ==========
 export interface Role {
   id: number;
   name: string;
   code: string;
   description?: string;
   is_system: boolean;
-  permission_codes: string[];
+  /** 已勾选的菜单 id 列表（含 M/C/F） */
+  menuIds?: number[];
+  /** 菜单数量（列表接口可选返回的轻量统计） */
+  menuCount?: number;
   created_at: string;
   updated_at: string;
 }
@@ -55,14 +59,17 @@ export interface RoleCreate {
   name: string;
   code: string;
   description?: string;
-  permission_codes?: string[];
+  /** 菜单 id 列表 */
+  menuIds?: number[];
 }
 export interface RoleUpdate {
   name?: string;
   description?: string;
-  permission_codes?: string[];
+  /** 菜单 id 列表 */
+  menuIds?: number[];
 }
-// ========== 权限 ==========
+
+// ========== 权限（方案 A 后逐步废弃，暂保留以兼容 PermissionTree） ==========
 export interface Permission {
   id: number;
   code: string;
@@ -71,4 +78,31 @@ export interface Permission {
   resource: string;
   action: string;
   created_at: string;
+}
+
+/* ============================================================================
+ * 动态路由（子应用消费主应用下发路由树）
+ * ========================================================================== */
+
+export interface RouteMeta {
+  title: string;
+  icon?: string;
+  permission?: string;
+  hidden?: boolean;
+  keepAlive?: boolean;
+  [key: string]: unknown;
+  [key: symbol]: unknown;
+}
+
+export interface RouteNode {
+  id: string;
+  parentId: string | null;
+  name: string;
+  path?: string;
+  component?: string;
+  microApp: string;
+  type: 'directory' | 'menu';
+  meta: RouteMeta;
+  order?: number;
+  children?: RouteNode[];
 }

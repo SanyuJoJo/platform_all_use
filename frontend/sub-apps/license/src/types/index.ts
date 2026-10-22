@@ -22,3 +22,26 @@ export interface ModuleAuthStatus {
   is_authorized: boolean;
   expires_at: string | null;
 }
+
+/* ========== 动态路由 ========== */
+export interface RouteMeta {
+  title: string;
+  icon?: string;
+  permission?: string;
+  hidden?: boolean;
+  keepAlive?: boolean;
+  [key: string]: unknown;
+  [key: symbol]: unknown;
+}
+export interface RouteNode {
+  id: string;
+  parentId: string | null;
+  name: string;
+  path?: string;
+  component?: string;
+  microApp: string;
+  type: 'directory' | 'menu';
+  meta: RouteMeta;
+  order?: number;
+  children?: RouteNode[];
+}

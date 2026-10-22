@@ -1,53 +1,51 @@
 // main-app/src/utils/icon-map.ts
-import { h, type VNode } from 'vue';
+import { h, type VNode, type Component } from 'vue';
 import { NIcon } from 'naive-ui';
 import {
-  // ---- 基础常用 ----
-  PeopleOutline as PeopleIcon,
-  LockClosedOutline as LockIcon,
-  ShieldOutline as ShieldIcon,
-  PersonOutline as PersonIcon,
-  GridOutline as GridIcon,
-  ListOutline as ListIcon,
-  SettingsOutline as SettingsIcon,
-  DocumentOutline as FileIcon,
-  CreateOutline as EditIcon,
-  TrashOutline as DeleteIcon,
-  AddOutline as AddIcon,
-  SearchOutline as SearchIcon,
-  FolderOpenOutline as FolderOpenIcon,
-  HomeOutline as HomeIcon,
-  AppsOutline as AppsIcon,
+  // 基础常用
+  PeopleOutline,
+  LockClosedOutline,
+  ShieldOutline,
+  PersonOutline,
+  GridOutline,
+  ListOutline,
+  SettingsOutline,
+  DocumentOutline,
+  CreateOutline,
+  TrashOutline,
+  AddOutline,
+  SearchOutline,
+  FolderOpenOutline,
+  HomeOutline,
+  AppsOutline,
 
-  // ---- 文档 / 密钥相关 ----
-  DocumentTextOutline as DocumentIcon,
-  KeyOutline as KeyIcon,
+  // 文档 / 密钥 / 证书
+  DocumentTextOutline,
+  KeyOutline,
+  RibbonOutline,
+  ShieldCheckmarkOutline,
 
-  // ---- 证书 / 安全相关（替代不存在的 CertificateOutline）----
-  RibbonOutline as CertificateIcon,
-  ShieldCheckmarkOutline as ShieldCheckIcon,
-
-  // ---- 额外补充的常用别名 ----
-  BarChartOutline as ChartIcon,
-  CashOutline as CashIcon,
-  CartOutline as CartIcon,
-  CloudOutline as CloudIcon,
-  CodeSlashOutline as CodeIcon,
-  CubeOutline as CubeIcon,
-  EarthOutline as GlobeIcon,
-  HeartOutline as HeartIcon,
-  InformationCircleOutline as InfoIcon,
-  LayersOutline as LayersIcon,
-  NotificationsOutline as NotificationIcon,
-  PricetagOutline as TagIcon,
-  PulseOutline as PulseIcon,
-  RocketOutline as RocketIcon,
-  ServerOutline as ServerIcon,
-  SpeedometerOutline as DashboardIcon,
-  StatsChartOutline as StatsIcon,
-  TimeOutline as TimeIcon,
-  TrendingUpOutline as TrendingUpIcon,
-  WarningOutline as WarningIcon,
+  // 业务 / 其他
+  BarChartOutline,
+  CashOutline,
+  CartOutline,
+  CloudOutline,
+  CodeSlashOutline,
+  CubeOutline,
+  EarthOutline,
+  HeartOutline,
+  InformationCircleOutline,
+  LayersOutline,
+  NotificationsOutline,
+  PricetagOutline,
+  PulseOutline,
+  RocketOutline,
+  ServerOutline,
+  SpeedometerOutline,
+  StatsChartOutline,
+  TimeOutline,
+  TrendingUpOutline,
+  WarningOutline,
 } from '@vicons/ionicons5';
 
 if (import.meta.env.DEV) {
@@ -55,65 +53,71 @@ if (import.meta.env.DEV) {
 }
 
 /**
- * 图标名 → 组件 映射表
+ * 图标名 → 组件映射。
  *
- * 命名约定：使用「语义化名称」，与后端 menus[].icon 字段保持一致。
- * 未登记的 icon 名会触发 console.warn 并降级为 GridIcon。
+ * key 与后端 /menus/routers 返回的 meta.icon 值保持一致。
+ * 未登记的 key 会 console.warn 并降级为 GridOutline。
  */
-const iconMap: Record<string, unknown> = {
-  // ============ 基础常用 ============
-  Dashboard: GridIcon,
-  Grid: GridIcon,
-  Home: HomeIcon,
-  Apps: AppsIcon,
-  Settings: SettingsIcon,
-  List: ListIcon,
+const iconMap: Record<string, Component> = {
+  // ============ 基础 ============
+  Dashboard: GridOutline,
+  Grid: GridOutline,
+  Home: HomeOutline,
+  Apps: AppsOutline,
+  Setting: SettingsOutline,        // 后端用单数
+  Settings: SettingsOutline,       // 兼容复数
+  List: ListOutline,
+  Menu: ListOutline,               // 后端「菜单管理」用 Menu
 
   // ============ 用户 / 权限 ============
-  People: PeopleIcon,
-  Person: PersonIcon,
-  Lock: LockIcon,
-  Shield: ShieldIcon,
-  ShieldCheck: ShieldCheckIcon,
+  People: PeopleOutline,
+  Person: PersonOutline,
+  User: PersonOutline,             // 后端「用户管理」
+  UserFilled: PeopleOutline,       // 后端「角色管理」
+  Lock: LockClosedOutline,
+  Shield: ShieldOutline,
+  ShieldCheck: ShieldCheckmarkOutline,
 
   // ============ 文件 / 文档 ============
-  File: FileIcon,
-  Document: DocumentIcon,
-  DocumentText: DocumentIcon,
+  File: DocumentOutline,
+  Document: DocumentTextOutline,   // 后端「日志审计 / 审计」
+  DocumentText: DocumentTextOutline,
 
-  // ============ 密钥 / License / 证书 ============
-  Key: KeyIcon,
-  Certificate: CertificateIcon,  // 使用 RibbonOutline 代替
-  Ribbon: CertificateIcon,
+  // ============ 密钥 / 证书 ============
+  Key: KeyOutline,                 // 后端「权限管理 / License」
+  Certificate: RibbonOutline,
+  Ribbon: RibbonOutline,           // 后端「证书管理」
 
-  // ============ 操作类 ============
-  Edit: EditIcon,
-  Delete: DeleteIcon,
-  Add: AddIcon,
-  Search: SearchIcon,
-  FolderOpen: FolderOpenIcon,
+  // ============ 操作 ============
+  Edit: CreateOutline,
+  Delete: TrashOutline,
+  Add: AddOutline,
+  Search: SearchOutline,
+  FolderOpen: FolderOpenOutline,
 
-  // ============ 业务类 ============
-  Chart: ChartIcon,
-  Stats: StatsIcon,
-  TrendingUp: TrendingUpIcon,
-  Pulse: PulseIcon,
-  Cash: CashIcon,
-  Cart: CartIcon,
-  Cloud: CloudIcon,
-  Code: CodeIcon,
-  Cube: CubeIcon,
-  Globe: GlobeIcon,
-  Heart: HeartIcon,
-  Info: InfoIcon,
-  Layers: LayersIcon,
-  Notification: NotificationIcon,
-  Tag: TagIcon,
-  Rocket: RocketIcon,
-  Server: ServerIcon,
-  Speedometer: DashboardIcon,
-  Time: TimeIcon,
-  Warning: WarningIcon,
+  // ============ 业务 / 状态 ============
+  Chart: BarChartOutline,
+  Stats: StatsChartOutline,
+  TrendingUp: TrendingUpOutline,
+  Pulse: PulseOutline,
+  Connection: PulseOutline,        // 后端「SSL 代理」
+  Odometer: SpeedometerOutline,    // 后端「仪表盘」
+  Cash: CashOutline,
+  Cart: CartOutline,
+  Cloud: CloudOutline,
+  Code: CodeSlashOutline,
+  Cube: CubeOutline,
+  Globe: EarthOutline,
+  Heart: HeartOutline,
+  Info: InformationCircleOutline,
+  Layers: LayersOutline,
+  Notification: NotificationsOutline,
+  Tag: PricetagOutline,
+  Rocket: RocketOutline,
+  Server: ServerOutline,
+  Speedometer: SpeedometerOutline,
+  Time: TimeOutline,
+  Warning: WarningOutline,
 };
 
 export function renderIcon(iconName: string): () => VNode {
@@ -121,14 +125,11 @@ export function renderIcon(iconName: string): () => VNode {
 
   if (!IconComponent) {
     console.warn(
-      `[icon-map] 图标 "${iconName}" 未在 iconMap 中登记，已降级为 GridIcon。` +
+      `[icon-map] 图标 "${iconName}" 未在 iconMap 中登记，已降级为 GridOutline。` +
         `请在 main-app/src/utils/icon-map.ts 中补充映射。`
     );
-    return () => h(NIcon, null, { default: () => h(GridIcon) });
+    return () => h(NIcon, null, { default: () => h(GridOutline) });
   }
 
-  return () =>
-    h(NIcon, null, {
-      default: () => h(IconComponent as Parameters<typeof h>[0]),
-    });
+  return () => h(NIcon, null, { default: () => h(IconComponent) });
 }

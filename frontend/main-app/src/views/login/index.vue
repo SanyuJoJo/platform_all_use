@@ -4,13 +4,14 @@
       <h2 style="text-align:center;margin-bottom:24px;">登录</h2>
       <n-form :model="form" ref="formRef">
         <n-form-item label="用户名">
-          <n-input v-model:value="form.username" placeholder="请输入用户名" />
+          <n-input v-model:value="form.username" placeholder="请输入用户名" autocomplete="username" />
         </n-form-item>
         <n-form-item label="密码">
           <n-input
             v-model:value="form.password"
             type="password"
             placeholder="请输入密码"
+            autocomplete="current-password"
             @keyup.enter="handleLogin"
           />
         </n-form-item>
@@ -24,21 +25,21 @@
 
 <script setup lang="ts">
 import { reactive, ref } from 'vue';
-import { useRouter, useRoute } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router'; // ★ 补回 useRouter
 import { useUserStore } from '@/store/user';
 import { useModuleStore } from '@/store/module';
 import { useMenuStore } from '@/store/menu';
+import { usePermissionStore } from '@/store/permission';
 import { registerModules } from '@/micro-frontend/registry';
 import { login } from '@/api/auth';
 import { message } from '@/utils/naive';
 
-console.log('[DEBUG] login/index.vue: 登录页组件初始化');
-
-const router = useRouter();
+const router = useRouter(); // ★ 补回 router 实例
 const route = useRoute();
 const userStore = useUserStore();
 const moduleStore = useModuleStore();
 const menuStore = useMenuStore();
+const permissionStore = usePermissionStore();
 const loading = ref(false);
 const formRef = ref();
 
@@ -48,49 +49,40 @@ const form = reactive({
 });
 
 async function handleLogin() {
-  console.log('[DEBUG] login: 点击登录按钮');
   loading.value = true;
-
   try {
-    // ========== 第一步：调用登录接口（★ 只有这一步失败才算"登录失败"）==========
-    console.log('[DEBUG] login: 调用登录接口', form);
+    // 1. 登录（只有这一步失败才算登录失败）
     const res = await login(form);
-    console.log('[DEBUG] login: 登录响应', res);
     const { access_token, user } = res.data;
     userStore.setToken(access_token);
     userStore.setUser(user);
-    console.log('[DEBUG] login: token 和用户信息已保存');
 
-    // ========== 第二步：加载模块 + 注册子应用 + 构建菜单（★ 独立 try-catch，失败不影响登录）==========
-    console.log('[DEBUG] login: 开始获取模块列表');
+    // 2. 拉取路由树 → 注册主应用动态路由 → 构建菜单
+    const tree = await permissionStore.fetchRouters(true);
+    permissionStore.registerRoutes(router); // 这里需要 router
+    menuStore.buildMenus(tree);
+
+    // 3. 加载模块并注册 qiankun 子应用（失败不阻塞登录）
     try {
       const modules = await moduleStore.fetchModules();
-      console.log('[DEBUG] login: 模块列表获取成功，数量:', modules.length);
-
-      registerModules(modules, router);
-      console.log('[DEBUG] login: 子应用注册完成');
-
-      await menuStore.buildMenus(modules);
-      console.log('[DEBUG] login: 菜单构建完成');
+      registerModules(modules, router); // 这里需要 router
     } catch (moduleError) {
-      console.warn(
-        '[DEBUG] login: 模块加载失败，但不影响登录（可能后端 /modules 未实现）',
-        moduleError
-      );
+      console.warn('[Login] 模块加载失败，子应用暂不可用', moduleError);
     }
 
-    // ========== 第三步：提示成功并跳转 ==========
     message.success('登录成功');
-    const redirect = (route.query.redirect as string) || '/dashboard';
-    console.log('[DEBUG] login: 跳转到', redirect);
-    await router.push(redirect);
+    const redirect = (route.query.redirect as string) || '/';
+    
+    // ★ 核心修改：使用 window.location.href 强制刷新页面跳转
+    setTimeout(() => {
+      window.location.href = redirect;
+    }, 300);
+    
   } catch (error: any) {
-    // ★ 这个 catch 只捕获 login() 本身的错误
-    console.error('[DEBUG] login: 登录失败', error);
+    console.error('[Login] 登录失败', error);
     message.error(error?.message || '登录失败，请检查用户名和密码');
   } finally {
     loading.value = false;
-    console.log('[DEBUG] login: 登录流程结束');
   }
 }
 </script>

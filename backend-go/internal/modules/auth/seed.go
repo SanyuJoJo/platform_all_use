@@ -1,6 +1,9 @@
 package auth
 
 import (
+	"strings"
+	"time"
+
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 
@@ -99,6 +102,11 @@ var guestPermissionCodes = map[string]struct{}{
 }
 
 // EnsureAuthSeedData 初始化认证模块种子数据（幂等、增量）。
+//
+// 注意（方案 A）：
+//   本函数只负责旧表 auth_permission / auth_role_permission 的种子。
+//   admin 角色与 platform_menu 的关联由 EnsureAdminRoleMenus 负责，
+//   且必须在 menu.EnsureMenuSeedData 之后调用。
 func EnsureAuthSeedData(db *gorm.DB) error {
 	permissionsByCode := make(map[string]*models.Permission)
 
@@ -158,6 +166,92 @@ func EnsureAuthSeedData(db *gorm.DB) error {
 	log.Info().
 		Int("total_permissions", len(DefaultPermissions)).
 		Msg("认证种子数据初始化完成（幂等、增量）")
+	return nil
+}
+
+// EnsureAdminRoleMenus 确保 admin 角色的 auth_role_menu 覆盖所有菜单。
+//
+// 调用时机：必须在 menu.EnsureMenuSeedData 之后（依赖 platform_menu 已有数据）。
+//
+// 语义（v3）：
+//   - admin 是超管，拥有所有菜单（M/C/F，且**不过滤 status**，
+//     与 rbac.LoadUserPermissions 的 admin 分支保持一致）；
+//   - 每次启动幂等同步：新增菜单自动追加，已存在的不重复插入；
+//   - 只追加不删除，避免误删管理员手动调整的行。
+//
+// 注意：
+//   本函数现在**不再是关键路径**——admin 的权限由
+//   rbac.LoadUserPermissions 的 admin 分支直接返回全量 perms，
+//   不依赖 auth_role_menu。保留本函数有两个作用：
+//     1. 兜底：若以后调整 admin 分支逻辑，auth_role_menu 里已有完整数据；
+//     2. 可视化：管理后台的"角色菜单"界面能正确显示 admin 勾选的菜单。
+func EnsureAdminRoleMenus(db *gorm.DB) error {
+	const maxRetries = 5
+
+	var adminRole models.Role
+	if err := db.Where("code = ?", "admin").First(&adminRole).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil
+		}
+		return err
+	}
+
+	// 1. 所有菜单的 id（M/C/F 全部，★ 不再过滤 status）
+	var menuIDs []uint
+	if err := db.Model(&models.Menu{}).
+		Pluck("id", &menuIDs).Error; err != nil {
+		return err
+	}
+	if len(menuIDs) == 0 {
+		return nil
+	}
+
+	// 2. admin 角色已有的关联
+	var existing []uint
+	if err := db.Model(&models.AuthRoleMenu{}).
+		Where("role_id = ?", adminRole.ID).
+		Pluck("menu_id", &existing).Error; err != nil {
+		return err
+	}
+	existSet := make(map[uint]struct{}, len(existing))
+	for _, id := range existing {
+		existSet[id] = struct{}{}
+	}
+
+	// 3. 只插入缺失的
+	toAdd := make([]models.AuthRoleMenu, 0, len(menuIDs))
+	for _, mid := range menuIDs {
+		if _, ok := existSet[mid]; ok {
+			continue
+		}
+		toAdd = append(toAdd, models.AuthRoleMenu{RoleID: adminRole.ID, MenuID: mid})
+	}
+	if len(toAdd) == 0 {
+		return nil
+	}
+
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if err := db.CreateInBatches(toAdd, 100).Error; err != nil {
+			lastErr = err
+			if isDatabaseLocked(err) {
+				time.Sleep(time.Duration(attempt+1) * 200 * time.Millisecond)
+				continue
+			}
+			return err
+		}
+		lastErr = nil
+		break
+	}
+	if lastErr != nil {
+		return lastErr
+	}
+
+	log.Info().
+		Uint("role_id", adminRole.ID).
+		Int("added", len(toAdd)).
+		Int("total_menus", len(menuIDs)).
+		Msg("admin 角色菜单关联已同步")
 	return nil
 }
 
@@ -268,4 +362,14 @@ func boolToInt8(b bool) int8 {
 		return 1
 	}
 	return 0
+}
+
+// isDatabaseLocked 判断错误是否为 SQLite 锁冲突。
+func isDatabaseLocked(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "database is locked") ||
+		strings.Contains(msg, "database table is locked")
 }

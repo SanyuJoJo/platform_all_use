@@ -1,0 +1,1 @@
+import{c as o,a as s,o as r}from"./index-D8Tk9kNj.js";const n={style:{padding:"20px",background:"#f5f5f5","border-radius":"8px"}},i={__name:"Permissions",setup(t){return console.log("[Auth] Permissions 组件渲染"),(a,e)=>(r(),o("div",n,[...e[0]||(e[0]=[s("h2",null,"🔐 权限管理",-1),s("p",null,"权限管理页面（模拟）",-1)])]))}};export{i as default};
