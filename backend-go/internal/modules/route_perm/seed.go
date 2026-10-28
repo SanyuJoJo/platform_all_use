@@ -18,6 +18,13 @@ import (
 //   - 同一 (method, pattern) 可配多个 code，语义为"或"（任一命中即放行）；
 //   - 未配置映射的路由 → DynamicPermission 放行（兼容模式），
 //     所以所有需要保护的写接口都必须在这里显式列出。
+//
+// 覆盖范围：
+//   - 菜单管理、路由权限管理（动态路由自身）
+//   - 用户 / 角色 / 模块 / 审计 / License
+//   - SSL 代理 HTTP（ssl_proxies）
+//   - SSL 代理 TCPS（tcps-proxies，4 层 TCP/TLS）  ← 本次新增
+//   - Crypto 控制台（CA / Cert / CSR / CRL / Key / Task）
 var seedRoutePermissions = []models.RoutePermission{
 	// =====================================================================
 	// 菜单管理
@@ -87,7 +94,7 @@ var seedRoutePermissions = []models.RoutePermission{
 	{HTTPMethod: "POST", RoutePattern: "/api/v1/license/activate", PermissionCode: "license:license:create", ModuleID: "license", Description: "激活 License"},
 
 	// =====================================================================
-	// SSL 代理（写操作必须显式配置）
+	// SSL 代理 — HTTP 管理（4 层 ssl-proxies 之外的 7 层 HTTP 反代）
 	// =====================================================================
 	{HTTPMethod: "GET", RoutePattern: "/api/v1/ssl-proxies", PermissionCode: "ssl_proxy:proxy:view", ModuleID: "ssl_proxy", Description: "代理列表"},
 	{HTTPMethod: "POST", RoutePattern: "/api/v1/ssl-proxies", PermissionCode: "ssl_proxy:proxy:create", ModuleID: "ssl_proxy", Description: "新建代理"},
@@ -105,8 +112,32 @@ var seedRoutePermissions = []models.RoutePermission{
 	{HTTPMethod: "GET", RoutePattern: "/api/v1/ssl-proxies/available-certs", PermissionCode: "ssl_proxy:proxy:view", ModuleID: "ssl_proxy", Description: "可绑定证书列表"},
 
 	// =====================================================================
+	// ★ SSL 代理 — TCPS 管理（4 层 TCP/TLS 代理）
+	//
+	// 与 HTTP 管理完全隔离：
+	//   - API 前缀 /api/v1/tcps-proxies
+	//   - 权限码 ssl_proxy:tcps:*
+	//   - 数据表 platform_tcps_proxy
+	// =====================================================================
+	{HTTPMethod: "GET", RoutePattern: "/api/v1/tcps-proxies", PermissionCode: "ssl_proxy:tcps:view", ModuleID: "ssl_proxy", Description: "TCPS 列表"},
+	{HTTPMethod: "POST", RoutePattern: "/api/v1/tcps-proxies", PermissionCode: "ssl_proxy:tcps:create", ModuleID: "ssl_proxy", Description: "新建 TCPS"},
+	{HTTPMethod: "GET", RoutePattern: "/api/v1/tcps-proxies/:id", PermissionCode: "ssl_proxy:tcps:view", ModuleID: "ssl_proxy", Description: "TCPS 详情"},
+	{HTTPMethod: "PUT", RoutePattern: "/api/v1/tcps-proxies/:id", PermissionCode: "ssl_proxy:tcps:update", ModuleID: "ssl_proxy", Description: "编辑 TCPS"},
+	{HTTPMethod: "DELETE", RoutePattern: "/api/v1/tcps-proxies/:id", PermissionCode: "ssl_proxy:tcps:delete", ModuleID: "ssl_proxy", Description: "删除 TCPS"},
+	{HTTPMethod: "POST", RoutePattern: "/api/v1/tcps-proxies/:id/start", PermissionCode: "ssl_proxy:tcps:start", ModuleID: "ssl_proxy", Description: "启动 TCPS"},
+	{HTTPMethod: "POST", RoutePattern: "/api/v1/tcps-proxies/:id/stop", PermissionCode: "ssl_proxy:tcps:stop", ModuleID: "ssl_proxy", Description: "停止 TCPS"},
+	{HTTPMethod: "POST", RoutePattern: "/api/v1/tcps-proxies/:id/restart", PermissionCode: "ssl_proxy:tcps:start", ModuleID: "ssl_proxy", Description: "重启 TCPS（复用启动权限）"},
+	{HTTPMethod: "GET", RoutePattern: "/api/v1/tcps-proxies/:id/config", PermissionCode: "ssl_proxy:tcps:config", ModuleID: "ssl_proxy", Description: "TCPS 配置查看"},
+	{HTTPMethod: "GET", RoutePattern: "/api/v1/tcps-proxies/:id/logs", PermissionCode: "ssl_proxy:tcps:logs", ModuleID: "ssl_proxy", Description: "TCPS 日志查看"},
+	{HTTPMethod: "POST", RoutePattern: "/api/v1/tcps-proxies/batch/start", PermissionCode: "ssl_proxy:tcps:start", ModuleID: "ssl_proxy", Description: "TCPS 批量启动"},
+	{HTTPMethod: "POST", RoutePattern: "/api/v1/tcps-proxies/batch/stop", PermissionCode: "ssl_proxy:tcps:stop", ModuleID: "ssl_proxy", Description: "TCPS 批量停止"},
+	{HTTPMethod: "POST", RoutePattern: "/api/v1/tcps-proxies/check-port", PermissionCode: "ssl_proxy:tcps:view", ModuleID: "ssl_proxy", Description: "TCPS 端口检测"},
+	{HTTPMethod: "GET", RoutePattern: "/api/v1/tcps-proxies/available-certs", PermissionCode: "ssl_proxy:tcps:view", ModuleID: "ssl_proxy", Description: "TCPS 可绑定证书"},
+
+	// =====================================================================
 	// Crypto 控制台
 	// =====================================================================
+
 	// CA
 	{HTTPMethod: "GET", RoutePattern: "/api/v1/cas", PermissionCode: "crypto_console:ca:view", ModuleID: "crypto", Description: "CA 列表"},
 	{HTTPMethod: "GET", RoutePattern: "/api/v1/cas/domains", PermissionCode: "crypto_console:ca:view", ModuleID: "crypto", Description: "CA 域列表"},

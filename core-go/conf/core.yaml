@@ -1,7 +1,7 @@
 core:
   # 铜锁 openssl 路径。留空则按平台自动解析：
   #   <coreRoot>/libs/openssl/<os>-<arch>/openssl(.exe)
-  tongsuo_openssl_bin: ""
+  tongsuo_openssl_bin: "/opt/plats_tool/core/libs/tongsuo/bin/openssl"
   tongsuo_min_version: "8.5.0"
   whitebox_bin: "bin/whitebox_sm4"
   timeout_ms: 5000

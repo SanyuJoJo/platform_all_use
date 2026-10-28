@@ -1,0 +1,62 @@
+# ============================================================
+# TCPS 客户端代理 — stream 全量模板
+#
+# 本地 TCP 明文监听 → 后端 TLS 隧道（可选 mTLS）
+# protocol = tcp 时所有 SSL 相关行被注释；protocol = tls/gmssl/pqc 时启用。
+#
+# ★ stream 层没有 server_name 指令，proxy_ssl_name 空值用 ''
+#   （用户已修改 nginx 支持该语法）
+# ============================================================
+worker_processes auto;
+pid {{pid_path}};
+error_log {{log_dir}}/error.log warn;
+
+events {
+    worker_connections 1024;
+}
+
+stream {
+    # stream 层日志格式
+    log_format basic '$remote_addr [$time_local] '
+                     '$protocol $status $bytes_sent $bytes_received '
+                     '$session_time';
+
+    access_log {{log_dir}}/access.log basic;
+
+    server {
+        listen {{listen_ip}}:{{listen_port}};
+
+        # 后端目标（stream 层 proxy_pass 不带 scheme）
+        proxy_pass {{backend_ip}}:{{backend_port}};
+
+        # ---------- 后端 TLS（客户端模式） ----------
+        #@ proxy_ssl on;
+        #@ proxy_ssl_protocols {{ssl_protocols}};
+        #@ proxy_ssl_ciphers {{ssl_ciphers}};
+        #@ proxy_ssl_server_name on;
+        #@ proxy_ssl_name {{proxy_ssl_name_expr}};
+
+        # ---------- 客户端证书（mTLS） ----------
+        #@ proxy_ssl_certificate     {{client_cert_path}};
+        #@ proxy_ssl_certificate_key {{client_key_path}};
+
+        # ---------- CA 校验后端证书 ----------
+        #@ proxy_ssl_trusted_certificate {{ca_cert_path}};
+        #@ proxy_ssl_verify on;
+        #@ proxy_ssl_verify_depth 2;
+
+        # ---------- 国密 NTLS 客户端双证书 ----------
+        #@ proxy_enable_ntls on;
+        #@ proxy_ssl_sign_certificate     {{client_sign_cert}};
+        #@ proxy_ssl_sign_certificate_key {{client_sign_key}};
+        #@ proxy_ssl_enc_certificate      {{client_enc_cert}};
+        #@ proxy_ssl_enc_certificate_key  {{client_enc_key}};
+
+        # ---------- SSL 扩展指令 ----------
+        #@ proxy_ssl_conf_command {{ssl_conf_command}};
+
+        # ---------- 超时 ----------
+        proxy_connect_timeout 10s;
+        proxy_timeout 300s;
+    }
+}

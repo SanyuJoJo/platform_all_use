@@ -23,7 +23,7 @@ http {
 
     server {
         listen       {{listen_ip}}:{{listen_port}};
-        server_name  {{ssl_server_name}};
+        server_name  {{server_name_value}};
 
         location / {
             proxy_pass {{backend_scheme}}://{{backend_ip}}:{{backend_port}};
@@ -32,7 +32,7 @@ http {
             #@ proxy_ssl_protocols {{ssl_protocols}};
             #@ proxy_ssl_ciphers {{ssl_ciphers}};
             #@ proxy_ssl_server_name on;
-            #@ proxy_ssl_name {{ssl_server_name}};
+            #@ proxy_ssl_name {{proxy_ssl_name_expr}};
 
             # ---------- SSL 会话复用 ----------
             #@ proxy_ssl_session_reuse {{proxy_ssl_session_reuse_value}};

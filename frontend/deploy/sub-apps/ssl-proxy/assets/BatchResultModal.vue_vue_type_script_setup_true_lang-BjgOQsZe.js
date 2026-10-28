@@ -1,0 +1,1 @@
+import{d as e}from"./index-BNxX6om6.js";const p=e({__name:"BatchResultModal",props:{show:{type:Boolean},title:{},result:{}},emits:["update:show","retry-failed"],setup(t,{emit:o}){return()=>{}}});export{p as _};

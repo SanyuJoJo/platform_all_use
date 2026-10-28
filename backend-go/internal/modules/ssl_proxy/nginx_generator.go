@@ -29,6 +29,16 @@ func NewNginxGenerator(resolver CertResolver) *NginxGenerator {
 	}
 }
 
+// Render 渲染 nginx.conf。
+//
+// ★ 本版语义（按用户要求）：
+//   - 客户端 TLS 场景下，验证四件套 + CA 加载全部开启：
+//     proxy_ssl_server_name / proxy_ssl_name / proxy_ssl_trusted_certificate /
+//     proxy_ssl_verify / proxy_ssl_verify_depth
+//   - proxy_ssl_name 值：
+//       用户填了 SSL Server Name → 用它
+//       用户没填 → 输出 ''（空字符串，用户已修改 nginx 适配）
+//   - 不做自动探测、不读本地证书、不用 backend_ip 兜底
 func (g *NginxGenerator) Render(p *PlatformSSLProxy) (confPath, pidPath string, err error) {
 	confDir := filepath.Join(g.ConfRoot, p.ServiceID)
 	pidDir := filepath.Join(g.PidRoot, p.ServiceID)
@@ -57,7 +67,10 @@ func (g *NginxGenerator) Render(p *PlatformSSLProxy) (confPath, pidPath string, 
 		return "", "", err
 	}
 
-	vars := buildVars(p, certs, confDir, pidDir, tmpDir, logDir, pidPath)
+	// 直接用用户填的值，不做兜底
+	resolvedSNI := strings.TrimSpace(p.SSLServerName)
+
+	vars := buildVars(p, certs, confDir, pidDir, tmpDir, logDir, pidPath, resolvedSNI)
 
 	var tmplFile string
 	if p.Mode == ModeClient {
@@ -70,7 +83,7 @@ func (g *NginxGenerator) Render(p *PlatformSSLProxy) (confPath, pidPath string, 
 		return "", "", newErr(ErrConfigGenerate, "读取模板失败", tmplFile+": "+err.Error())
 	}
 
-	rendered := g.renderLines(string(raw), p, vars)
+	rendered := g.renderLines(string(raw), p, vars, resolvedSNI)
 
 	if err := os.WriteFile(confPath, []byte(rendered), 0640); err != nil {
 		return "", "", newErr(ErrConfigGenerate, "写入 nginx.conf 失败", err.Error())
@@ -78,7 +91,9 @@ func (g *NginxGenerator) Render(p *PlatformSSLProxy) (confPath, pidPath string, 
 	return confPath, pidPath, nil
 }
 
-func (g *NginxGenerator) renderLines(raw string, p *PlatformSSLProxy, vars map[string]string) string {
+func (g *NginxGenerator) renderLines(
+	raw string, p *PlatformSSLProxy, vars map[string]string, resolvedSNI string,
+) string {
 	lines := strings.Split(raw, "\n")
 	out := make([]string, 0, len(lines))
 
@@ -91,7 +106,7 @@ func (g *NginxGenerator) renderLines(raw string, p *PlatformSSLProxy, vars map[s
 			cmdName := firstToken(cmdLine)
 
 			rendered := renderVars(cmdLine, vars)
-			if shouldEnable(cmdName, p) {
+			if shouldEnable(cmdName, p, resolvedSNI) {
 				out = append(out, indent+rendered)
 			} else {
 				out = append(out, indent+"# "+rendered)
@@ -131,18 +146,31 @@ func renderVars(line string, vars map[string]string) string {
 	})
 }
 
+// buildVars 构建模板变量。
+//
+// ★ 变量职责划分：
+//   - ssl_server_name        原始值（不兜底），用于日志/调试
+//   - server_name_value      给 server_name 用，空时兜底 "_"（nginx 要求非空）
+//   - proxy_ssl_name_expr    给 proxy_ssl_name 用，空时输出 "''"
+//                            （用户已改 nginx 支持空字符串）
 func buildVars(
 	p *PlatformSSLProxy,
 	c *ResolvedCertPaths,
 	confDir, pidDir, tmpDir, logDir, pidPath string,
+	resolvedSNI string,
 ) map[string]string {
 	listenSuffix := ""
 	if p.Mode == ModeServer && p.ListenSSL {
 		listenSuffix = " ssl"
 	}
 
-	// ★ ssl_protocols 经 sanitize 处理：过滤 NTLSv1.1，空则回落默认
 	sslProtocols := sanitizeSSLProtocols(p.SSLProtocols, p.Protocol)
+
+	// proxy_ssl_name 表达式：有值原样输出，无值输出 ''
+	proxySSLNameExpr := resolvedSNI
+	if proxySSLNameExpr == "" {
+		proxySSLNameExpr = "''"
+	}
 
 	v := map[string]string{
 		"service_id":        p.ServiceID,
@@ -155,10 +183,15 @@ func buildVars(
 		"backend_ip":        p.BackendIP,
 		"backend_port":      fmt.Sprintf("%d", p.BackendPort),
 		"backend_scheme":    p.BackendScheme,
-		"ssl_server_name":   defStr(p.SSLServerName, "_"),
-		"ssl_protocols":     sslProtocols,
-		"ssl_ciphers":       defaultIfEmpty(p.SSLCiphers, DefaultSSLCiphers),
-		"ssl_conf_command":  p.SSLConfCommand,
+
+		// ★ 三变量并存，各司其职
+		"ssl_server_name":      resolvedSNI,                            // 原始值
+		"server_name_value":    defStr(resolvedSNI, "_"),               // server_name 用
+		"proxy_ssl_name_expr":  proxySSLNameExpr,                       // proxy_ssl_name 用
+
+		"ssl_protocols":    sslProtocols,
+		"ssl_ciphers":      defaultIfEmpty(p.SSLCiphers, DefaultSSLCiphers),
+		"ssl_conf_command": p.SSLConfCommand,
 
 		"pid_path":        pidPath,
 		"conf_dir":        confDir,
@@ -189,29 +222,12 @@ func buildVars(
 		"ssl_verify_client_value":       boolOnOff(p.SSLVerifyClient),
 	}
 
-	// PQC 场景补默认 ssl_conf_command（ssl_protocols 已由 sanitize 处理）
 	if p.Protocol == ProtocolPQC && p.SSLConfCommand == "" {
 		v["ssl_conf_command"] = DefaultPQCConfCmd
 	}
 	return v
 }
 
-// ★ sanitizeSSLProtocols 清理 ssl_protocols，保证写入 nginx.conf 的值合法。
-//
-// 背景：
-//   - nginx 的 ssl_protocols 只接受标准 TLS 值：
-//     TLSv1 / TLSv1.1 / TLSv1.2 / TLSv1.3 / SSLv2 / SSLv3；
-//   - 国密 NTLS 通道由 `enable_ntls on;` 开启，与 ssl_protocols 无关；
-//   - 前端"国密"选项 value 仍为 NTLSv1.1（显示名可能为 GMTLSv1.1），
-//     提交后后端必须过滤掉，否则 nginx -t 报 invalid value "NTLSv1.1"。
-//
-// 规则：
-//   - 按空白分词；
-//   - 丢弃 NTLSv1.1（大小写不敏感）；
-//   - 保留其他值（用户显式选择的国际协议）；
-//   - 过滤后为空 → 按 protocol 回落默认：
-//     pqc   → TLSv1.3
-//     其他  → TLSv1.2 TLSv1.3
 func sanitizeSSLProtocols(raw, protocol string) string {
 	parts := strings.Fields(raw)
 	kept := make([]string, 0, len(parts))
@@ -227,10 +243,6 @@ func sanitizeSSLProtocols(raw, protocol string) string {
 	return strings.Join(kept, " ")
 }
 
-// defaultProtocolsFor 按 protocol 返回 ssl_protocols 的默认值。
-//
-// ★ GMSSL 不再返回 NTLSv1.1：
-//   国密通道由 enable_ntls 控制，ssl_protocols 只描述国际 TLS 通道。
 func defaultProtocolsFor(protocol string) string {
 	switch protocol {
 	case ProtocolPQC:
@@ -254,38 +266,65 @@ func sslSessionCacheValue(enabled bool) string {
 	return "off"
 }
 
-// shouldEnable 指令 → 启用条件映射。
-func shouldEnable(cmd string, p *PlatformSSLProxy) bool {
-	switch cmd {
-	// ---------- nchttp 客户端 ----------
+// isClientTLSTraffic 客户端 + 走 TLS。
+func isClientTLSTraffic(p *PlatformSSLProxy) bool {
+	return p.Mode == ModeClient && p.BackendScheme == BackendSchemeHTTPS
+}
 
-	case "proxy_ssl_protocols", "proxy_ssl_ciphers",
-		"proxy_ssl_server_name", "proxy_ssl_name":
-		return p.Protocol == ProtocolHTTP || p.Protocol == ProtocolPQC
+// hasCAConfigured 是否配置了 CA（ca_domain 默认 safe，正常恒为 true）。
+func hasCAConfigured(p *PlatformSSLProxy) bool {
+	return p.CACertID != "" || p.CADomain != ""
+}
+
+// shouldEnable 指令启用条件。
+//
+// ★ 客户端 TLS 场景下（本版按用户要求）：
+//   - proxy_ssl_server_name / proxy_ssl_name / proxy_ssl_trusted_certificate /
+//     proxy_ssl_verify / proxy_ssl_verify_depth 全部启用
+//   - 前提：hasCA（ca_domain 默认 safe 保证）
+//   - proxy_ssl_name 值为空时输出 ''（用户已修改 nginx 适配）
+func shouldEnable(cmd string, p *PlatformSSLProxy, resolvedSNI string) bool {
+	clientTLS := isClientTLSTraffic(p)
+	clientIntlTLS := clientTLS && (p.Protocol == ProtocolHTTP || p.Protocol == ProtocolPQC)
+	clientGMSSL := clientTLS && p.Protocol == ProtocolGMSSL
+
+	hasCA := hasCAConfigured(p)
+
+	switch cmd {
+	// ---------- 客户端 TLS ----------
+
+	case "proxy_ssl_protocols", "proxy_ssl_ciphers":
+		return clientIntlTLS
+
+	// ★ SNI 相关：全部启用（用户要求）
+	case "proxy_ssl_server_name", "proxy_ssl_name":
+		return clientTLS && hasCA
 
 	case "proxy_ssl_session_reuse":
-		return (p.Protocol == ProtocolHTTP || p.Protocol == ProtocolPQC) &&
-			p.SSLSessionCacheEnabled
+		return clientIntlTLS && p.SSLSessionCacheEnabled
 
 	case "proxy_ssl_certificate", "proxy_ssl_certificate_key":
-		return (p.Protocol == ProtocolHTTP || p.Protocol == ProtocolPQC) && p.ClientCertID != ""
+		return clientIntlTLS && p.ClientCertID != ""
 
 	case "proxy_enable_ntls":
-		return p.Protocol == ProtocolGMSSL && p.BackendScheme == BackendSchemeHTTPS
+		return clientGMSSL
 
 	case "proxy_ssl_sign_certificate", "proxy_ssl_sign_certificate_key",
 		"proxy_ssl_enc_certificate", "proxy_ssl_enc_certificate_key":
-		return p.Protocol == ProtocolGMSSL &&
-			p.BackendScheme == BackendSchemeHTTPS &&
-			p.ClientCertID != ""
+		return clientGMSSL && (p.ClientCertID != "" || p.ClientEncCertID != "")
 
-	case "proxy_ssl_trusted_certificate", "proxy_ssl_verify", "proxy_ssl_verify_depth":
-		return p.CACertID != ""
+	// ★ CA 加载：hasCA 就启用
+	case "proxy_ssl_trusted_certificate":
+		return clientTLS && hasCA
+
+	// ★ verify：hasCA 就启用（与 proxy_ssl_name 成对）
+	case "proxy_ssl_verify", "proxy_ssl_verify_depth":
+		return clientTLS && hasCA
 
 	case "proxy_ssl_conf_command":
-		return p.SSLConfCommand != "" || p.Protocol == ProtocolPQC
+		return clientIntlTLS && (p.SSLConfCommand != "" || p.Protocol == ProtocolPQC)
 
-	// ---------- nshttp 服务端 ----------
+	// ---------- 服务端（保持不变） ----------
 
 	case "ssl_certificate", "ssl_certificate_key":
 		if p.Mode != ModeServer || !p.ListenSSL {

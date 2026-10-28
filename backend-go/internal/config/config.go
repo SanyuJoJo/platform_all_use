@@ -337,11 +337,11 @@ func applyPathConfig(cfg *Config, v *viper.Viper) {
 	// 白盒与铜锁 openssl
 	cfg.CoreGoWhiteboxBin = cleanAbs(
 		v.GetString("PLATS_CORE_GO_WHITEBOX_BIN"),
-		filepath.Join(installRoot, "core-go", "bin", "whitebox_sm4"),
+		filepath.Join(installRoot, "core", "bin", "whitebox_sm4"),
 	)
 	cfg.CoreGoOpensslBin = cleanAbs(
 		v.GetString("PLATS_CORE_GO_OPENSSL_BIN"),
-		filepath.Join(installRoot, "core-go", "libs", "tongsuo", "bin", "openssl"),
+		filepath.Join(installRoot, "core", "libs", "tongsuo", "bin", "openssl"),
 	)
 
 	// 证书路径

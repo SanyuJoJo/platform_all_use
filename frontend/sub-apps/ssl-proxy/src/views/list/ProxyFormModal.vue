@@ -13,7 +13,7 @@
         :model="form"
         :rules="rules"
         label-placement="left"
-        label-width="140"
+        label-width="180"
       >
         <n-form-item label="配置名称" path="service_name">
           <n-input
@@ -61,6 +61,26 @@
             :max="65535"
             placeholder="请填写后台服务端口"
             style="width: 100%"
+          />
+        </n-form-item>
+
+        <!-- ★ 新增：SSL Server Name（SNI）字段 -->
+        <n-form-item>
+          <template #label>
+            <n-space align="center" :size="4">
+              <span>SSL Server Name（SNI）</span>
+              <n-tooltip trigger="hover">
+                <template #trigger>
+                  <div class="help-icon">?</div>
+                </template>
+                留空时后端会自动从证书的 SAN/CN 获取并填入，无需手动指定。<br/>
+                仅当后端依赖 SNI 路由时才需显式填写。
+              </n-tooltip>
+            </n-space>
+          </template>
+          <n-input
+            v-model:value="form.ssl_server_name"
+            :placeholder="sniPlaceholder"
           />
         </n-form-item>
 
@@ -180,6 +200,7 @@ import {
   NSpin,
   NSwitch,
   NTag,
+  NTooltip, // ★ 引入 NTooltip
   useMessage,
   type FormInst,
   type FormRules,
@@ -233,6 +254,13 @@ const encCertOptions = ref<{ label: string; value: string }[]>([]);
 const intlCertLoading = ref(false);
 const signCertLoading = ref(false);
 const encCertLoading = ref(false);
+
+// ★ SNI 动态提示文案
+const sniPlaceholder = computed(() =>
+  form.mode === 'client' && form.backend_scheme === 'https'
+    ? '留空自动探测，或填写后端证书的 CN/SAN'
+    : 'SNI，可选'
+);
 
 function buildEmptyForm(mode: ProxyMode = 'client'): ProxyCreateReq {
   const protocol = 'http';
@@ -683,5 +711,19 @@ async function handleSubmit() {
   color: #9ca3af;
   font-size: 12px;
   margin-top: 4px;
+}
+/* 问号提示图标样式 */
+.help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid #909399;
+  color: #909399;
+  font-size: 11px;
+  cursor: help;
+  user-select: none;
 }
 </style>

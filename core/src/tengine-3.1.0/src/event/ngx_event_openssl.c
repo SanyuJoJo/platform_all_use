@@ -5451,7 +5451,7 @@ ngx_ssl_check_host(ngx_connection_t *c, ngx_str_t *name)
     /* X509_check_host() is only available in OpenSSL 1.0.2+ */
 
     if (name->len == 0) {
-        goto failed;
+        goto found;
     }
 
     if (X509_check_host(cert, (char *) name->data, name->len, 0, NULL) != 1) {

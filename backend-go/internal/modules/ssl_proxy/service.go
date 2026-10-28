@@ -607,7 +607,7 @@ func toListItem(p *PlatformSSLProxy) ProxyListItem {
 		Mode:          p.Mode,
 		Protocol:      p.Protocol,
 		ListenAddress: fmt.Sprintf("%s:%d", p.ListenIP, p.ListenPort),
-		BackendAddr:   fmt.Sprintf("%s://%s:%d", p.BackendScheme, p.BackendIP, p.BackendPort),
+		BackendAddr:   fmt.Sprintf("%s:%d", p.BackendIP, p.BackendPort),
 		CertRef:       firstNonEmpty(p.CertID, p.ClientCertID),
 		Status:        p.Status,
 		PID:           p.PID,

@@ -1,3 +1,4 @@
+// backend-go/internal/modules/menu/seed.go
 package menu
 
 import (
@@ -74,113 +75,445 @@ type seedMenuEntry struct {
 //	│   │   └── 取消任务 (F, crypto_console:task:cancel)
 //	│   └── 审计日志    (C, /audits)
 //	└── 业务管理        (M, /security/business)
-//	    └── HTTP 管理   (C, /list)
-//	        ├── 新建代理 (F, ssl_proxy:proxy:create)
-//	        ├── 编辑代理 (F, ssl_proxy:proxy:update)
-//	        ├── 删除代理 (F, ssl_proxy:proxy:delete)
-//	        ├── 启动代理 (F, ssl_proxy:proxy:start)
-//	        ├── 停止代理 (F, ssl_proxy:proxy:stop)
-//	        ├── 查看配置 (F, ssl_proxy:proxy:config)
-//	        └── 查看日志 (F, ssl_proxy:proxy:logs)
+//	    ├── HTTP 管理   (C, /list)
+//	    │   ├── 新建代理 (F, ssl_proxy:proxy:create)
+//	    │   ├── 编辑代理 (F, ssl_proxy:proxy:update)
+//	    │   ├── 删除代理 (F, ssl_proxy:proxy:delete)
+//	    │   ├── 启动代理 (F, ssl_proxy:proxy:start)
+//	    │   ├── 停止代理 (F, ssl_proxy:proxy:stop)
+//	    │   ├── 查看配置 (F, ssl_proxy:proxy:config)
+//	    │   └── 查看日志 (F, ssl_proxy:proxy:logs)
+//	    └── TCPS 管理   (C, /tcps/list)                    ← 本次新增
+//	        ├── 新建 TCPS  (F, ssl_proxy:tcps:create)
+//	        ├── 编辑 TCPS  (F, ssl_proxy:tcps:update)
+//	        ├── 删除 TCPS  (F, ssl_proxy:tcps:delete)
+//	        ├── 启动 TCPS  (F, ssl_proxy:tcps:start)
+//	        ├── 停止 TCPS  (F, ssl_proxy:tcps:stop)
+//	        ├── 查看 TCPS 配置 (F, ssl_proxy:tcps:config)
+//	        └── 查看 TCPS 日志 (F, ssl_proxy:tcps:logs)
 //
 // 约定：
 //   - M 目录：path 用累积路径（含父级），如 /security/cert-ops；
 //   - C 菜单：path 用相对路径（如 /ca），前端按 `/{microApp}/{path}` 拼接；
+//     但 ssl_proxy 子应用因历史原因 path 直接以 /list / /tcps/list 存放，
+//     前端 normalizePath 时剥离 /ssl_proxy 前缀后与子应用路由对齐即可；
 //   - F 按钮：path 留空（不参与路由），perms 为按钮权限码；
 //   - 每个节点用「自身所属模块的 microApp」，不是父节点的。
 var seedMenuEntries = []seedMenuEntry{
-	// ---- 顶级 ----
-	{ParentChain: "", Menu: models.Menu{MenuName: "仪表盘", Name: "Dashboard", MicroApp: "main", OrderNum: 1, Path: "/dashboard", Component: "dashboard/index", MenuType: "C", Icon: "Odometer", ModuleID: "platform"}},
-	{ParentChain: "", Menu: models.Menu{MenuName: "系统管理", Name: "System", MicroApp: "auth", OrderNum: 2, Path: "/system", MenuType: "M", Icon: "Setting", ModuleID: "auth"}},
-	{ParentChain: "", Menu: models.Menu{MenuName: "模块管理", Name: "ModuleManager", MicroApp: "module_manager", OrderNum: 3, Path: "/modules", Component: "modules/index", MenuType: "C", Icon: "Grid", ModuleID: "module_manager"}},
-	{ParentChain: "", Menu: models.Menu{MenuName: "日志审计", Name: "AuditLog", MicroApp: "audit_log", OrderNum: 4, Path: "/audit-logs", Component: "logs/index", MenuType: "C", Icon: "Document", ModuleID: "audit_log"}},
-	{ParentChain: "", Menu: models.Menu{MenuName: "License 管理", Name: "License", MicroApp: "license", OrderNum: 5, Path: "/licenses", Component: "license/index", MenuType: "C", Icon: "Key", ModuleID: "license"}},
-	{ParentChain: "", Menu: models.Menu{MenuName: "安全管理", Name: "Security", MicroApp: "crypto_console", OrderNum: 6, Path: "/security", MenuType: "M", Icon: "Shield", ModuleID: "crypto"}},
+	// ========================================================================
+	// 顶级
+	// ========================================================================
+	{ParentChain: "", Menu: models.Menu{
+		MenuName: "仪表盘", Name: "Dashboard", MicroApp: "main",
+		OrderNum: 1, Path: "/dashboard", Component: "dashboard/index",
+		MenuType: "C", Icon: "Odometer", ModuleID: "platform",
+	}},
+	{ParentChain: "", Menu: models.Menu{
+		MenuName: "系统管理", Name: "System", MicroApp: "auth",
+		OrderNum: 2, Path: "/system", MenuType: "M",
+		Icon: "Setting", ModuleID: "auth",
+	}},
+	{ParentChain: "", Menu: models.Menu{
+		MenuName: "模块管理", Name: "ModuleManager", MicroApp: "module_manager",
+		OrderNum: 3, Path: "/modules", Component: "modules/index",
+		MenuType: "C", Icon: "Grid", ModuleID: "module_manager",
+	}},
+	{ParentChain: "", Menu: models.Menu{
+		MenuName: "日志审计", Name: "AuditLog", MicroApp: "audit_log",
+		OrderNum: 4, Path: "/audit-logs", Component: "logs/index",
+		MenuType: "C", Icon: "Document", ModuleID: "audit_log",
+	}},
+	{ParentChain: "", Menu: models.Menu{
+		MenuName: "License 管理", Name: "License", MicroApp: "license",
+		OrderNum: 5, Path: "/licenses", Component: "license/index",
+		MenuType: "C", Icon: "Key", ModuleID: "license",
+	}},
+	{ParentChain: "", Menu: models.Menu{
+		MenuName: "安全管理", Name: "Security", MicroApp: "crypto_console",
+		OrderNum: 6, Path: "/security", MenuType: "M",
+		Icon: "Shield", ModuleID: "crypto",
+	}},
 
-	// ---- 系统管理 子菜单 ----
-	{ParentChain: "系统管理", Menu: models.Menu{MenuName: "用户管理", Name: "SystemUsers", MicroApp: "auth", OrderNum: 1, Path: "/system/users", Component: "system/user/index", MenuType: "C", Icon: "User", ModuleID: "auth", Perms: "auth:user:list"}},
-	{ParentChain: "系统管理", Menu: models.Menu{MenuName: "角色管理", Name: "SystemRoles", MicroApp: "auth", OrderNum: 2, Path: "/system/roles", Component: "system/role/index", MenuType: "C", Icon: "UserFilled", ModuleID: "auth", Perms: "auth:role:list"}},
-	{ParentChain: "系统管理", Menu: models.Menu{MenuName: "权限管理", Name: "SystemPermissions", MicroApp: "auth", OrderNum: 3, Path: "/system/permissions", Component: "system/permission/index", MenuType: "C", Icon: "Key", ModuleID: "auth", Perms: "auth:permission:list"}},
-	{ParentChain: "系统管理", Menu: models.Menu{MenuName: "菜单管理", Name: "SystemMenus", MicroApp: "auth", OrderNum: 4, Path: "/system/menus", Component: "system/menu/index", MenuType: "C", Icon: "Menu", ModuleID: "auth", Perms: "auth:menu:list"}},
+	// ========================================================================
+	// 系统管理 子菜单
+	// ========================================================================
+	{ParentChain: "系统管理", Menu: models.Menu{
+		MenuName: "用户管理", Name: "SystemUsers", MicroApp: "auth",
+		OrderNum: 1, Path: "/system/users", Component: "system/user/index",
+		MenuType: "C", Icon: "User", ModuleID: "auth",
+		Perms: "auth:user:list",
+	}},
+	{ParentChain: "系统管理", Menu: models.Menu{
+		MenuName: "角色管理", Name: "SystemRoles", MicroApp: "auth",
+		OrderNum: 2, Path: "/system/roles", Component: "system/role/index",
+		MenuType: "C", Icon: "UserFilled", ModuleID: "auth",
+		Perms: "auth:role:list",
+	}},
+	{ParentChain: "系统管理", Menu: models.Menu{
+		MenuName: "权限管理", Name: "SystemPermissions", MicroApp: "auth",
+		OrderNum: 3, Path: "/system/permissions", Component: "system/permission/index",
+		MenuType: "C", Icon: "Key", ModuleID: "auth",
+		Perms: "auth:permission:list",
+	}},
+	{ParentChain: "系统管理", Menu: models.Menu{
+		MenuName: "菜单管理", Name: "SystemMenus", MicroApp: "auth",
+		OrderNum: 4, Path: "/system/menus", Component: "system/menu/index",
+		MenuType: "C", Icon: "Menu", ModuleID: "auth",
+		Perms: "auth:menu:list",
+	}},
 
-	// ---- 用户管理 按钮 ----
-	{ParentChain: "系统管理/用户管理", Menu: models.Menu{MenuName: "新增用户", Name: "UserCreate", MicroApp: "auth", OrderNum: 1, MenuType: "F", ModuleID: "auth", Perms: "auth:user:create"}},
-	{ParentChain: "系统管理/用户管理", Menu: models.Menu{MenuName: "编辑用户", Name: "UserEdit", MicroApp: "auth", OrderNum: 2, MenuType: "F", ModuleID: "auth", Perms: "auth:user:edit"}},
-	{ParentChain: "系统管理/用户管理", Menu: models.Menu{MenuName: "删除用户", Name: "UserDelete", MicroApp: "auth", OrderNum: 3, MenuType: "F", ModuleID: "auth", Perms: "auth:user:delete"}},
+	// ========================================================================
+	// 用户管理 按钮
+	// ========================================================================
+	{ParentChain: "系统管理/用户管理", Menu: models.Menu{
+		MenuName: "新增用户", Name: "UserCreate", MicroApp: "auth",
+		OrderNum: 1, MenuType: "F", ModuleID: "auth",
+		Perms: "auth:user:create",
+	}},
+	{ParentChain: "系统管理/用户管理", Menu: models.Menu{
+		MenuName: "编辑用户", Name: "UserEdit", MicroApp: "auth",
+		OrderNum: 2, MenuType: "F", ModuleID: "auth",
+		Perms: "auth:user:edit",
+	}},
+	{ParentChain: "系统管理/用户管理", Menu: models.Menu{
+		MenuName: "删除用户", Name: "UserDelete", MicroApp: "auth",
+		OrderNum: 3, MenuType: "F", ModuleID: "auth",
+		Perms: "auth:user:delete",
+	}},
 
-	// ---- 角色管理 按钮 ----
-	{ParentChain: "系统管理/角色管理", Menu: models.Menu{MenuName: "新增角色", Name: "RoleCreate", MicroApp: "auth", OrderNum: 1, MenuType: "F", ModuleID: "auth", Perms: "auth:role:create"}},
-	{ParentChain: "系统管理/角色管理", Menu: models.Menu{MenuName: "编辑角色", Name: "RoleEdit", MicroApp: "auth", OrderNum: 2, MenuType: "F", ModuleID: "auth", Perms: "auth:role:edit"}},
-	{ParentChain: "系统管理/角色管理", Menu: models.Menu{MenuName: "删除角色", Name: "RoleDelete", MicroApp: "auth", OrderNum: 3, MenuType: "F", ModuleID: "auth", Perms: "auth:role:delete"}},
+	// ========================================================================
+	// 角色管理 按钮
+	// ========================================================================
+	{ParentChain: "系统管理/角色管理", Menu: models.Menu{
+		MenuName: "新增角色", Name: "RoleCreate", MicroApp: "auth",
+		OrderNum: 1, MenuType: "F", ModuleID: "auth",
+		Perms: "auth:role:create",
+	}},
+	{ParentChain: "系统管理/角色管理", Menu: models.Menu{
+		MenuName: "编辑角色", Name: "RoleEdit", MicroApp: "auth",
+		OrderNum: 2, MenuType: "F", ModuleID: "auth",
+		Perms: "auth:role:edit",
+	}},
+	{ParentChain: "系统管理/角色管理", Menu: models.Menu{
+		MenuName: "删除角色", Name: "RoleDelete", MicroApp: "auth",
+		OrderNum: 3, MenuType: "F", ModuleID: "auth",
+		Perms: "auth:role:delete",
+	}},
 
-	// ---- 菜单管理 按钮 ----
-	{ParentChain: "系统管理/菜单管理", Menu: models.Menu{MenuName: "新增菜单", Name: "MenuCreate", MicroApp: "auth", OrderNum: 1, MenuType: "F", ModuleID: "auth", Perms: "auth:menu:create"}},
-	{ParentChain: "系统管理/菜单管理", Menu: models.Menu{MenuName: "修改菜单", Name: "MenuUpdate", MicroApp: "auth", OrderNum: 2, MenuType: "F", ModuleID: "auth", Perms: "auth:menu:update"}},
-	{ParentChain: "系统管理/菜单管理", Menu: models.Menu{MenuName: "删除菜单", Name: "MenuDelete", MicroApp: "auth", OrderNum: 3, MenuType: "F", ModuleID: "auth", Perms: "auth:menu:delete"}},
+	// ========================================================================
+	// 菜单管理 按钮
+	// ========================================================================
+	{ParentChain: "系统管理/菜单管理", Menu: models.Menu{
+		MenuName: "新增菜单", Name: "MenuCreate", MicroApp: "auth",
+		OrderNum: 1, MenuType: "F", ModuleID: "auth",
+		Perms: "auth:menu:create",
+	}},
+	{ParentChain: "系统管理/菜单管理", Menu: models.Menu{
+		MenuName: "修改菜单", Name: "MenuUpdate", MicroApp: "auth",
+		OrderNum: 2, MenuType: "F", ModuleID: "auth",
+		Perms: "auth:menu:update",
+	}},
+	{ParentChain: "系统管理/菜单管理", Menu: models.Menu{
+		MenuName: "删除菜单", Name: "MenuDelete", MicroApp: "auth",
+		OrderNum: 3, MenuType: "F", ModuleID: "auth",
+		Perms: "auth:menu:delete",
+	}},
 
-	// ---- 模块管理 按钮 ----
-	{ParentChain: "模块管理", Menu: models.Menu{MenuName: "安装模块", Name: "ModuleInstall", MicroApp: "module_manager", OrderNum: 1, MenuType: "F", ModuleID: "module_manager", Perms: "module_manager:module:create"}},
-	{ParentChain: "模块管理", Menu: models.Menu{MenuName: "编辑模块", Name: "ModuleEdit", MicroApp: "module_manager", OrderNum: 2, MenuType: "F", ModuleID: "module_manager", Perms: "module_manager:module:edit"}},
-	{ParentChain: "模块管理", Menu: models.Menu{MenuName: "卸载模块", Name: "ModuleUninstall", MicroApp: "module_manager", OrderNum: 3, MenuType: "F", ModuleID: "module_manager", Perms: "module_manager:module:delete"}},
+	// ========================================================================
+	// 模块管理 按钮
+	// ========================================================================
+	{ParentChain: "模块管理", Menu: models.Menu{
+		MenuName: "安装模块", Name: "ModuleInstall", MicroApp: "module_manager",
+		OrderNum: 1, MenuType: "F", ModuleID: "module_manager",
+		Perms: "module_manager:module:create",
+	}},
+	{ParentChain: "模块管理", Menu: models.Menu{
+		MenuName: "编辑模块", Name: "ModuleEdit", MicroApp: "module_manager",
+		OrderNum: 2, MenuType: "F", ModuleID: "module_manager",
+		Perms: "module_manager:module:edit",
+	}},
+	{ParentChain: "模块管理", Menu: models.Menu{
+		MenuName: "卸载模块", Name: "ModuleUninstall", MicroApp: "module_manager",
+		OrderNum: 3, MenuType: "F", ModuleID: "module_manager",
+		Perms: "module_manager:module:delete",
+	}},
 
-	// ---- 日志审计 按钮 ----
-	{ParentChain: "日志审计", Menu: models.Menu{MenuName: "导出日志", Name: "AuditLogExport", MicroApp: "audit_log", OrderNum: 1, MenuType: "F", ModuleID: "audit_log", Perms: "audit_log:log:export"}},
+	// ========================================================================
+	// 日志审计 按钮
+	// ========================================================================
+	{ParentChain: "日志审计", Menu: models.Menu{
+		MenuName: "导出日志", Name: "AuditLogExport", MicroApp: "audit_log",
+		OrderNum: 1, MenuType: "F", ModuleID: "audit_log",
+		Perms: "audit_log:log:export",
+	}},
 
-	// ---- License 管理 按钮 ----
-	{ParentChain: "License 管理", Menu: models.Menu{MenuName: "管理 License", Name: "LicenseManage", MicroApp: "license", OrderNum: 1, MenuType: "F", ModuleID: "license", Perms: "license:license:create"}},
+	// ========================================================================
+	// License 管理 按钮
+	// ========================================================================
+	{ParentChain: "License 管理", Menu: models.Menu{
+		MenuName: "管理 License", Name: "LicenseManage", MicroApp: "license",
+		OrderNum: 1, MenuType: "F", ModuleID: "license",
+		Perms: "license:license:create",
+	}},
 
-	// ---- 安全管理 子目录 ----
-	{ParentChain: "安全管理", Menu: models.Menu{MenuName: "证书运维", Name: "CertOps", MicroApp: "crypto_console", OrderNum: 10, Path: "/security/cert-ops", MenuType: "M", Icon: "Certificate", ModuleID: "crypto"}},
-	{ParentChain: "安全管理", Menu: models.Menu{MenuName: "业务管理", Name: "Business", MicroApp: "crypto_console", OrderNum: 20, Path: "/security/business", MenuType: "M", Icon: "Apps", ModuleID: "crypto"}},
+	// ========================================================================
+	// 安全管理 子目录
+	// ========================================================================
+	{ParentChain: "安全管理", Menu: models.Menu{
+		MenuName: "证书运维", Name: "CertOps", MicroApp: "crypto_console",
+		OrderNum: 10, Path: "/security/cert-ops", MenuType: "M",
+		Icon: "Certificate", ModuleID: "crypto",
+	}},
+	{ParentChain: "安全管理", Menu: models.Menu{
+		MenuName: "业务管理", Name: "Business", MicroApp: "crypto_console",
+		OrderNum: 20, Path: "/security/business", MenuType: "M",
+		Icon: "Apps", ModuleID: "crypto",
+	}},
 
-	// ---- 证书运维 子菜单 ----
-	{ParentChain: "安全管理/证书运维", Menu: models.Menu{MenuName: "CA 管理", Name: "CryptoCA", MicroApp: "crypto_console", OrderNum: 10, Path: "/ca", Component: "ca/index", MenuType: "C", Icon: "Certificate", ModuleID: "crypto", Perms: "crypto_console:ca:view"}},
-	{ParentChain: "安全管理/证书运维", Menu: models.Menu{MenuName: "证书管理", Name: "CryptoCert", MicroApp: "crypto_console", OrderNum: 20, Path: "/certs", Component: "certs/index", MenuType: "C", Icon: "Document", ModuleID: "crypto", Perms: "crypto_console:cert:view"}},
-	{ParentChain: "安全管理/证书运维", Menu: models.Menu{MenuName: "CSR 管理", Name: "CryptoCSR", MicroApp: "crypto_console", OrderNum: 30, Path: "/csr", Component: "csr/index", MenuType: "C", Icon: "DocumentText", ModuleID: "crypto", Perms: "crypto_console:csr:view"}},
-	{ParentChain: "安全管理/证书运维", Menu: models.Menu{MenuName: "CRL 管理", Name: "CryptoCRL", MicroApp: "crypto_console", OrderNum: 40, Path: "/crl", Component: "crl/index", MenuType: "C", Icon: "List", ModuleID: "crypto", Perms: "crypto_console:crl:view"}},
-	{ParentChain: "安全管理/证书运维", Menu: models.Menu{MenuName: "密钥管理", Name: "CryptoKey", MicroApp: "crypto_console", OrderNum: 50, Path: "/keys", Component: "keys/index", MenuType: "C", Icon: "Key", ModuleID: "crypto", Perms: "crypto_console:key:view"}},
-	{ParentChain: "安全管理/证书运维", Menu: models.Menu{MenuName: "任务中心", Name: "CryptoTask", MicroApp: "crypto_console", OrderNum: 60, Path: "/tasks", Component: "tasks/index", MenuType: "C", Icon: "Time", ModuleID: "crypto", Perms: "crypto_console:task:view"}},
-	{ParentChain: "安全管理/证书运维", Menu: models.Menu{MenuName: "审计日志", Name: "CryptoAudit", MicroApp: "crypto_console", OrderNum: 70, Path: "/audits", Component: "audits/index", MenuType: "C", Icon: "Search", ModuleID: "crypto", Perms: "crypto_console:audit:view"}},
+	// ========================================================================
+	// 证书运维 子菜单
+	// ========================================================================
+	{ParentChain: "安全管理/证书运维", Menu: models.Menu{
+		MenuName: "CA 管理", Name: "CryptoCA", MicroApp: "crypto_console",
+		OrderNum: 10, Path: "/ca", Component: "ca/index",
+		MenuType: "C", Icon: "Certificate", ModuleID: "crypto",
+		Perms: "crypto_console:ca:view",
+	}},
+	{ParentChain: "安全管理/证书运维", Menu: models.Menu{
+		MenuName: "证书管理", Name: "CryptoCert", MicroApp: "crypto_console",
+		OrderNum: 20, Path: "/certs", Component: "certs/index",
+		MenuType: "C", Icon: "Document", ModuleID: "crypto",
+		Perms: "crypto_console:cert:view",
+	}},
+	{ParentChain: "安全管理/证书运维", Menu: models.Menu{
+		MenuName: "CSR 管理", Name: "CryptoCSR", MicroApp: "crypto_console",
+		OrderNum: 30, Path: "/csr", Component: "csr/index",
+		MenuType: "C", Icon: "DocumentText", ModuleID: "crypto",
+		Perms: "crypto_console:csr:view",
+	}},
+	{ParentChain: "安全管理/证书运维", Menu: models.Menu{
+		MenuName: "CRL 管理", Name: "CryptoCRL", MicroApp: "crypto_console",
+		OrderNum: 40, Path: "/crl", Component: "crl/index",
+		MenuType: "C", Icon: "List", ModuleID: "crypto",
+		Perms: "crypto_console:crl:view",
+	}},
+	{ParentChain: "安全管理/证书运维", Menu: models.Menu{
+		MenuName: "密钥管理", Name: "CryptoKey", MicroApp: "crypto_console",
+		OrderNum: 50, Path: "/keys", Component: "keys/index",
+		MenuType: "C", Icon: "Key", ModuleID: "crypto",
+		Perms: "crypto_console:key:view",
+	}},
+	{ParentChain: "安全管理/证书运维", Menu: models.Menu{
+		MenuName: "任务中心", Name: "CryptoTask", MicroApp: "crypto_console",
+		OrderNum: 60, Path: "/tasks", Component: "tasks/index",
+		MenuType: "C", Icon: "Time", ModuleID: "crypto",
+		Perms: "crypto_console:task:view",
+	}},
+	{ParentChain: "安全管理/证书运维", Menu: models.Menu{
+		MenuName: "审计日志", Name: "CryptoAudit", MicroApp: "crypto_console",
+		OrderNum: 70, Path: "/audits", Component: "audits/index",
+		MenuType: "C", Icon: "Search", ModuleID: "crypto",
+		Perms: "crypto_console:audit:view",
+	}},
 
-	// ---- CA 管理 按钮 ----
-	{ParentChain: "安全管理/证书运维/CA 管理", Menu: models.Menu{MenuName: "新增 CA", Name: "CryptoCACreate", MicroApp: "crypto_console", OrderNum: 1, MenuType: "F", ModuleID: "crypto", Perms: "crypto_console:ca:create"}},
-	{ParentChain: "安全管理/证书运维/CA 管理", Menu: models.Menu{MenuName: "导入 CA", Name: "CryptoCAImport", MicroApp: "crypto_console", OrderNum: 2, MenuType: "F", ModuleID: "crypto", Perms: "crypto_console:ca:import"}},
-	{ParentChain: "安全管理/证书运维/CA 管理", Menu: models.Menu{MenuName: "导出 CA", Name: "CryptoCAExport", MicroApp: "crypto_console", OrderNum: 3, MenuType: "F", ModuleID: "crypto", Perms: "crypto_console:ca:export"}},
-	{ParentChain: "安全管理/证书运维/CA 管理", Menu: models.Menu{MenuName: "删除 CA", Name: "CryptoCADelete", MicroApp: "crypto_console", OrderNum: 4, MenuType: "F", ModuleID: "crypto", Perms: "crypto_console:ca:delete"}},
+	// ========================================================================
+	// CA 管理 按钮
+	// ========================================================================
+	{ParentChain: "安全管理/证书运维/CA 管理", Menu: models.Menu{
+		MenuName: "新增 CA", Name: "CryptoCACreate", MicroApp: "crypto_console",
+		OrderNum: 1, MenuType: "F", ModuleID: "crypto",
+		Perms: "crypto_console:ca:create",
+	}},
+	{ParentChain: "安全管理/证书运维/CA 管理", Menu: models.Menu{
+		MenuName: "导入 CA", Name: "CryptoCAImport", MicroApp: "crypto_console",
+		OrderNum: 2, MenuType: "F", ModuleID: "crypto",
+		Perms: "crypto_console:ca:import",
+	}},
+	{ParentChain: "安全管理/证书运维/CA 管理", Menu: models.Menu{
+		MenuName: "导出 CA", Name: "CryptoCAExport", MicroApp: "crypto_console",
+		OrderNum: 3, MenuType: "F", ModuleID: "crypto",
+		Perms: "crypto_console:ca:export",
+	}},
+	{ParentChain: "安全管理/证书运维/CA 管理", Menu: models.Menu{
+		MenuName: "删除 CA", Name: "CryptoCADelete", MicroApp: "crypto_console",
+		OrderNum: 4, MenuType: "F", ModuleID: "crypto",
+		Perms: "crypto_console:ca:delete",
+	}},
 
-	// ---- 证书管理 按钮 ----
-	{ParentChain: "安全管理/证书运维/证书管理", Menu: models.Menu{MenuName: "签发证书", Name: "CryptoCertSign", MicroApp: "crypto_console", OrderNum: 1, MenuType: "F", ModuleID: "crypto", Perms: "crypto_console:cert:sign"}},
-	{ParentChain: "安全管理/证书运维/证书管理", Menu: models.Menu{MenuName: "导入证书", Name: "CryptoCertImport", MicroApp: "crypto_console", OrderNum: 2, MenuType: "F", ModuleID: "crypto", Perms: "crypto_console:cert:import"}},
-	{ParentChain: "安全管理/证书运维/证书管理", Menu: models.Menu{MenuName: "导出证书", Name: "CryptoCertExport", MicroApp: "crypto_console", OrderNum: 3, MenuType: "F", ModuleID: "crypto", Perms: "crypto_console:cert:export"}},
-	{ParentChain: "安全管理/证书运维/证书管理", Menu: models.Menu{MenuName: "删除证书", Name: "CryptoCertDelete", MicroApp: "crypto_console", OrderNum: 4, MenuType: "F", ModuleID: "crypto", Perms: "crypto_console:cert:delete"}},
+	// ========================================================================
+	// 证书管理 按钮
+	// ========================================================================
+	{ParentChain: "安全管理/证书运维/证书管理", Menu: models.Menu{
+		MenuName: "签发证书", Name: "CryptoCertSign", MicroApp: "crypto_console",
+		OrderNum: 1, MenuType: "F", ModuleID: "crypto",
+		Perms: "crypto_console:cert:sign",
+	}},
+	{ParentChain: "安全管理/证书运维/证书管理", Menu: models.Menu{
+		MenuName: "导入证书", Name: "CryptoCertImport", MicroApp: "crypto_console",
+		OrderNum: 2, MenuType: "F", ModuleID: "crypto",
+		Perms: "crypto_console:cert:import",
+	}},
+	{ParentChain: "安全管理/证书运维/证书管理", Menu: models.Menu{
+		MenuName: "导出证书", Name: "CryptoCertExport", MicroApp: "crypto_console",
+		OrderNum: 3, MenuType: "F", ModuleID: "crypto",
+		Perms: "crypto_console:cert:export",
+	}},
+	{ParentChain: "安全管理/证书运维/证书管理", Menu: models.Menu{
+		MenuName: "删除证书", Name: "CryptoCertDelete", MicroApp: "crypto_console",
+		OrderNum: 4, MenuType: "F", ModuleID: "crypto",
+		Perms: "crypto_console:cert:delete",
+	}},
 
-	// ---- CSR 管理 按钮 ----
-	{ParentChain: "安全管理/证书运维/CSR 管理", Menu: models.Menu{MenuName: "创建 P10", Name: "CryptoCSRCreate", MicroApp: "crypto_console", OrderNum: 1, MenuType: "F", ModuleID: "crypto", Perms: "crypto_console:csr:create"}},
-	{ParentChain: "安全管理/证书运维/CSR 管理", Menu: models.Menu{MenuName: "删除 P10", Name: "CryptoCSRDelete", MicroApp: "crypto_console", OrderNum: 2, MenuType: "F", ModuleID: "crypto", Perms: "crypto_console:csr:delete"}},
+	// ========================================================================
+	// CSR 管理 按钮
+	// ========================================================================
+	{ParentChain: "安全管理/证书运维/CSR 管理", Menu: models.Menu{
+		MenuName: "创建 P10", Name: "CryptoCSRCreate", MicroApp: "crypto_console",
+		OrderNum: 1, MenuType: "F", ModuleID: "crypto",
+		Perms: "crypto_console:csr:create",
+	}},
+	{ParentChain: "安全管理/证书运维/CSR 管理", Menu: models.Menu{
+		MenuName: "删除 P10", Name: "CryptoCSRDelete", MicroApp: "crypto_console",
+		OrderNum: 2, MenuType: "F", ModuleID: "crypto",
+		Perms: "crypto_console:csr:delete",
+	}},
 
-	// ---- CRL 管理 按钮 ----
-	{ParentChain: "安全管理/证书运维/CRL 管理", Menu: models.Menu{MenuName: "创建 CRL", Name: "CryptoCRLCreate", MicroApp: "crypto_console", OrderNum: 1, MenuType: "F", ModuleID: "crypto", Perms: "crypto_console:crl:create"}},
+	// ========================================================================
+	// CRL 管理 按钮
+	// ========================================================================
+	{ParentChain: "安全管理/证书运维/CRL 管理", Menu: models.Menu{
+		MenuName: "创建 CRL", Name: "CryptoCRLCreate", MicroApp: "crypto_console",
+		OrderNum: 1, MenuType: "F", ModuleID: "crypto",
+		Perms: "crypto_console:crl:create",
+	}},
 
-	// ---- 密钥管理 按钮 ----
-	{ParentChain: "安全管理/证书运维/密钥管理", Menu: models.Menu{MenuName: "管理密钥", Name: "CryptoKeyManage", MicroApp: "crypto_console", OrderNum: 1, MenuType: "F", ModuleID: "crypto", Perms: "crypto_console:key:manage"}},
+	// ========================================================================
+	// 密钥管理 按钮
+	// ========================================================================
+	{ParentChain: "安全管理/证书运维/密钥管理", Menu: models.Menu{
+		MenuName: "管理密钥", Name: "CryptoKeyManage", MicroApp: "crypto_console",
+		OrderNum: 1, MenuType: "F", ModuleID: "crypto",
+		Perms: "crypto_console:key:manage",
+	}},
 
-	// ---- 任务中心 按钮 ----
-	{ParentChain: "安全管理/证书运维/任务中心", Menu: models.Menu{MenuName: "取消任务", Name: "CryptoTaskCancel", MicroApp: "crypto_console", OrderNum: 1, MenuType: "F", ModuleID: "crypto", Perms: "crypto_console:task:cancel"}},
+	// ========================================================================
+	// 任务中心 按钮
+	// ========================================================================
+	{ParentChain: "安全管理/证书运维/任务中心", Menu: models.Menu{
+		MenuName: "取消任务", Name: "CryptoTaskCancel", MicroApp: "crypto_console",
+		OrderNum: 1, MenuType: "F", ModuleID: "crypto",
+		Perms: "crypto_console:task:cancel",
+	}},
 
-	// ---- 业务管理 子菜单（跨模块挂载）----
-	{ParentChain: "安全管理/业务管理", Menu: models.Menu{MenuName: "HTTP 管理", Name: "SslProxyList", MicroApp: "ssl_proxy", OrderNum: 21, Path: "/list", Component: "list/index", MenuType: "C", Icon: "Connection", ModuleID: "ssl_proxy", Perms: "ssl_proxy:proxy:view"}},
+	// ========================================================================
+	// 业务管理 子菜单（跨模块挂载）
+	// ========================================================================
+	{ParentChain: "安全管理/业务管理", Menu: models.Menu{
+		MenuName: "HTTP 管理", Name: "SslProxyList", MicroApp: "ssl_proxy",
+		OrderNum: 21, Path: "/list", Component: "list/index",
+		MenuType: "C", Icon: "Connection", ModuleID: "ssl_proxy",
+		Perms: "ssl_proxy:proxy:view",
+	}},
+	// ★ 本次新增：TCPS 管理（4 层 TCP/TLS 代理）
+	//
+	// Path 使用 /tcps/list，前端 ssl_proxy 子应用路由也是 /tcps/list，
+	// 主应用把 microApp 前缀 /ssl_proxy 拼接后得到 /ssl_proxy/tcps/list，
+	// qiankun 激活 ssl_proxy 后子应用 createWebHistory('/ssl_proxy') 剥离前缀，
+	// 最终匹配到子应用内部路由 /tcps/list。
+	{ParentChain: "安全管理/业务管理", Menu: models.Menu{
+		MenuName: "TCPS 管理", Name: "TcpsProxyList", MicroApp: "ssl_proxy",
+		OrderNum: 22, Path: "/tcps/list", Component: "tcps/list/index",
+		MenuType: "C", Icon: "Connection", ModuleID: "ssl_proxy",
+		Perms: "ssl_proxy:tcps:view",
+	}},
 
-	// ---- HTTP 管理 按钮 ----
-	{ParentChain: "安全管理/业务管理/HTTP 管理", Menu: models.Menu{MenuName: "新建代理", Name: "SslProxyCreate", MicroApp: "ssl_proxy", OrderNum: 1, MenuType: "F", ModuleID: "ssl_proxy", Perms: "ssl_proxy:proxy:create"}},
-	{ParentChain: "安全管理/业务管理/HTTP 管理", Menu: models.Menu{MenuName: "编辑代理", Name: "SslProxyUpdate", MicroApp: "ssl_proxy", OrderNum: 2, MenuType: "F", ModuleID: "ssl_proxy", Perms: "ssl_proxy:proxy:update"}},
-	{ParentChain: "安全管理/业务管理/HTTP 管理", Menu: models.Menu{MenuName: "删除代理", Name: "SslProxyDelete", MicroApp: "ssl_proxy", OrderNum: 3, MenuType: "F", ModuleID: "ssl_proxy", Perms: "ssl_proxy:proxy:delete"}},
-	{ParentChain: "安全管理/业务管理/HTTP 管理", Menu: models.Menu{MenuName: "启动代理", Name: "SslProxyStart", MicroApp: "ssl_proxy", OrderNum: 4, MenuType: "F", ModuleID: "ssl_proxy", Perms: "ssl_proxy:proxy:start"}},
-	{ParentChain: "安全管理/业务管理/HTTP 管理", Menu: models.Menu{MenuName: "停止代理", Name: "SslProxyStop", MicroApp: "ssl_proxy", OrderNum: 5, MenuType: "F", ModuleID: "ssl_proxy", Perms: "ssl_proxy:proxy:stop"}},
-	{ParentChain: "安全管理/业务管理/HTTP 管理", Menu: models.Menu{MenuName: "查看配置", Name: "SslProxyConfig", MicroApp: "ssl_proxy", OrderNum: 6, MenuType: "F", ModuleID: "ssl_proxy", Perms: "ssl_proxy:proxy:config"}},
-	{ParentChain: "安全管理/业务管理/HTTP 管理", Menu: models.Menu{MenuName: "查看日志", Name: "SslProxyLogs", MicroApp: "ssl_proxy", OrderNum: 7, MenuType: "F", ModuleID: "ssl_proxy", Perms: "ssl_proxy:proxy:logs"}},
+	// ========================================================================
+	// HTTP 管理 按钮
+	// ========================================================================
+	{ParentChain: "安全管理/业务管理/HTTP 管理", Menu: models.Menu{
+		MenuName: "新建代理", Name: "SslProxyCreate", MicroApp: "ssl_proxy",
+		OrderNum: 1, MenuType: "F", ModuleID: "ssl_proxy",
+		Perms: "ssl_proxy:proxy:create",
+	}},
+	{ParentChain: "安全管理/业务管理/HTTP 管理", Menu: models.Menu{
+		MenuName: "编辑代理", Name: "SslProxyUpdate", MicroApp: "ssl_proxy",
+		OrderNum: 2, MenuType: "F", ModuleID: "ssl_proxy",
+		Perms: "ssl_proxy:proxy:update",
+	}},
+	{ParentChain: "安全管理/业务管理/HTTP 管理", Menu: models.Menu{
+		MenuName: "删除代理", Name: "SslProxyDelete", MicroApp: "ssl_proxy",
+		OrderNum: 3, MenuType: "F", ModuleID: "ssl_proxy",
+		Perms: "ssl_proxy:proxy:delete",
+	}},
+	{ParentChain: "安全管理/业务管理/HTTP 管理", Menu: models.Menu{
+		MenuName: "启动代理", Name: "SslProxyStart", MicroApp: "ssl_proxy",
+		OrderNum: 4, MenuType: "F", ModuleID: "ssl_proxy",
+		Perms: "ssl_proxy:proxy:start",
+	}},
+	{ParentChain: "安全管理/业务管理/HTTP 管理", Menu: models.Menu{
+		MenuName: "停止代理", Name: "SslProxyStop", MicroApp: "ssl_proxy",
+		OrderNum: 5, MenuType: "F", ModuleID: "ssl_proxy",
+		Perms: "ssl_proxy:proxy:stop",
+	}},
+	{ParentChain: "安全管理/业务管理/HTTP 管理", Menu: models.Menu{
+		MenuName: "查看配置", Name: "SslProxyConfig", MicroApp: "ssl_proxy",
+		OrderNum: 6, MenuType: "F", ModuleID: "ssl_proxy",
+		Perms: "ssl_proxy:proxy:config",
+	}},
+	{ParentChain: "安全管理/业务管理/HTTP 管理", Menu: models.Menu{
+		MenuName: "查看日志", Name: "SslProxyLogs", MicroApp: "ssl_proxy",
+		OrderNum: 7, MenuType: "F", ModuleID: "ssl_proxy",
+		Perms: "ssl_proxy:proxy:logs",
+	}},
+
+	// ========================================================================
+	// TCPS 管理 按钮（★ 本次新增，与 auth/seed.go 中 8 条权限码对应）
+	//
+	// 说明：ssl_proxy:tcps:view 权限由父级 C 菜单「TCPS 管理」的 perms 字段承载，
+	//       不单独作为 F 按钮，避免重复。其余 7 条操作权限作为 F 类型按钮，
+	//       供管理员在角色菜单界面勾选。
+	// ========================================================================
+	{ParentChain: "安全管理/业务管理/TCPS 管理", Menu: models.Menu{
+		MenuName: "新建 TCPS", Name: "TcpsProxyCreate", MicroApp: "ssl_proxy",
+		OrderNum: 1, MenuType: "F", ModuleID: "ssl_proxy",
+		Perms: "ssl_proxy:tcps:create",
+	}},
+	{ParentChain: "安全管理/业务管理/TCPS 管理", Menu: models.Menu{
+		MenuName: "编辑 TCPS", Name: "TcpsProxyUpdate", MicroApp: "ssl_proxy",
+		OrderNum: 2, MenuType: "F", ModuleID: "ssl_proxy",
+		Perms: "ssl_proxy:tcps:update",
+	}},
+	{ParentChain: "安全管理/业务管理/TCPS 管理", Menu: models.Menu{
+		MenuName: "删除 TCPS", Name: "TcpsProxyDelete", MicroApp: "ssl_proxy",
+		OrderNum: 3, MenuType: "F", ModuleID: "ssl_proxy",
+		Perms: "ssl_proxy:tcps:delete",
+	}},
+	{ParentChain: "安全管理/业务管理/TCPS 管理", Menu: models.Menu{
+		MenuName: "启动 TCPS", Name: "TcpsProxyStart", MicroApp: "ssl_proxy",
+		OrderNum: 4, MenuType: "F", ModuleID: "ssl_proxy",
+		Perms: "ssl_proxy:tcps:start",
+	}},
+	{ParentChain: "安全管理/业务管理/TCPS 管理", Menu: models.Menu{
+		MenuName: "停止 TCPS", Name: "TcpsProxyStop", MicroApp: "ssl_proxy",
+		OrderNum: 5, MenuType: "F", ModuleID: "ssl_proxy",
+		Perms: "ssl_proxy:tcps:stop",
+	}},
+	{ParentChain: "安全管理/业务管理/TCPS 管理", Menu: models.Menu{
+		MenuName: "查看 TCPS 配置", Name: "TcpsProxyConfig", MicroApp: "ssl_proxy",
+		OrderNum: 6, MenuType: "F", ModuleID: "ssl_proxy",
+		Perms: "ssl_proxy:tcps:config",
+	}},
+	{ParentChain: "安全管理/业务管理/TCPS 管理", Menu: models.Menu{
+		MenuName: "查看 TCPS 日志", Name: "TcpsProxyLogs", MicroApp: "ssl_proxy",
+		OrderNum: 7, MenuType: "F", ModuleID: "ssl_proxy",
+		Perms: "ssl_proxy:tcps:logs",
+	}},
 }
 
 // seedPermissions 菜单管理相关权限码，需在 auth.EnsureAuthSeedData 之后调用。
+//
+// 说明：仅"菜单管理"和"路由权限管理"自身接口需要的权限码，
+// 其它业务模块的权限码（如 ssl_proxy:tcps:*）在各自模块的 seed 文件里。
 var seedPermissions = []models.Permission{
 	{Code: "auth:menu:list", Name: "菜单查询", ModuleID: "auth", Resource: "menu", Action: "list"},
 	{Code: "auth:menu:create", Name: "菜单新增", ModuleID: "auth", Resource: "menu", Action: "create"},
@@ -198,7 +531,7 @@ var seedPermissions = []models.Permission{
 // 这样 resolveParentChain 解析链时父节点已存在于数据库。
 //
 // 幂等：按 (parent_id, menu_name) 判重，已存在则跳过。
-// 所以新增 F 节点在下次启动时会自动插入，无需清表。
+// 所以新增 F 节点（如 TCPS 的 7 条按钮）在下次启动时会自动插入，无需清表。
 func EnsureMenuSeedData(db *gorm.DB) error {
 	if err := ensurePermissions(db); err != nil {
 		return err
@@ -248,6 +581,7 @@ func resolveParentChain(db *gorm.DB, chain string) (uint, bool) {
 	return cur, true
 }
 
+// ensurePermissions 幂等地写入菜单/路由权限相关权限码。
 func ensurePermissions(db *gorm.DB) error {
 	for _, p := range seedPermissions {
 		var exist models.Permission

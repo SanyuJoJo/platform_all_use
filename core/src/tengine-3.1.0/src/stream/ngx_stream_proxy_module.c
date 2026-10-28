@@ -40,6 +40,7 @@ typedef struct {
     ngx_flag_t                       ssl_session_reuse;
     ngx_uint_t                       ssl_protocols;
     ngx_str_t                        ssl_ciphers;
+    ngx_str_t                        ssl_ecdh_curve;   // ← 新增
     ngx_stream_complex_value_t      *ssl_name;
     ngx_flag_t                       ssl_server_name;
 
@@ -297,6 +298,12 @@ static ngx_command_t  ngx_stream_proxy_commands[] = {
       ngx_conf_set_str_slot,
       NGX_STREAM_SRV_CONF_OFFSET,
       offsetof(ngx_stream_proxy_srv_conf_t, ssl_ciphers),
+      NULL },
+     { ngx_string("proxy_ssl_ecdh_curve"),
+      NGX_STREAM_MAIN_CONF|NGX_STREAM_SRV_CONF|NGX_CONF_TAKE1,
+      ngx_conf_set_str_slot,
+      NGX_STREAM_SRV_CONF_OFFSET,
+      offsetof(ngx_stream_proxy_srv_conf_t, ssl_ecdh_curve),
       NULL },
 
     { ngx_string("proxy_ssl_name"),
@@ -2242,6 +2249,8 @@ ngx_stream_proxy_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 
     ngx_conf_merge_str_value(conf->ssl_ciphers, prev->ssl_ciphers, "DEFAULT");
 
+    ngx_conf_merge_str_value(conf->ssl_ecdh_curve, prev->ssl_ecdh_curve, "");
+
     ngx_conf_merge_ptr_value(conf->ssl_name, prev->ssl_name, NULL);
 
     ngx_conf_merge_value(conf->ssl_server_name, prev->ssl_server_name, 0);
@@ -2298,6 +2307,7 @@ ngx_stream_proxy_merge_ssl(ngx_conf_t *cf, ngx_stream_proxy_srv_conf_t *conf,
 
     if (conf->ssl_protocols == 0
         && conf->ssl_ciphers.data == NULL
+	&& conf->ssl_ecdh_curve.data == NULL
         && conf->ssl_certificate == NGX_CONF_UNSET_PTR
         && conf->ssl_certificate_key == NGX_CONF_UNSET_PTR
         && conf->ssl_passwords == NGX_CONF_UNSET_PTR
@@ -2363,6 +2373,12 @@ ngx_stream_proxy_set_ssl(ngx_conf_t *cf, ngx_stream_proxy_srv_conf_t *pscf)
 
     if (ngx_ssl_ciphers(cf, pscf->ssl, &pscf->ssl_ciphers, 0) != NGX_OK) {
         return NGX_ERROR;
+    }
+
+    if (pscf->ssl_ecdh_curve.len) {
+        if (ngx_ssl_ecdh_curve(cf, pscf->ssl, &pscf->ssl_ecdh_curve) != NGX_OK) {
+            return NGX_ERROR;
+        }
     }
 
     if (pscf->ssl_certificate

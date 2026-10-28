@@ -45,7 +45,6 @@ func (m *ProcessManager) Start(p *PlatformSSLProxy) error {
 	if err := m.checkTengine(); err != nil {
 		return err
 	}
-
 	if err := m.precheckPort(p); err != nil {
 		return err
 	}
@@ -81,6 +80,29 @@ func (m *ProcessManager) Start(p *PlatformSSLProxy) error {
 		p.Status = StatusFailed
 		return newErr(ErrStartFailed, "启动 tengine 失败", err.Error())
 	}
+
+	// ★ 修复：异步回收 master 进程，避免 SIGTERM/SIGKILL 后变 zombie
+	//
+	// 背景：cmd.Start() 后 master 是 backend-go 的子进程。master 退出后
+	// （SIGTERM / SIGKILL）会变 zombie，直到 parent 调 cmd.Wait() 回收。
+	// 如果不回收，waitExit() 里的 signal(0) 探测会一直返回"活着"，
+	// 导致 Stop 时误判超时并 SIGKILL，zombie 越积越多。
+	//
+	// 这里用一个 goroutine 长期等待，master 退出后自然完成回收。
+	go func(serviceID string, c *exec.Cmd) {
+		err := c.Wait()
+		if err != nil {
+			// nginx 被信号杀死时 ExitError 是正常的，用 Debug 级别
+			log.Debug().
+				Err(err).
+				Str("service_id", serviceID).
+				Msg("ssl_proxy: nginx master 进程已退出")
+		} else {
+			log.Debug().
+				Str("service_id", serviceID).
+				Msg("ssl_proxy: nginx master 进程正常退出")
+		}
+	}(p.ServiceID, cmd)
 
 	pid, err := waitPID(pidPath, 5*time.Second)
 	if err != nil {
@@ -123,20 +145,38 @@ func (m *ProcessManager) Start(p *PlatformSSLProxy) error {
 }
 
 // =============================================================================
-// Stop（★ 所有返回点都回写 p.Status / p.PID）
+// Stop（★ 本次核心修复）
 // =============================================================================
 
 // Stop 停止实例。
 //
-// ★ 关键约束：**每次 return 前都必须把 p 的内存状态和 DB 状态对齐**，
-//   否则上层（如 Restart）复用 p 指针时会读到过期状态。
+// ★ 关键修复（本版）：
+//
+// 原实现用 `nginx -s stop` 通知 master，但 `nginx -s stop` 会 fork 一个
+// 临时客户端进程并「重新解析 nginx.conf」→ 加载证书私钥。而私钥在启动
+// 成功后被 Seal 白盒 SM4 加密（不是 PEM 格式），临时进程加载失败：
+//
+//	nginx: [emerg] cannot load certificate key "...client_enc.key":
+//	PEM_read_bio_PrivateKey() failed (DECODER routines::unsupported)
+//	exit status 1
+//
+// 结果：master 收不到信号 → 200ms 超时 → SIGKILL 兜底 → worker 不能优雅退出。
+//
+// 修复：直接用 syscall.Kill(master_pid, SIGTERM)，跳过 nginx 客户端命令：
+//   - 不解析配置
+//   - 不加载私钥
+//   - 直接把 SIGTERM 送到 master，master 内部通知 worker 优雅退出
+//
+// 优雅停止语义：
+//   - SIGTERM 给 master → master 停止 accept 新连接
+//   - master 通知 worker 处理完当前请求后退出
+//   - 如果 200ms 内没退完（长连接场景），SIGKILL 整个进程组兜底
 func (m *ProcessManager) Stop(p *PlatformSSLProxy) error {
 	// 幂等：已停止返回
 	if p.Status == StatusStopped {
 		if p.PID > 0 {
 			m.killProcessGroup(p.PID)
 		}
-		// ★ 回写：即使 DB 是 STOPPED，也保证内存干净
 		p.Status = StatusStopped
 		p.PID = 0
 		return nil
@@ -155,59 +195,73 @@ func (m *ProcessManager) Stop(p *PlatformSSLProxy) error {
 		}
 		m.cleanupAfterStop(p, confDir, pidDir)
 		m.updateStatus(p.ServiceID, StatusStopped, 0)
-		// ★ 回写
 		p.Status = StatusStopped
 		p.PID = 0
 		return nil
 	}
 
-	// -s stop：通知 master 快速停止
-	confPath := p.ConfigNginxPath
-	if confPath == "" {
-		confPath = filepath.Join(confDir, "nginx.conf")
-	}
-	cmd := exec.Command(m.binPath, "-p", CoreRoot+"/", "-c", confPath, "-s", "stop")
-	cmd.Env = m.childEnv()
-	if out, err := cmd.CombinedOutput(); err != nil {
-		log.Warn().Err(err).Str("output", string(out)).
-			Str("service_id", p.ServiceID).
-			Msg("ssl_proxy: nginx -s stop 失败（继续等待 + SIGKILL 兜底）")
+	// ★ 直接用 SIGTERM 通知 master
+	//
+	// 与 `nginx -s stop` 的等价性：
+	//   `nginx -s stop` = 读 pid 文件 + kill(pid, SIGTERM)
+	// 我们已经有 p.PID，直接发信号即可，跳过读配置/加载私钥。
+	if err := syscall.Kill(p.PID, syscall.SIGTERM); err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			// 进程已不存在（可能刚好死了），直接清理
+			log.Debug().
+				Int("pid", p.PID).
+				Str("service_id", p.ServiceID).
+				Msg("ssl_proxy: master 已不存在，跳过信号发送")
+		} else {
+			// 信号发送失败（权限等），仅在此情况回退 nginx -s stop
+			log.Warn().Err(err).
+				Int("pid", p.PID).
+				Str("service_id", p.ServiceID).
+				Msg("ssl_proxy: 发送 SIGTERM 失败，回退 nginx -s stop")
+
+			confPath := p.ConfigNginxPath
+			if confPath == "" {
+				confPath = filepath.Join(confDir, "nginx.conf")
+			}
+			cmd := exec.Command(m.binPath, "-p", CoreRoot+"/", "-c", confPath, "-s", "stop")
+			cmd.Env = m.childEnv()
+			if out, e := cmd.CombinedOutput(); e != nil {
+				log.Warn().Err(e).
+					Str("output", string(out)).
+					Str("service_id", p.ServiceID).
+					Msg("ssl_proxy: nginx -s stop 也失败，走 SIGKILL 兜底")
+			}
+		}
 	}
 
-	// 等待 master 退出：10ms 粒度，200ms 上限（实测 nginx 13ms 退出）
+	// 等待 master 退出：200ms 上限
+	// master 优雅退出通常 10-50ms（实测）；超过说明有长连接未断
 	if !waitExit(p.PID, 200*time.Millisecond) {
 		log.Warn().
 			Int("pid", p.PID).
 			Str("service_id", p.ServiceID).
-			Msg("ssl_proxy: nginx -s stop 超时，SIGKILL 兜底")
+			Msg("ssl_proxy: nginx master 200ms 未退出，SIGKILL 兜底")
 		m.killProcessGroup(p.PID)
+		// SIGKILL 后再等等，确保进程组真的清理干净
+		waitExit(p.PID, 500*time.Millisecond)
 	}
 
 	m.cleanupAfterStop(p, confDir, pidDir)
 	m.updateStatus(p.ServiceID, StatusStopped, 0)
-	// ★ 正常退出流程的最终回写（关键修复点）
 	p.Status = StatusStopped
 	p.PID = 0
 	return nil
 }
 
 // =============================================================================
-// ★ Restart（核心修复：Stop 后重新读 DB，确保 Start 拿到最新状态）
+// Restart（不变）
 // =============================================================================
 
-// Restart 重启实例（停 + 启）。
-//
-// ★ 修复要点：
-//   虽然 Stop 已经回写 p.Status = StatusStopped，但为了让 Restart
-//   对"Stop 内部未来可能新增的 early return 分支"保持健壮，这里
-//   仍从 DB 重新读取一份 fresh 记录，再传给 Start。
-//   这样即使 Stop 有任何漏写，Restart 都不会误判为"已在运行中"。
 func (m *ProcessManager) Restart(p *PlatformSSLProxy) error {
 	if err := m.Stop(p); err != nil {
 		return err
 	}
 
-	// ★ 关键：从 DB 重新读取，避免 p 内存状态与 DB 不一致
 	var fresh PlatformSSLProxy
 	if err := m.db.Where("service_id = ?", p.ServiceID).First(&fresh).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -216,7 +270,6 @@ func (m *ProcessManager) Restart(p *PlatformSSLProxy) error {
 		return newErr(ErrStartFailed, "重启时读取实例状态失败", err.Error())
 	}
 
-	// 二次保险：如果 fresh 仍是 RUNNING（Stop 没成功写 DB），主动置为 STOPPED
 	if fresh.Status == StatusRunning || fresh.Status == StatusStarting {
 		log.Warn().
 			Str("service_id", p.ServiceID).
@@ -229,14 +282,11 @@ func (m *ProcessManager) Restart(p *PlatformSSLProxy) error {
 		fresh.PID = 0
 	}
 
-	// 端口释放极快（nginx 13ms 退出），50ms 足够
 	time.Sleep(50 * time.Millisecond)
 
 	if err := m.Start(&fresh); err != nil {
 		return err
 	}
-
-	// ★ 把 fresh 的成功状态回写给调用方的 p（Service 层可能还会用 p）
 	*p = fresh
 	return nil
 }
@@ -252,7 +302,7 @@ func (m *ProcessManager) Status(p *PlatformSSLProxy) string {
 }
 
 // =============================================================================
-// 进程组杀 / 端口预检 / 内部辅助
+// 内部辅助（与旧版一致）
 // =============================================================================
 
 func (m *ProcessManager) killProcessGroup(masterPid int) {
@@ -271,7 +321,6 @@ func (m *ProcessManager) precheckPort(p *PlatformSSLProxy) error {
 	if err := tryBind(p.ListenIP, p.ListenPort); err == nil {
 		return nil
 	}
-
 	log.Warn().
 		Str("service_id", p.ServiceID).
 		Str("listen", p.ListenIP+":"+strconv.Itoa(p.ListenPort)).
