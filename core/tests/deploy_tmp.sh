@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # =============================================================================
-# core 临时部署脚本（Go 化改造后 + SSL 代理扩展）
+# core 临时部署脚本（Go 化改造后 + SSL 代理扩展 + oqs-provider）
 #
 # 用途：
-#   把开发目录的「铜锁 openssl + Tengine + 模板 + mime.types + C 工具」
-#   部署到 CoreRoot：
+#   把开发目录的「铜锁 openssl + Tengine + 模板 + mime.types + C 工具
+#   + oqs-provider」部署到 CoreRoot：
 #     <root>/core/sbin/nginx                       ← Tengine 二进制
 #     <root>/core/conf/mime.types                  ← nginx mime 映射（模板引用绝对路径）
 #     <root>/core/conf/template/*.tmpl             ← SSL 代理模板
 #     <root>/core/bin/keycrypt                     ← C 工具
 #     <root>/core/bin/whitebox_sm4
 #     <root>/core/libs/tongsuo/bin/openssl         ← 铜锁
+#     <root>/core/libs/tongsuo/libs/ossl-modules/oqsprovider.so  ← oqs-provider
 #
 # 源路径（固定）：
 #   Tengine     : <core>/src/tengine/bin/sbin/nginx
@@ -18,6 +19,7 @@
 #   模板        : <core>/src/tengine/conf/template/*.tmpl
 #   C 工具      : <core>/src/tool/bin/
 #   铜锁        : <core>/libs/bin/tongsuo/
+#   oqs-provider: <core>/libs/bin/tongsuo/libs/ossl-modules/oqsprovider.so
 #
 # 用法：
 #   sudo ./tests/deploy_tmp.sh
@@ -54,7 +56,7 @@ UNINSTALL=0
 DO_BUILD=1
 
 usage() {
-  sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
@@ -106,6 +108,11 @@ TARGET_OPENSSL="$TARGET_TONGSUO/bin/openssl"
 TARGET_NGINX="$TARGET_CORE_SBIN/nginx"
 TARGET_MIME="$TARGET_CORE_CONF_DIR/mime.types"
 
+# oqs-provider 目标路径
+#   Tongsuo 构建前缀内部布局：bin/、libs/、include/、...
+#   ossl-modules 位于 <prefix>/libs/ossl-modules/
+TARGET_OQSPROVIDER="$TARGET_TONGSUO/libs/ossl-modules/oqsprovider.so"
+
 # 源路径
 SOURCE_TOOL_DIR="$SOURCE/src/tool"
 SOURCE_TOOL_BIN="$SOURCE_TOOL_DIR/bin"
@@ -113,6 +120,9 @@ SOURCE_TONGSUO="$SOURCE/libs/bin/tongsuo"
 SOURCE_NGINX="$SOURCE/src/tengine-3.1.0/bin/sbin/nginx"
 SOURCE_MIME="$SOURCE/src/tengine-3.1.0/bin/conf/mime.types"
 SOURCE_TEMPLATES="$SOURCE/src/tengine-3.1.0/conf/template"
+
+# oqs-provider 源路径
+SOURCE_OQSPROVIDER="$SOURCE_TONGSUO/libs/ossl-modules/oqsprovider.so"
 
 # -----------------------------------------------------------------------------
 # 卸载
@@ -168,6 +178,9 @@ if [ "$UNINSTALL" -eq 1 ]; then
     removed=$((removed+1))
   elif [ -d "$TARGET_TONGSUO" ]; then
     warn "  铜锁是真实目录，未自动删除：$TARGET_TONGSUO"
+    if [ -f "$TARGET_OQSPROVIDER" ]; then
+      warn "  其中包含 oqsprovider.so，未单独删除：$TARGET_OQSPROVIDER"
+    fi
   fi
 
   log "✅ 卸载完成（共移除 $removed 项）"
@@ -360,12 +373,39 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+# 部署 oqs-provider（oqsprovider.so）
+#
+# 说明：
+#   - link 模式：TARGET_TONGSUO 是 SOURCE_TONGSUO 的符号链接，
+#     oqsprovider.so 已随铜锁目录自动暴露，无需额外复制。
+#   - copy 模式：rsync -a 会复制整个目录树，若源中存在
+#     libs/ossl-modules/oqsprovider.so，也会一并复制。
+#   - 此处只做「源存在性 + 目标存在性」检查与提示；
+#     若源不存在，说明尚未执行 make -C libs oqs-provider。
+# -----------------------------------------------------------------------------
+if [ -f "$SOURCE_OQSPROVIDER" ]; then
+  info "oqs-provider: 源存在 $SOURCE_OQSPROVIDER"
+  if [ -f "$TARGET_OQSPROVIDER" ]; then
+    log "  oqsprovider.so 已就位：$TARGET_OQSPROVIDER"
+  else
+    warn "  oqsprovider.so 未就位：$TARGET_OQSPROVIDER"
+    warn "  请确认铜锁部署是否完整，或重新执行：make -C $SOURCE/libs oqs-provider"
+  fi
+else
+  warn "oqs-provider: 源不存在 $SOURCE_OQSPROVIDER"
+  warn "  如需 Falcon 后量子签名支持，请先执行："
+  warn "    cd $SOURCE && make -C libs oqs-provider"
+  warn "  然后重新运行本脚本。"
+fi
+
+# -----------------------------------------------------------------------------
 # 权限修正
 # -----------------------------------------------------------------------------
 for name in "${TOOLS[@]}"; do
   [ -e "$TARGET_CORE_BIN/$name" ] && chmod 0755 "$TARGET_CORE_BIN/$name" 2>/dev/null || true
 done
 [ -f "$TARGET_OPENSSL" ] && chmod 0755 "$TARGET_OPENSSL" 2>/dev/null || true
+[ -f "$TARGET_OQSPROVIDER" ] && chmod 0755 "$TARGET_OQSPROVIDER" 2>/dev/null || true
 [ -f "$TARGET_NGINX" ]   && chmod 0755 "$TARGET_NGINX"   2>/dev/null || true
 [ -f "$TARGET_MIME" ]    && chmod 0644 "$TARGET_MIME"    2>/dev/null || true
 
@@ -427,6 +467,26 @@ else
   warn "  铜锁 openssl 未找到：$TARGET_OPENSSL"
 fi
 
+# oqs-provider
+if [ -f "$TARGET_OQSPROVIDER" ]; then
+  log "  oqsprovider.so：$TARGET_OQSPROVIDER"
+  # 检查 openssl 硬编码模块路径与部署路径是否一致
+  if [ -x "$TARGET_OPENSSL" ]; then
+    MODDIR="$("$TARGET_OPENSSL" version -m 2>/dev/null | sed -n 's/^MODULESDIR: "\(.*\)"$/\1/p' || true)"
+    MODDEPLOY="$(dirname "$TARGET_OQSPROVIDER")"
+    if [ -n "$MODDIR" ] && [ "$MODDIR" != "$MODDEPLOY" ]; then
+      warn "  openssl 硬编码模块路径：$MODDIR"
+      warn "  oqsprovider 实际路径：    $MODDEPLOY"
+      warn "  使用 Falcon 前请设置环境变量："
+      warn "    export OPENSSL_MODULES=$MODDEPLOY"
+    else
+      log "  模块路径与硬编码路径一致，可直接加载 oqsprovider"
+    fi
+  fi
+else
+  warn "  oqsprovider.so 未部署（Falcon 不可用）：$TARGET_OQSPROVIDER"
+fi
+
 [ "$FAIL" -ne 0 ] && { err "部署校验失败（文件缺失）"; exit 3; }
 
 # -----------------------------------------------------------------------------
@@ -476,6 +536,17 @@ if command -v ldd >/dev/null 2>&1; then
     fi
   fi
 
+  if [ -f "$TARGET_OQSPROVIDER" ]; then
+    missing="$(ldd "$TARGET_OQSPROVIDER" 2>/dev/null | grep 'not found' || true)"
+    if [ -n "$missing" ]; then
+      err "  oqsprovider.so 动态库缺失："
+      echo "$missing" | sed 's/^/    /' >&2
+      LIBFAIL=1
+    else
+      log "  动态库可达：oqsprovider.so"
+    fi
+  fi
+
   if [ "$LIBFAIL" -ne 0 ]; then
     echo
     err "动态库校验失败"
@@ -508,6 +579,7 @@ echo "模板源：       $SOURCE_TEMPLATES"
 echo "模板目标：     $TARGET_CORE_CONF"
 echo "C 工具目录：   $TARGET_CORE_BIN"
 echo "铜锁目录：     $TARGET_TONGSUO"
+echo "oqs-provider： $TARGET_OQSPROVIDER"
 echo
 echo "已部署的 C 工具："
 for name in "${TOOLS[@]}"; do
@@ -519,6 +591,14 @@ echo "  $TARGET_NGINX -V 2>&1 | head -2"
 echo "  ldd $TARGET_NGINX | grep -iE 'ssl|crypto|not found'"
 echo "  ls -la $TARGET_CORE_CONF_DIR/"
 echo "  ls -la $TARGET_CORE_CONF/"
+if [ -f "$TARGET_OQSPROVIDER" ]; then
+  echo
+  echo "oqs-provider 验证（Falcon）："
+  echo "  export OPENSSL_MODULES=$(dirname "$TARGET_OQSPROVIDER")"
+  echo "  $TARGET_OPENSSL list -providers -provider oqsprovider -provider default"
+  echo "  $TARGET_OPENSSL genpkey -provider oqsprovider -provider default \\"
+  echo "      -algorithm falcon512 -out falcon.key"
+fi
 echo
 echo "卸载："
 echo "  sudo $0 --uninstall"
