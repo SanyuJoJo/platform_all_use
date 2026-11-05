@@ -1,4 +1,4 @@
-import{f as T,H as v,i as d,Z as w,J as z,d as B,_ as R,k as S,o as m,c as h,n as f,l,h as b,m as y,s as V,$,a as N,a0 as P,p as _,q as L,a1 as W,r as g,A as E,a2 as I,t as O}from"./index-BG9A5pts.js";import{d as j}from"./index-BoAMvZzG.js";function D(e){const{opacityDisabled:t,heightTiny:o,heightSmall:p,heightMedium:a,heightLarge:n,heightHuge:r,primaryColor:s,fontSize:i}=e;return{fontSize:i,textColor:s,sizeTiny:o,sizeSmall:p,sizeMedium:a,sizeLarge:n,sizeHuge:r,color:s,opacitySpinning:t}}const M={common:T,self:D};var K=v([v("@keyframes spin-rotate",`
+import{f as T,H as v,i as d,Z as w,J as z,d as B,_ as R,k as S,o as m,c as h,n as f,l,h as b,m as y,s as V,$,a as N,a0 as P,p as _,q as L,a1 as W,r as g,A as E,a2 as I,t as O}from"./index-D9MWQxOk.js";import{d as j}from"./index-DEtSX0ec.js";function D(e){const{opacityDisabled:t,heightTiny:o,heightSmall:p,heightMedium:a,heightLarge:n,heightHuge:r,primaryColor:s,fontSize:i}=e;return{fontSize:i,textColor:s,sizeTiny:o,sizeSmall:p,sizeMedium:a,sizeLarge:n,sizeHuge:r,color:s,opacitySpinning:t}}const M={common:T,self:D};var K=v([v("@keyframes spin-rotate",`
  from {
  transform: rotate(0);
  }

@@ -1,7 +1,9 @@
 package crypto
 
 import (
+	"bytes"
 	"context"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -47,6 +49,37 @@ func NewCSRService(
 }
 
 // =============================================================================
+// ★ CFCA attribute 判定
+// =============================================================================
+
+// cfcaTmpPubOIDBytes 是 OID 1.2.840.113549.1.9.63 的 DER 编码
+// （tag 0x06，len 0x09，值为 2a 86 48 86 f7 0d 01 09 3f）。
+// 与 cfca_envelope.c 中 extract_tmp_pub_from_der 搜索的字节序列一致。
+//
+// 只在 PEM 解码后的 DER 中做字节扫描：PEM base64 文本不会命中，
+// 因此必须先 pem.Decode 再 Contains。
+var cfcaTmpPubOIDBytes = []byte{
+	0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x09, 0x3f,
+}
+
+// detectCFCAAttribute 判断 CSR 是否为 CFCA 格式。
+//
+// 原理：CFCA P10 在 CSR 的 attributes 段携带临时公钥 OID
+// （1.2.840.113549.1.9.63）；普通 PKCS10 不含该 OID。
+// 通过 PEM 解码后扫描 DER 中的 OID 编码即可判定，无需调用 core 或 C 工具。
+func (s *CSRService) detectCFCAAttribute(csrAbs string) bool {
+	data, err := os.ReadFile(csrAbs)
+	if err != nil {
+		return false
+	}
+	block, _ := pem.Decode(data)
+	if block == nil || len(block.Bytes) == 0 {
+		return false
+	}
+	return bytes.Contains(block.Bytes, cfcaTmpPubOIDBytes)
+}
+
+// =============================================================================
 // 列表 / 详情
 // =============================================================================
 
@@ -54,6 +87,7 @@ func NewCSRService(
 //
 // ★ 运行时填充：
 //   - HasPrivateKey：KeyRef 或磁盘 <csr_dir>/<pubSM3>.key.pem 存在；
+//   - IsCFCA       ：CSR attributes 段是否携带 CFCA 临时公钥 OID；
 //   - Subject      ：完整 DN（从 CSR 文件解析，RFC2253 规范化）；
 //   - NotBefore    ：CreatedAt（北京时间）；
 //   - NotAfter     ：空（P10 无固有有效期）。
@@ -88,6 +122,8 @@ func (s *CSRService) Get(csrID string) (*models.CSR, error) {
 //
 // 计算项：
 //   - HasPrivateKey：KeyRef 非空 或 磁盘 <csr_dir>/<pubSM3>.key.pem 存在；
+//   - IsCFCA       ：CSR attributes 段是否携带 CFCA 临时公钥 OID
+//                    （1.2.840.113549.1.9.63）；
 //   - Subject      ：从 CSR 文件解析完整 DN（RFC2253），并规范化顺序；
 //   - NotBefore    ：CreatedAt（北京时间字符串）；
 //   - NotAfter     ：空（P10 无固有有效期）。
@@ -106,6 +142,11 @@ func (s *CSRService) fillCSRDerivedFields(csr *models.CSR) {
 		}
 	}
 	csr.HasPrivateKey = has
+
+	// ★ IsCFCA：从 CSR 文件判定（不落库）
+	if csr.CSRPath != "" {
+		csr.IsCFCA = s.detectCFCAAttribute(csr.CSRPath)
+	}
 
 	// Subject：从 CSR 文件解析完整 DN
 	if csr.Subject == "" && csr.CSRPath != "" {
@@ -290,7 +331,7 @@ func (s *CSRService) Import(
 		Status:    "NEW",
 		CreatedAt: now,
 	}
-	// 填充派生展示字段（Subject / HasPrivateKey / NotBefore / NotAfter）
+	// 填充派生展示字段（Subject / HasPrivateKey / IsCFCA / NotBefore / NotAfter）
 	s.fillCSRDerivedFields(csr)
 
 	if err := s.db.Create(csr).Error; err != nil {

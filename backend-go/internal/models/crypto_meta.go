@@ -84,6 +84,8 @@ func (Certificate) TableName() string { return "platform_certificate" }
 //
 // 非持久化展示字段（gorm:"-"）：
 //   - HasPrivateKey：是否存在私钥；
+//   - IsCFCA       ：CSR attributes 段是否携带 CFCA 临时公钥 OID
+//                    （1.2.840.113549.1.9.63）；
 //   - Subject      ：完整 DN（运行时从 CSR 文件解析，RFC2253 规范化）；
 //   - NotBefore    ：CreatedAt（北京时间，展示用）；
 //   - NotAfter     ：空（P10 无固有有效期）。
@@ -106,6 +108,10 @@ type CSR struct {
 	NotAfter      string `gorm:"-" json:"not_after,omitempty"`
 	// ★ Subject 完整 DN（运行时从 CSR 文件解析）
 	Subject string `gorm:"-" json:"subject,omitempty"`
+	// ★ IsCFCA P10 是否为 CFCA 格式（CSR attributes 段携带
+	// OID 1.2.840.113549.1.9.63）。运行时由 CSRService 从 CSR 文件判定，
+	// 不落库。
+	IsCFCA bool `gorm:"-" json:"is_cfca"`
 }
 
 // TableName 指定表名。

@@ -18,6 +18,7 @@ type MetaRegistry struct {
 	CSR  *CSRService
 	CRL  *CRLService
 	Key  *KeyService
+	CFCA *CFCAService // ★ CFCA 兼容双证
 }
 
 // NewMetaRegistry 装配所有元数据类 Service。
@@ -63,12 +64,17 @@ func NewMetaRegistry(db *gorm.DB, cfg *config.Config) *MetaRegistry {
 	parser := NewCertParser(coreRoot)
 	keys := NewKeyCrypto()
 
+	// ★ 先构造 CAService：CFCA 签发需要加载 CA 证书与私钥
+	caSvc := NewCAService(db, caller, files, parser, keys, layout, whitebox)
+
 	return &MetaRegistry{
-		CA:   NewCAService(db, caller, files, parser, keys, layout, whitebox), // ★ 加 whitebox
+		CA:   caSvc,
 		Cert: NewCertService(db, caller, files, parser, keys, layout, whitebox),
 		CSR:  NewCSRService(db, caller, files, parser, keys, layout, whitebox),
 		CRL:  NewCRLService(db),
 		Key:  NewKeyService(db),
+		// ★ CFCA：keys 用于私钥密文检测/解密，cfg 用于派生 cfca_envelope 路径
+		CFCA: NewCFCAService(db, caller, files, parser, keys, layout, whitebox, caSvc, cfg),
 	}
 }
 
@@ -79,4 +85,5 @@ func (r *MetaRegistry) Register(g *gin.RouterGroup) {
 	NewCSRHandler(r.CSR).RegisterRoutes(g)
 	NewCRLHandler(r.CRL).RegisterRoutes(g)
 	NewKeyHandler(r.Key).RegisterRoutes(g)
+	NewCFCAHandler(r.CFCA).RegisterRoutes(g) // ★ /cfca/*
 }

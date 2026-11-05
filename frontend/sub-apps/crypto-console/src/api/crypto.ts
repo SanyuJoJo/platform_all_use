@@ -83,6 +83,32 @@ export interface DomainListResponse {
 //   - 移除 'server' / 'client'（属于 X.509 EKU 语义，不属于平台业务分类）
 export type CertTypeItem = 'signature' | 'encryption';
 
+// =============================================================================
+// ★ CSR 申请（普通 / CFCA）
+// =============================================================================
+
+export type P10Format = 'pkcs10' | 'cfca';
+
+export interface CSRCreateParams {
+  algorithm?: string;
+  subject: Record<string, string>;
+  key_source?: 'generate';
+  /** ★ 新增：CFCA P10 会在 CSR 中携带临时公钥 attribute */
+  p10_format?: P10Format;
+  san?: string[];
+}
+
+export interface CSRCreateResult {
+  csr_id?: string;
+  csr_pem?: string;
+  /** @deprecated 平台内置固定临时密钥，不再逐次返回；保留字段兼容旧后端 */
+  tmp_key_pem?: string;
+  /** 可选：签名私钥（若平台在本次请求中可提供） */
+  sign_key_pem?: string;
+  /** 可选：平台生成的签名私钥的封装形式（视后端实现） */
+  csr_key_pem?: string;
+}
+
 export interface SignCertParams {
   ca_source: 'local' | 'manual';
   ca_id?: string;
@@ -116,6 +142,11 @@ export interface SignCertResult {
   sign_cert_pem?: string;
   enc_cert_pem?: string;
   encrypted_envelope?: string;
+  /** ★ CFCA 双证专用（后端 cfca/sign 返回） */
+  tmp_key_pem?: string;
+  sign_key_pem?: string;
+  sign_cert_id?: string;
+  enc_cert_id?: string;
 }
 
 export interface QueryEnvelopeParams {
@@ -134,6 +165,61 @@ export interface QueryEnvelopeResult {
   iv: string;
   encrypted_private_key: string;
   decrypted_key_pem?: string;
+}
+
+// =============================================================================
+// ★ CFCA 双证签发（与后端 CFCASignRequest 字段对齐）
+// =============================================================================
+
+export interface CFCASignParams {
+  // ---------- CA 来源 ----------
+  ca_source?: 'local' | 'manual';
+  ca_id?: string;
+  ca_cert_pem?: string;
+  ca_key_pem?: string;
+  ca_key_password?: string;
+
+  // ---------- CSR 来源 ----------
+  csr_source?: 'generate' | 'upload' | 'existing';
+  csr_id?: string;
+  csr_pem?: string;
+  csr_key_pem?: string;
+  csr_key_password?: string;
+  /** upload/existing 时 CSR 内无临时公钥 attribute 则必填（PEM）。前端不展示，仅保留类型兼容 */
+  tmp_pub_pem?: string;
+
+  // ---------- 证书参数 ----------
+  subject?: Record<string, string>;
+  san?: string[];
+  validity_days?: number;
+  domain?: string;
+
+  // ---------- 私钥回传 ----------
+  return_sign_key?: boolean;
+  key_export_password?: string;
+}
+
+export interface CFCASignResult {
+  sign_cert_pem: string;
+  enc_cert_pem: string;
+  /** CFCA 5 段文本格式信封（80 字符十进制 header + 逗号分隔 5 段 base64） */
+  encrypted_envelope: string;
+  sign_cert_id?: string;
+  enc_cert_id?: string;
+  /** @deprecated 平台内置固定临时密钥，不再逐次返回；保留字段兼容旧后端 */
+  tmp_key_pem?: string;
+  /** 仅 return_sign_key=true 且本次请求确实提供了签名私钥时返回 */
+  sign_key_pem?: string;
+}
+
+export interface CFCADecodeEnvelopeParams {
+  encrypted_envelope: string;
+  /** @deprecated 平台使用内置固定临时密钥解密；仅用于兼容旧后端 */
+  tmp_key_pem?: string;
+}
+
+export interface CFCADecodeEnvelopeResult {
+  decrypted_key_pem: string;
 }
 
 // =============================================================================
@@ -223,6 +309,14 @@ export const cryptoApi = {
   },
   deleteCert(certId: string) {
     return request.delete(`/certs/${certId}`);
+  },
+
+  // ★ CFCA 双证签发 / 解信封
+  cfcaSign(payload: CFCASignParams) {
+    return request.post<CFCASignResult>('/cfca/sign', payload);
+  },
+  cfcaDecodeEnvelope(payload: CFCADecodeEnvelopeParams) {
+    return request.post<CFCADecodeEnvelopeResult>('/cfca/decode-envelope', payload);
   },
 
   listCsrs(params?: Record<string, unknown>) {

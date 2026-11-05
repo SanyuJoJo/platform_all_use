@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -17,20 +19,14 @@ import (
 //
 // 职责：
 //  1. 通过 MetaRegistry 聚合各领域子 Handler（CA / Cert / CSR / CRL / Key）的路由；
-//  2. 承载通用密码操作（/crypto/operations/:operation_id）与任务（/tasks/:task_id）路由。
-//
-// v1.3 修复：
-//   - 此前 RegisterRoutes 遗漏对各子 Handler 的调用，导致 /api/v1/cas 等路由 404；
-//   - 现改为通过 MetaRegistry 统一装配（MetaRegistry 已正确创建各子 Service）。
+//  2. 承载通用密码操作（/crypto/operations/:operation_id）与任务（/tasks/:task_id）路由；
+//  3. ★ 拦截 csr.create + p10_format=cfca，改走 cfca_envelope 生成 CFCA P10。
 type Handler struct {
 	svc  *Service
 	meta *MetaRegistry
 }
 
 // NewHandler 创建密码操作处理器。
-//
-// 复用 Service 已持有的 db / cfg，构造 MetaRegistry，
-// 避免在 main.go 中重复装配各子 Service。
 func NewHandler(svc *Service) *Handler {
 	return &Handler{
 		svc:  svc,
@@ -39,25 +35,11 @@ func NewHandler(svc *Service) *Handler {
 }
 
 // Meta 返回内部 MetaRegistry，供其它模块复用 CA/Cert Service。
-//
-// ★ 用途：SSL 代理模块需要访问一期证书模块的 CA/Cert Service，
-//   通过本方法获取已装配的实例，避免重复构造。
 func (h *Handler) Meta() *MetaRegistry {
 	return h.meta
 }
 
 // RegisterRoutes 注册密码操作路由（受保护）。
-//
-// 路由清单：
-//
-//	CA 管理：       /api/v1/cas/*
-//	证书管理：      /api/v1/certs/*
-//	CSR 管理：      /api/v1/csrs/*
-//	CRL 管理：      /api/v1/crls/*
-//	密钥管理：      /api/v1/keys/*
-//	通用密码操作：   /api/v1/crypto/operations/:operation_id
-//	任务：          /api/v1/tasks/:task_id
-//	                /api/v1/tasks/:task_id/cancel
 func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
 	// ---- 各领域子路由（通过 MetaRegistry 统一注册）----
 	h.meta.Register(r)
@@ -107,6 +89,14 @@ func (h *Handler) Execute(c *gin.Context) {
 		req.Params = map[string]interface{}{}
 	}
 
+	// ★ CFCA P10 分支：p10_format=cfca 时走 cfca_envelope gen-csr，
+	//   而不是 core 的 csr.create（core 只生成普通 PKCS10，不会携带
+	//   临时公钥 attribute）。
+	if op == "csr.create" && isCFCAP10Format(req.Params) {
+		h.handleCreateCFCACSR(c, &req)
+		return
+	}
+
 	// 获取当前用户信息
 	actorType := "platform-backend"
 	actorID := ""
@@ -137,6 +127,157 @@ func (h *Handler) Execute(c *gin.Context) {
 	response.SuccessWithStatus(c, httpStatus, resp, resp.Message)
 }
 
+// =============================================================================
+// ★ CFCA P10 分支
+// =============================================================================
+
+// isCFCAP10Format 判断请求是否指定了 p10_format=cfca。
+func isCFCAP10Format(params map[string]interface{}) bool {
+	v, ok := params["p10_format"]
+	if !ok || v == nil {
+		return false
+	}
+	if s, ok := v.(string); ok {
+		return strings.EqualFold(strings.TrimSpace(s), "cfca")
+	}
+	return false
+}
+
+// extractSubjectFromParams 从 params["subject"] 提取 subject。
+//
+// 兼容两种类型（JSON 反序列化后为 map[string]interface{}，
+// 手工构造时可能为 map[string]string）。
+func extractSubjectFromParams(params map[string]interface{}) map[string]string {
+	raw, ok := params["subject"]
+	if !ok || raw == nil {
+		return nil
+	}
+	switch m := raw.(type) {
+	case map[string]string:
+		out := make(map[string]string, len(m))
+		for k, v := range m {
+			out[k] = v
+		}
+		return out
+	case map[string]interface{}:
+		out := make(map[string]string, len(m))
+		for k, v := range m {
+			if s, ok := v.(string); ok && strings.TrimSpace(s) != "" {
+				out[k] = s
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// extractSANFromParams 从 params["san"] 提取 SAN 列表。
+func extractSANFromParams(params map[string]interface{}) []string {
+	raw, ok := params["san"]
+	if !ok || raw == nil {
+		return nil
+	}
+	switch v := raw.(type) {
+	case []string:
+		out := make([]string, 0, len(v))
+		for _, s := range v {
+			if t := strings.TrimSpace(s); t != "" {
+				out = append(out, t)
+			}
+		}
+		return out
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				if t := strings.TrimSpace(s); t != "" {
+					out = append(out, t)
+				}
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// handleCreateCFCACSR 处理 "申请 P10" 的 CFCA 分支。
+//
+// 流程：
+//  1. CFCAService.GenerateCSRForApply  → 生成携带临时公钥 attribute 的 CSR + 签名私钥；
+//  2. CSRService.Import               → 落盘 CSR/私钥、落库 models.CSR；
+//  3. 组装契约响应（csr_id / csr_pem / csr_path / pubkey_sm3 / sign_key_pem / is_cfca）。
+//
+// 之所以复用 CSRService.Import 而不是自己写落盘 + 落库：Import 已处理
+// dir 分配、pubSM3 命名、白盒加密、fillCSRDerivedFields（含 is_cfca 判定）
+// 等全部细节，逻辑等价且不需要重复。
+func (h *Handler) handleCreateCFCACSR(c *gin.Context, req *OperationRequest) {
+	subject := extractSubjectFromParams(req.Params)
+	if len(subject) == 0 || strings.TrimSpace(subject["CN"]) == "" {
+		response.Error(c, http.StatusBadRequest,
+			exception.CodeParamInvalid, "CFCA P10 需要 subject.CN", nil)
+		return
+	}
+
+	// CFCA 仅支持 SM2
+	if alg := strings.TrimSpace(getString(req.Params, "algorithm")); alg != "" &&
+		!strings.EqualFold(alg, "SM2") {
+		response.Error(c, http.StatusBadRequest,
+			exception.CodeParamInvalid,
+			"CFCA P10 仅支持 SM2 算法", nil)
+		return
+	}
+
+	san := extractSANFromParams(req.Params)
+
+	ctx := c.Request.Context()
+
+	// 1. 生成 CSR + 签名私钥（走 cfca_envelope gen-csr --tmp-key <内置私钥>）
+	result, err := h.meta.CFCA.GenerateCSRForApply(ctx, subject, san)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	// 2. 落盘 + 落库（CSRService.Import 内部写 .req.csr、白盒加密 .key.pem，
+	//    并调用 fillCSRDerivedFields → is_cfca=true）
+	importReq := &ImportCsrRequest{
+		CSRPEM: string(result.CSRPEM),
+		KeyPEM: string(result.SignKeyPEM),
+	}
+	csr, err := h.meta.CSR.Import(ctx, importReq)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	// 3. 组装契约响应
+	//    pubkey_sm3 从 csr_path 文件名推导（<pubSM3>.req.csr），与 core 普通
+	//    分支返回的同名字段保持一致的语义。
+	pubSM3 := ""
+	if csr.CSRPath != "" {
+		if base := filepath.Base(csr.CSRPath); strings.HasSuffix(base, ".req.csr") {
+			pubSM3 = strings.TrimSuffix(base, ".req.csr")
+		}
+	}
+
+	resp := map[string]interface{}{
+		"csr_id":               csr.CSRID,
+		"csr_pem":              string(result.CSRPEM),
+		"csr_path":             csr.CSRPath,
+		"pubkey_sm3":           pubSM3,
+		"sign_key_pem":         string(result.SignKeyPEM),
+		"has_private_key":      csr.HasPrivateKey,
+		"is_cfca":              csr.IsCFCA,
+		"subject_cn":           csr.SubjectCN,
+		"public_key_algorithm": csr.Algorithm,
+		"status":               csr.Status,
+		"created_at":           csr.CreatedAt,
+		"not_before":           csr.NotBefore,
+	}
+
+	response.SuccessWithStatus(c, http.StatusCreated, resp, "CFCA P10 申请成功")
+}
+
 // GetTask 查询任务状态。
 func (h *Handler) GetTask(c *gin.Context) {
 	taskID := c.Param("task_id")
@@ -145,7 +286,6 @@ func (h *Handler) GetTask(c *gin.Context) {
 			exception.CodeParamInvalid, "缺少 task_id", nil)
 		return
 	}
-	// 注意：实际实现中应调用 TaskScheduler 查询任务
 	response.Success(c, gin.H{
 		"task_id": taskID,
 		"status":  "RUNNING",

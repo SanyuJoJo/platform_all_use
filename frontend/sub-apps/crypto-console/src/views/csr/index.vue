@@ -53,6 +53,30 @@
           <n-select v-model:value="applyForm.algorithm" :options="algorithmOptions" />
         </n-form-item>
 
+        <!-- ★ P10 类型：普通 PKCS10 / CFCA -->
+        <n-form-item label="P10 类型">
+          <n-radio-group v-model:value="applyForm.p10_format">
+            <n-space>
+              <n-radio value="pkcs10">普通 P10（PKCS10）</n-radio>
+              <n-radio value="cfca">CFCA P10（携带临时公钥）</n-radio>
+            </n-space>
+          </n-radio-group>
+        </n-form-item>
+
+        <n-alert
+          v-if="applyForm.p10_format === 'cfca'"
+          type="info"
+          :show-icon="true"
+          style="margin-bottom: 12px"
+        >
+          CFCA P10 会在 CSR 中携带平台<b>内置临时公钥</b>信息
+          （作为 CSR attribute，OID <code>1.2.840.113549.1.9.63</code>；
+          值为 <code>SEQUENCE { INTEGER 1, OCTET STRING &lt;136 字节 CFCA keybytes&gt; }</code>），
+          用于后续签发 CFCA 格式双证时封装加密私钥。
+          临时密钥对由平台统一维护，无需用户保管；签发 CFCA 双证后，
+          可在本页「查看信封信息」中选择 CFCA 格式，粘贴信封即可解密出加密私钥。
+        </n-alert>
+
         <n-form-item label="使用者 DN">
           <div class="dn-row">
             <n-input
@@ -123,6 +147,45 @@
       </template>
     </n-modal>
 
+    <!-- ================= 申请 P10 结果（CFCA） ================= -->
+    <n-modal v-model:show="showApplyResult" preset="card" title="CFCA P10 申请结果" style="width: 900px">
+      <n-alert type="success" :show-icon="true" style="margin-bottom: 12px">
+        CFCA P10 申请成功。临时密钥对由平台内置固定维护，无需另行保存；
+        可在 P10 列表中下载该 CSR，用于后续签发 CFCA 格式双证。
+      </n-alert>
+
+      <n-space vertical size="medium">
+        <template v-if="applyResult.csr_pem">
+          <div class="result-block">
+            <div class="result-block__header">
+              <strong>CSR（PEM）</strong>
+              <n-button size="tiny" @click="copyText(applyResult.csr_pem || '')">复制</n-button>
+            </div>
+            <n-input :value="applyResult.csr_pem" type="textarea" :autosize="{ minRows: 6, maxRows: 12 }" readonly />
+          </div>
+        </template>
+
+        <template v-if="applyResult.sign_key_pem">
+          <div class="result-block" style="background:#fef2f2;border-color:#fca5a5">
+            <div class="result-block__header">
+              <div>
+                <strong>签名私钥（sign_key_pem）</strong>
+                <n-tag type="error" size="tiny" style="margin-left:8px">平台不保管</n-tag>
+              </div>
+              <n-button size="tiny" @click="copyText(applyResult.sign_key_pem || '')">复制</n-button>
+            </div>
+            <n-input :value="applyResult.sign_key_pem" type="textarea" :autosize="{ minRows: 4, maxRows: 10 }" readonly />
+          </div>
+        </template>
+      </n-space>
+
+      <template #footer>
+        <n-space justify="end">
+          <n-button type="primary" @click="closeApplyResult">关闭</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+
     <!-- ================= 导入 P10 ================= -->
     <n-modal v-model:show="showImport" preset="card" title="导入 P10" style="width: 680px">
       <n-alert type="info" :show-icon="true" style="margin-bottom: 12px">
@@ -165,6 +228,51 @@
     <!-- ================= 签发证书 ================= -->
     <n-modal v-model:show="showSignCert" preset="card" title="签发证书" style="width: 900px">
       <n-form :model="signForm" label-placement="left" label-width="130">
+        <n-form-item label="签发模式">
+          <n-radio-group v-model:value="signForm.cert_mode">
+            <n-radio value="normal">普通证书</n-radio>
+            <n-radio value="dual">国密双证书</n-radio>
+          </n-radio-group>
+        </n-form-item>
+
+        <!-- ★ 证书申请数据格式（仅国密双证） -->
+        <n-form-item v-if="signForm.cert_mode === 'dual'" label="证书申请数据格式">
+          <n-radio-group v-model:value="signForm.dual_format">
+            <n-space>
+              <n-radio value="pkcs10">PKCS10</n-radio>
+              <n-radio value="cfca">CFCA</n-radio>
+            </n-space>
+          </n-radio-group>
+        </n-form-item>
+
+        <!-- ★ CFCA 提示（按平台内置临时密钥行为描述） -->
+        <n-alert
+          v-if="isCfcaDual"
+          type="info"
+          :show-icon="true"
+          style="margin-bottom: 12px"
+        >
+          CFCA 格式双证要求 CSR 携带<b>临时公钥信息</b>
+          （作为 CSR attribute，OID <code>1.2.840.113549.1.9.63</code>；
+          值为 <code>SEQUENCE { INTEGER 1, OCTET STRING &lt;136 字节 CFCA keybytes&gt; }</code>）。
+          请选择本页「申请 P10 → CFCA P10」生成的 P10，
+          或使用支持 CFCA 格式的外部工具（如 <code>cfca_envelope gen-csr</code>）构造 CSR 后上传。
+          签发后 CA 会用平台内置临时公钥封装加密私钥，可在本页「查看信封信息」中直接解密。
+        </n-alert>
+
+        <!-- ★ 普通证书类型（仅 normal） -->
+        <template v-if="signForm.cert_mode === 'normal'">
+          <n-form-item label="证书类型">
+            <n-checkbox-group v-model:value="signForm.cert_types">
+              <n-space>
+                <n-checkbox value="signature">签名 signature</n-checkbox>
+                <n-checkbox value="encryption">加密 encryption</n-checkbox>
+              </n-space>
+            </n-checkbox-group>
+          </n-form-item>
+        </template>
+
+        <!-- ★ P10 来源（PKCS10 / CFCA 平权，只有 existing / upload） -->
         <n-form-item label="P10 来源">
           <n-radio-group v-model:value="signForm.csr_source">
             <n-radio value="existing">从本地选择 P10</n-radio>
@@ -226,7 +334,7 @@
               v-model:value="signForm.dn"
               type="textarea"
               :autosize="{ minRows: 3, maxRows: 6 }"
-              :placeholder="'留空则沿用 P10 内的使用者 DN；填写则覆盖（例如 ' + DN_HELP_EXAMPLE + '）'"
+              :placeholder="`留空则沿用 P10 内的使用者 DN；填写则覆盖（例如 ${DN_HELP_EXAMPLE}）`"
             />
             <n-popover trigger="click" placement="left-start" :width="440" style="max-width: 90vw">
               <template #trigger>
@@ -276,25 +384,12 @@
           </div>
         </n-form-item>
 
-        <n-form-item label="签发模式">
-          <n-radio-group v-model:value="signForm.cert_mode">
-            <n-radio value="normal">普通证书</n-radio>
-            <n-radio value="dual">国密双证书</n-radio>
-          </n-radio-group>
+        <!-- ★ CFCA 下额外支持 SAN -->
+        <n-form-item v-if="isCfcaDual" label="SAN（逗号分隔，可选）">
+          <n-input v-model:value="signForm.cfca_san" placeholder="例如 test.example.com,www.example.com" />
         </n-form-item>
 
-        <!-- ★ 修改：证书类型只保留签名 / 加密两类 -->
-        <template v-if="signForm.cert_mode === 'normal'">
-          <n-form-item label="证书类型">
-            <n-checkbox-group v-model:value="signForm.cert_types">
-              <n-space>
-                <n-checkbox value="signature">签名 signature</n-checkbox>
-                <n-checkbox value="encryption">加密 encryption</n-checkbox>
-              </n-space>
-            </n-checkbox-group>
-          </n-form-item>
-        </template>
-
+        <!-- ★ CA 来源（PKCS10 / CFCA 平权） -->
         <n-form-item label="CA 来源">
           <n-radio-group v-model:value="signForm.ca_source">
             <n-radio value="local">本地 CA</n-radio>
@@ -302,13 +397,18 @@
           </n-radio-group>
         </n-form-item>
 
-        <template v-if="signForm.ca_source === 'local'">
-          <n-form-item label="选择 CA">
-            <n-select v-model:value="signForm.ca_id" :options="caOptions" filterable clearable placeholder="请选择 CA" style="width: 100%" />
-          </n-form-item>
-        </template>
+        <n-form-item v-if="signForm.ca_source === 'local'" label="选择 CA">
+          <n-select
+            v-model:value="signForm.ca_id"
+            :options="caOptions"
+            filterable
+            clearable
+            placeholder="请选择 CA"
+            style="width: 100%"
+          />
+        </n-form-item>
 
-        <template v-else>
+        <template v-if="signForm.ca_source === 'manual'">
           <n-form-item label="CA 证书 PEM">
             <n-input v-model:value="signForm.ca_cert_pem" type="textarea" :autosize="{ minRows: 3, maxRows: 6 }" />
           </n-form-item>
@@ -392,16 +492,37 @@
               <n-button size="tiny" @click="copyText(signResult.encrypted_envelope || '')">复制</n-button>
             </div>
             <n-alert type="info" :show-icon="true" style="margin-bottom: 8px">
-              该字符串为加密的数字信封整体（base64），请完整保存。
-              后续在"查看信封信息"中粘贴此字符串 + 上传您的 CSR 私钥，可解密出三件套。
+              该字符串为 <b>CFCA 5 段文本格式</b>（80 字符十进制 header + 逗号分隔的 5 段 base64，
+              末段以逗号结尾），请完整保存。可在本页「查看信封信息」中选择 CFCA 格式，
+              粘贴信封即可由平台自动解密出加密私钥。
             </n-alert>
             <n-input :value="signResult.encrypted_envelope" type="textarea" :autosize="{ minRows: 8, maxRows: 16 }" readonly />
+          </div>
+        </template>
+
+        <!-- ★ 签名私钥：本次请求能取到签名私钥（上传提供 / existing 已托管）时返回 -->
+        <template v-if="signResult.sign_key_pem">
+          <div class="result-block" style="background:#fef2f2;border-color:#fca5a5">
+            <div class="result-block__header">
+              <div>
+                <strong>签名私钥（sign_key_pem）</strong>
+                <n-tag type="error" size="tiny" style="margin-left:8px">平台不保管</n-tag>
+              </div>
+              <n-button size="tiny" @click="copyText(signResult.sign_key_pem || '')">复制</n-button>
+            </div>
+            <n-input :value="signResult.sign_key_pem" type="textarea" :autosize="{ minRows: 4, maxRows: 10 }" readonly />
           </div>
         </template>
       </n-space>
 
       <template #footer>
-        <n-space justify="end">
+        <n-space justify="space-between" style="width: 100%">
+          <n-button
+            v-if="signResult.encrypted_envelope"
+            @click="decodeCfcaFromSignResult"
+          >
+            去解信封
+          </n-button>
           <n-button @click="closeSignResult">关闭</n-button>
         </n-space>
       </template>
@@ -411,94 +532,105 @@
     <n-modal v-model:show="showQueryEnvelope" preset="card" title="查看信封信息" style="width: 900px">
       <n-form :model="envelopeForm" label-placement="left" label-width="140">
         <n-form-item label="信封格式">
-          <n-radio-group v-model:value="envelopeForm.format">
+          <n-radio-group v-model:value="envelopeForm.format" @update:value="onEnvelopeFormatChange">
             <n-space>
               <n-radio value="pkcs10">PKCS10 格式信封</n-radio>
-              <n-radio value="cfca" disabled>CFCA 证书格式（暂未实现）</n-radio>
+              <n-radio value="cfca">CFCA 格式信封</n-radio>
             </n-space>
           </n-radio-group>
         </n-form-item>
 
-        <n-form-item label="查询方式">
-          <n-radio-group v-model:value="envelopeForm.mode">
-            <n-space vertical>
-              <n-radio value="cert">
-                从签名证书解析
-                <span class="hint-text" style="margin-left: 8px">
-                  （若签名证书关联了私钥，自动使用其解密）
-                </span>
-              </n-radio>
-              <n-radio value="manual">
-                手动输入
-                <span class="hint-text" style="margin-left: 8px">
-                  （输入您的 CSR 私钥解密）
-                </span>
-              </n-radio>
-            </n-space>
-          </n-radio-group>
-        </n-form-item>
-
-        <template v-if="envelopeForm.mode === 'cert'">
-          <n-form-item label="选择签名证书">
-            <n-select
-              v-model:value="envelopeForm.cert_id"
-              :options="signCertOptions"
-              :loading="signCertLoading"
-              filterable
-              clearable
-              placeholder="请选择国密双证中的签名证书"
-              style="width: 100%"
-            />
+        <!-- ★ PKCS10 分支 -->
+        <template v-if="envelopeForm.format === 'pkcs10'">
+          <n-form-item label="查询方式">
+            <n-radio-group v-model:value="envelopeForm.mode">
+              <n-space vertical>
+                <n-radio value="cert">
+                  从签名证书解析
+                  <span class="hint-text" style="margin-left: 8px">
+                    （若签名证书关联了私钥，自动使用其解密）
+                  </span>
+                </n-radio>
+                <n-radio value="manual">
+                  手动输入
+                  <span class="hint-text" style="margin-left: 8px">
+                    （输入您的 CSR 私钥解密）
+                  </span>
+                </n-radio>
+              </n-space>
+            </n-radio-group>
           </n-form-item>
-        </template>
 
-        <template v-else>
-          <n-alert type="warning" :show-icon="true" style="margin-bottom: 12px">
-            注意：若您导入 P10 时未上传私钥，平台无法自动解密，必须使用本模式上传您的 CSR 私钥。
-          </n-alert>
-
-          <n-form-item label="签名私钥 PEM">
-            <div class="file-row">
-              <n-input
-                v-model:value="envelopeForm.sign_key_pem"
-                type="textarea"
-                :autosize="{ minRows: 4, maxRows: 8 }"
-                placeholder="-----BEGIN PRIVATE KEY-----"
-                style="flex: 1"
+          <template v-if="envelopeForm.mode === 'cert'">
+            <n-form-item label="选择签名证书">
+              <n-select
+                v-model:value="envelopeForm.cert_id"
+                :options="signCertOptions"
+                :loading="signCertLoading"
+                filterable
+                clearable
+                placeholder="请选择国密双证中的签名证书"
+                style="width: 100%"
               />
-              <div class="file-col">
-                <input
-                  ref="envelopeKeyFileInputRef"
-                  type="file"
-                  accept=".pem,.key"
-                  style="display: none"
-                  @change="onEnvelopeKeyFileChange"
-                />
-                <n-button @click="envelopeKeyFileInputRef?.click()">选择私钥</n-button>
-                <span v-if="envelopeForm.sign_key_file_name" class="file-name">
-                  {{ envelopeForm.sign_key_file_name }}
-                </span>
-              </div>
-            </div>
-          </n-form-item>
+            </n-form-item>
+          </template>
 
-          <n-form-item label="签名私钥密码">
-            <n-input
-              v-model:value="envelopeForm.sign_key_password"
-              type="password"
-              show-password-on="click"
-              placeholder="私钥未加密可留空"
-            />
-          </n-form-item>
+          <template v-else>
+            <n-alert type="warning" :show-icon="true" style="margin-bottom: 12px">
+              注意：若您导入 P10 时未上传私钥，平台无法自动解密，必须使用本模式上传您的 CSR 私钥。
+            </n-alert>
+
+            <n-form-item label="签名私钥 PEM">
+              <div class="file-row">
+                <n-input
+                  v-model:value="envelopeForm.sign_key_pem"
+                  type="textarea"
+                  :autosize="{ minRows: 4, maxRows: 8 }"
+                  placeholder="-----BEGIN PRIVATE KEY-----"
+                  style="flex: 1"
+                />
+                <div class="file-col">
+                  <input
+                    ref="envelopeKeyFileInputRef"
+                    type="file"
+                    accept=".pem,.key"
+                    style="display: none"
+                    @change="onEnvelopeKeyFileChange"
+                  />
+                  <n-button @click="envelopeKeyFileInputRef?.click()">选择私钥</n-button>
+                  <span v-if="envelopeForm.sign_key_file_name" class="file-name">
+                    {{ envelopeForm.sign_key_file_name }}
+                  </span>
+                </div>
+              </div>
+            </n-form-item>
+
+            <n-form-item label="签名私钥密码">
+              <n-input
+                v-model:value="envelopeForm.sign_key_password"
+                type="password"
+                show-password-on="click"
+                placeholder="私钥未加密可留空"
+              />
+            </n-form-item>
+          </template>
         </template>
 
+        <!-- ★ CFCA 分支：平台使用内置固定临时密钥解密，无需用户提供 -->
+        <template v-else>
+          <n-alert type="info" :show-icon="true" style="margin-bottom: 12px">
+            平台使用<b>内置固定临时密钥</b>解密 CFCA 信封，您只需粘贴信封内容即可。
+          </n-alert>
+        </template>
+
+        <!-- 加密的数字信封（两种格式共用） -->
         <n-form-item label="加密的数字信封">
           <div class="file-row">
             <n-input
               v-model:value="envelopeForm.encrypted_envelope"
               type="textarea"
               :autosize="{ minRows: 6, maxRows: 12 }"
-              placeholder="粘贴签发时返回的加密数字信封字符串"
+              placeholder="粘贴签发时返回的加密数字信封字符串（CFCA 格式为 5 段文本，PKCS10 格式为 base64）"
               style="flex: 1"
             />
             <div class="file-col">
@@ -538,44 +670,58 @@
       <template v-if="envelopeResult">
         <n-divider />
 
-        <n-descriptions bordered :column="1" label-placement="left" size="small" style="margin-bottom: 12px">
-          <n-descriptions-item label="格式">{{ envelopeResult.format }}</n-descriptions-item>
-          <n-descriptions-item label="查询方式">
-            {{ envelopeResult.mode === 'manual' ? '手动输入' : '从签名证书解析' }}
-          </n-descriptions-item>
-        </n-descriptions>
+        <!-- ★ PKCS10 结果 -->
+        <template v-if="envelopeResult.kind === 'pkcs10'">
+          <n-descriptions bordered :column="1" label-placement="left" size="small" style="margin-bottom: 12px">
+            <n-descriptions-item label="格式">{{ envelopeResult.format }}</n-descriptions-item>
+            <n-descriptions-item label="查询方式">
+              {{ envelopeResult.mode === 'manual' ? '手动输入' : '从签名证书解析' }}
+            </n-descriptions-item>
+          </n-descriptions>
 
-        <div class="envelope-field">
-          <div class="envelope-field__header">
-            <span class="envelope-field__label">对称密钥密文（symmetric_key_cipher，base64）</span>
-            <n-button size="tiny" @click="copyText(envelopeResult.symmetric_key_cipher)">复制</n-button>
+          <div class="envelope-field">
+            <div class="envelope-field__header">
+              <span class="envelope-field__label">对称密钥密文（symmetric_key_cipher，base64）</span>
+              <n-button size="tiny" @click="copyText(envelopeResult.symmetric_key_cipher)">复制</n-button>
+            </div>
+            <n-input :value="envelopeResult.symmetric_key_cipher" type="textarea" :autosize="{ minRows: 3, maxRows: 6 }" readonly />
           </div>
-          <n-input :value="envelopeResult.symmetric_key_cipher" type="textarea" :autosize="{ minRows: 3, maxRows: 6 }" readonly />
-        </div>
 
-        <div class="envelope-field">
-          <div class="envelope-field__header">
-            <span class="envelope-field__label">IV（base64）</span>
-            <n-button size="tiny" @click="copyText(envelopeResult.iv)">复制</n-button>
+          <div class="envelope-field">
+            <div class="envelope-field__header">
+              <span class="envelope-field__label">IV（base64）</span>
+              <n-button size="tiny" @click="copyText(envelopeResult.iv)">复制</n-button>
+            </div>
+            <n-input :value="envelopeResult.iv" readonly />
           </div>
-          <n-input :value="envelopeResult.iv" readonly />
-        </div>
 
-        <div class="envelope-field">
-          <div class="envelope-field__header">
-            <span class="envelope-field__label">加密私钥密文（encrypted_private_key，base64）</span>
-            <n-button size="tiny" @click="copyText(envelopeResult.encrypted_private_key)">复制</n-button>
+          <div class="envelope-field">
+            <div class="envelope-field__header">
+              <span class="envelope-field__label">加密私钥密文（encrypted_private_key，base64）</span>
+              <n-button size="tiny" @click="copyText(envelopeResult.encrypted_private_key)">复制</n-button>
+            </div>
+            <n-input :value="envelopeResult.encrypted_private_key" type="textarea" :autosize="{ minRows: 6, maxRows: 12 }" readonly />
           </div>
-          <n-input :value="envelopeResult.encrypted_private_key" type="textarea" :autosize="{ minRows: 6, maxRows: 12 }" readonly />
-        </div>
 
-        <div v-if="envelopeResult.decrypted_key_pem" class="envelope-field result-block--envelope" style="padding: 10px 12px; border-radius: 6px">
-          <div class="envelope-field__header">
-            <span class="envelope-field__label">解密后的加密私钥（PEM）</span>
-            <n-button size="tiny" @click="copyText(envelopeResult.decrypted_key_pem || '')">复制</n-button>
+          <div v-if="envelopeResult.decrypted_key_pem" class="envelope-field result-block--envelope" style="padding: 10px 12px; border-radius: 6px">
+            <div class="envelope-field__header">
+              <span class="envelope-field__label">解密后的加密私钥（PEM）</span>
+              <n-button size="tiny" @click="copyText(envelopeResult.decrypted_key_pem || '')">复制</n-button>
+            </div>
+            <n-input :value="envelopeResult.decrypted_key_pem" type="textarea" :autosize="{ minRows: 6, maxRows: 12 }" readonly />
           </div>
-          <n-input :value="envelopeResult.decrypted_key_pem" type="textarea" :autosize="{ minRows: 6, maxRows: 12 }" readonly />
-        </div>
+        </template>
+
+        <!-- ★ CFCA 结果 -->
+        <template v-else>
+          <div class="envelope-field result-block--envelope" style="padding: 10px 12px; border-radius: 6px">
+            <div class="envelope-field__header">
+              <span class="envelope-field__label">解密后的加密私钥（PEM）</span>
+              <n-button size="tiny" @click="copyText(envelopeResult.decrypted_key_pem)">复制</n-button>
+            </div>
+            <n-input :value="envelopeResult.decrypted_key_pem" type="textarea" :autosize="{ minRows: 6, maxRows: 12 }" readonly />
+          </div>
+        </template>
       </template>
 
       <template #footer>
@@ -623,6 +769,13 @@ import {
   type QueryEnvelopeResult,
   type CertTypeItem,
   type ImportCsrParams,
+  // ★ CSR 申请 / CFCA
+  type P10Format,
+  type CSRCreateResult,
+  type CFCASignParams,
+  type CFCASignResult,
+  type CFCADecodeEnvelopeParams,
+  type CFCADecodeEnvelopeResult,
 } from '@/api/crypto';
 import {
   DEFAULT_DN_SEPARATOR, DN_HELP_KEYS, DN_HELP_EXAMPLE,
@@ -636,6 +789,7 @@ const submitting = ref(false);
 const querying = ref(false);
 
 const showApply = ref(false);
+const showApplyResult = ref(false);
 const showImport = ref(false);
 const showSignCert = ref(false);
 const showDownloadKey = ref(false);
@@ -644,8 +798,16 @@ const showQueryEnvelope = ref(false);
 
 const list = ref<any[]>([]);
 const caList = ref<any[]>([]);
-const signResult = ref<SignCertResult>({});
-const envelopeResult = ref<QueryEnvelopeResult | null>(null);
+
+// ★ CFCA 结果字段（sign_key_pem）合并到 SignCertResult 上
+const signResult = ref<SignCertResult & Partial<CFCASignResult>>({});
+
+// ★ 申请 P10 结果（CFCA 模式专用；临时密钥由平台内置，不再逐次返回）
+const applyResult = ref<{
+  csr_id: string;
+  csr_pem: string;
+  sign_key_pem: string;
+}>({ csr_id: '', csr_pem: '', sign_key_pem: '' });
 
 const pagination = reactive({
   page: 1, pageSize: 20, itemCount: 0,
@@ -656,7 +818,9 @@ const pagination = reactive({
 // 申请 P10
 // ---------------------------------------------------------------------------
 const applyForm = reactive({
-  algorithm: 'SM2', dn: '', dnSeparator: DEFAULT_DN_SEPARATOR, san: '',
+  algorithm: 'SM2',
+  p10_format: 'pkcs10' as P10Format,
+  dn: '', dnSeparator: DEFAULT_DN_SEPARATOR, san: '',
 });
 
 const dnPreview = computed(() => parseDN(applyForm.dn, applyForm.dnSeparator));
@@ -684,7 +848,9 @@ const signForm = reactive({
   csr_key_password: '',
   dn: '', dnSeparator: DEFAULT_DN_SEPARATOR,
   cert_mode: 'normal' as 'normal' | 'dual',
-  // ★ 修改：默认类型从 server → signature
+  dual_format: 'pkcs10' as 'pkcs10' | 'cfca',
+  // ★ CFCA 专属（SAN；返回签名私钥已固定为 true，不再暴露开关）
+  cfca_san: '',
   cert_types: ['signature'] as CertTypeItem[],
   ca_source: 'local' as 'local' | 'manual',
   ca_id: '', ca_cert_pem: '', ca_key_pem: '', ca_key_password: '',
@@ -692,6 +858,10 @@ const signForm = reactive({
 });
 
 const signDnPreview = computed(() => parseDN(signForm.dn, signForm.dnSeparator));
+
+const isCfcaDual = computed(
+  () => signForm.cert_mode === 'dual' && signForm.dual_format === 'cfca'
+);
 
 // ---------------------------------------------------------------------------
 // 查询信封信息
@@ -740,9 +910,17 @@ async function fetchSignCertOptions() {
 
 const queryDisabled = computed(() => {
   if (!envelopeForm.encrypted_envelope.trim()) return true;
+  // ★ CFCA 分支：平台内置临时密钥自动解密，只需信封
+  if (envelopeForm.format === 'cfca') return false;
   if (envelopeForm.mode === 'cert') return !envelopeForm.cert_id;
   return !envelopeForm.sign_key_pem.trim();
 });
+
+type EnvelopeResult =
+  | (QueryEnvelopeResult & { kind: 'pkcs10' })
+  | (CFCADecodeEnvelopeResult & { kind: 'cfca' });
+
+const envelopeResult = ref<EnvelopeResult | null>(null);
 
 // ---------------------------------------------------------------------------
 // 下载私钥
@@ -775,12 +953,13 @@ const columns: DataTableColumns<any> = [
     title: '是否为CFCA',
     key: 'is_cfca',
     width: 130,
-    render() {
-      // 仅展示，默认否
+    render(row) {
+      // ★ 读取后端返回的 is_cfca 字段
+      const isCfca = !!row.is_cfca;
       return h(
         NTag,
-        { size: 'small', type: 'default' },
-        { default: () => '否' }
+        { size: 'small', type: isCfca ? 'success' : 'default' },
+        { default: () => (isCfca ? '是' : '否') }
       );
     },
   },
@@ -789,7 +968,6 @@ const columns: DataTableColumns<any> = [
     key: 'cert_config_status',
     width: 150,
     render() {
-      // 仅展示，默认未配置
       return h(
         NTag,
         { size: 'small', type: 'warning' },
@@ -846,17 +1024,18 @@ const caOptions = computed(() =>
 );
 
 const signDisabled = computed(() => {
-  if (signForm.csr_source === 'existing' && !signForm.csr_id) return true;
+  if (signForm.dn.trim() && signDnPreview.value.errors.length > 0) return true;
+  if (signForm.ca_source === 'local' && !signForm.ca_id) return true;
+  if (signForm.ca_source === 'manual' && (!signForm.ca_cert_pem.trim() || !signForm.ca_key_pem.trim())) return true;
 
+  if (signForm.csr_source === 'existing' && !signForm.csr_id) return true;
   if (signForm.csr_source === 'upload') {
     if (!signForm.csr_pem.trim()) return true;
     if (signForm.with_key && !signForm.csr_key_pem.trim()) return true;
   }
 
-  if (signForm.dn.trim() && signDnPreview.value.errors.length > 0) return true;
   if (signForm.cert_mode === 'normal' && signForm.cert_types.length === 0) return true;
-  if (signForm.ca_source === 'local' && !signForm.ca_id) return true;
-  if (signForm.ca_source === 'manual' && (!signForm.ca_cert_pem.trim() || !signForm.ca_key_pem.trim())) return true;
+
   return false;
 });
 
@@ -898,6 +1077,7 @@ function handlePageChange(page: number) {
 // ---------------------------------------------------------------------------
 function openApply() {
   applyForm.algorithm = 'SM2';
+  applyForm.p10_format = 'pkcs10';
   applyForm.dn = '';
   applyForm.dnSeparator = DEFAULT_DN_SEPARATOR;
   applyForm.san = '';
@@ -907,17 +1087,34 @@ function openApply() {
 async function handleApply() {
   const r = validateDN(applyForm.dn, applyForm.dnSeparator);
   if (r.errors.length) { message.error(r.errors[0]); return; }
+
   submitting.value = true;
   try {
     const params: Record<string, unknown> = {
       algorithm: applyForm.algorithm,
       subject: r.subject,
       key_source: 'generate',
+      p10_format: applyForm.p10_format,
     };
     const sanList = applyForm.san.split(',').map((s) => s.trim()).filter(Boolean);
     if (sanList.length) params.san = sanList;
 
-    await cryptoApi.execute('csr.create', params);
+    const res: any = await cryptoApi.execute<CSRCreateResult>('csr.create', params);
+    const data: CSRCreateResult = (res?.data as CSRCreateResult) || {};
+
+    // ★ CFCA 模式：展示 CSR，临时密钥由平台内置
+    if (applyForm.p10_format === 'cfca') {
+      applyResult.value = {
+        csr_id: data.csr_id || '',
+        csr_pem: data.csr_pem || '',
+        sign_key_pem: data.sign_key_pem || '',
+      };
+      showApply.value = false;
+      showApplyResult.value = true;
+      await fetchList();
+      return;
+    }
+
     message.success('P10 申请成功');
     showApply.value = false;
     await fetchList();
@@ -926,6 +1123,11 @@ async function handleApply() {
   } finally {
     submitting.value = false;
   }
+}
+
+function closeApplyResult() {
+  showApplyResult.value = false;
+  applyResult.value = { csr_id: '', csr_pem: '', sign_key_pem: '' };
 }
 
 // ---------------------------------------------------------------------------
@@ -1052,7 +1254,8 @@ function openSignCert() {
   signForm.dn = '';
   signForm.dnSeparator = DEFAULT_DN_SEPARATOR;
   signForm.cert_mode = 'normal';
-  // ★ 修改：重置默认类型 server → signature
+  signForm.dual_format = 'pkcs10';
+  signForm.cfca_san = '';
   signForm.cert_types = ['signature'];
   signForm.ca_source = 'local';
   signForm.ca_id = '';
@@ -1075,6 +1278,59 @@ async function handleSignCert() {
     subjectObj = r.subject;
   }
 
+  // ★ CFCA 双证分支
+  if (isCfcaDual.value) {
+    submitting.value = true;
+    try {
+      const payload: CFCASignParams = {
+        ca_source: signForm.ca_source,
+        csr_source: signForm.csr_source,
+        validity_days: signForm.validity_days,
+        return_sign_key: true,
+      };
+
+      if (signForm.ca_source === 'local') {
+        payload.ca_id = signForm.ca_id;
+      } else {
+        payload.ca_cert_pem = signForm.ca_cert_pem;
+        payload.ca_key_pem = signForm.ca_key_pem;
+        if (signForm.ca_key_password) payload.ca_key_password = signForm.ca_key_password;
+      }
+
+      if (signForm.csr_source === 'existing') {
+        payload.csr_id = signForm.csr_id;
+      } else if (signForm.csr_source === 'upload') {
+        payload.csr_pem = signForm.csr_pem;
+        if (signForm.with_key && signForm.csr_key_pem.trim()) {
+          payload.csr_key_pem = signForm.csr_key_pem;
+          if (signForm.csr_key_password) payload.csr_key_password = signForm.csr_key_password;
+        }
+      }
+
+      if (subjectObj) {
+        payload.subject = subjectObj;
+      }
+
+      if (signForm.cfca_san.trim()) {
+        const sanList = signForm.cfca_san.split(',').map((s) => s.trim()).filter(Boolean);
+        if (sanList.length) payload.san = sanList;
+      }
+
+      const res: any = await cryptoApi.cfcaSign(payload);
+      signResult.value = (res?.data as SignCertResult & CFCASignResult) || {};
+
+      showSignCert.value = false;
+      showSignResult.value = true;
+      await fetchList();
+    } catch (e: any) {
+      message.error(e.message || 'CFCA 双证签发失败');
+    } finally {
+      submitting.value = false;
+    }
+    return;
+  }
+
+  // ===== PKCS10 分支 =====
   submitting.value = true;
   try {
     const payload: SignCertParams = {
@@ -1134,6 +1390,16 @@ function closeSignResult() {
   signResult.value = {};
 }
 
+// ★ 从签发结果跳转到解信封（CFCA 模式下前端只需带信封，后端用内置临时密钥解密）
+function decodeCfcaFromSignResult() {
+  const env = signResult.value.encrypted_envelope || '';
+  closeSignResult();
+  openQueryEnvelope();
+  envelopeForm.format = 'cfca';
+  envelopeForm.encrypted_envelope = env;
+  envelopeResult.value = null;
+}
+
 // ---------------------------------------------------------------------------
 // 查看信封信息
 // ---------------------------------------------------------------------------
@@ -1146,11 +1412,24 @@ function openQueryEnvelope() {
   envelopeForm.sign_key_password = '';
   envelopeForm.encrypted_envelope = '';
   envelopeForm.envelope_file_name = '';
+
   if (envelopeKeyFileInputRef.value) envelopeKeyFileInputRef.value.value = '';
   if (envelopeFileInputRef.value) envelopeFileInputRef.value.value = '';
   if (signCertList.value.length === 0) fetchSignCertOptions();
   envelopeResult.value = null;
   showQueryEnvelope.value = true;
+}
+
+function onEnvelopeFormatChange(v: 'pkcs10' | 'cfca') {
+  envelopeResult.value = null;
+  if (v === 'cfca') {
+    envelopeForm.mode = 'cert';
+    envelopeForm.cert_id = '';
+    envelopeForm.sign_key_pem = '';
+    envelopeForm.sign_key_file_name = '';
+    envelopeForm.sign_key_password = '';
+    if (envelopeKeyFileInputRef.value) envelopeKeyFileInputRef.value.value = '';
+  }
 }
 
 async function onEnvelopeKeyFileChange(e: Event) {
@@ -1185,13 +1464,37 @@ function clearEnvelope() {
 
 async function handleQueryEnvelope() {
   if (!envelopeForm.encrypted_envelope.trim()) { message.warning('请输入加密的数字信封'); return; }
+
+  // ★ CFCA 分支：平台内置固定临时密钥，前端只传信封
+  if (envelopeForm.format === 'cfca') {
+    querying.value = true;
+    try {
+      const payload: CFCADecodeEnvelopeParams = {
+        encrypted_envelope: envelopeForm.encrypted_envelope.trim(),
+      };
+      const res: any = await cryptoApi.cfcaDecodeEnvelope(payload);
+      envelopeResult.value = {
+        kind: 'cfca',
+        ...((res?.data as CFCADecodeEnvelopeResult) || {}),
+      } as EnvelopeResult;
+      message.success('解密成功');
+    } catch (e: any) {
+      envelopeResult.value = null;
+      message.error(e.message || '解密失败');
+    } finally {
+      querying.value = false;
+    }
+    return;
+  }
+
+  // ===== PKCS10 分支 =====
   if (envelopeForm.mode === 'cert' && !envelopeForm.cert_id) { message.warning('请选择签名证书'); return; }
   if (envelopeForm.mode === 'manual' && !envelopeForm.sign_key_pem.trim()) { message.warning('请输入签名私钥'); return; }
 
   querying.value = true;
   try {
     const payload: QueryEnvelopeParams = {
-      format: envelopeForm.format,
+      format: 'pkcs10',
       mode: envelopeForm.mode,
       encrypted_envelope: envelopeForm.encrypted_envelope.trim(),
     };
@@ -1203,7 +1506,10 @@ async function handleQueryEnvelope() {
     }
 
     const res: any = await cryptoApi.queryEnvelope(payload);
-    envelopeResult.value = (res?.data as QueryEnvelopeResult) || null;
+    envelopeResult.value = {
+      kind: 'pkcs10',
+      ...((res?.data as QueryEnvelopeResult) || {}),
+    } as EnvelopeResult;
     message.success('解密成功');
   } catch (e: any) {
     envelopeResult.value = null;

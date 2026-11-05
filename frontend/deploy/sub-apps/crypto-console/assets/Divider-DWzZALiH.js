@@ -1,4 +1,4 @@
-import{f as b,i as C,a3 as h,j as n,J as t,d as $,k as u,o as g,c as m,l as v,n as f,U as _,h as p,m as w,p as k,q as z,r as y}from"./index-BG9A5pts.js";function B(i){const{textColor1:o,dividerColor:r,fontWeightStrong:l}=i;return{textColor:o,color:r,fontWeight:l}}const P={common:b,self:B};var R=C("divider",`
+import{f as b,i as C,a3 as h,j as n,J as t,d as $,k as u,o as g,c as m,l as v,n as f,U as _,h as p,m as w,p as k,q as z,r as y}from"./index-D9MWQxOk.js";function B(i){const{textColor1:o,dividerColor:r,fontWeightStrong:l}=i;return{textColor:o,color:r,fontWeight:l}}const P={common:b,self:B};var R=C("divider",`
  position: relative;
  display: flex;
  width: 100%;
