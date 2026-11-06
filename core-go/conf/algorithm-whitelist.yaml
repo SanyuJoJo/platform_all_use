@@ -1,5 +1,5 @@
 schema_version: "1.0"
-whitelist_version: "c07-20260929"
+whitelist_version: "c07-20261105"
 tongsuo_min_version: "8.5.0"
 algorithms:
   SM2:
@@ -11,7 +11,7 @@ algorithms:
     priority: "P0"
   RSA:
     type: ["signature", "encipherment"]
-    key_size: [2048, 3072, 4096]
+    key_size: [1024, 2048, 3072, 4096]
     digest: ["SHA256", "SHA384", "SHA512"]
     cert_types: ["ca", "server", "client", "signature", "encryption"]
     priority: "P0"
@@ -40,32 +40,45 @@ algorithms:
       - "SLH-DSA-SHA2-192f"
       - "SLH-DSA-SHA2-256s"
       - "SLH-DSA-SHA2-256f"
+      - "SLH-DSA-SHAKE-128s"
+      - "SLH-DSA-SHAKE-128f"
+      - "SLH-DSA-SHAKE-192s"
+      - "SLH-DSA-SHAKE-192f"
+      - "SLH-DSA-SHAKE-256s"
+      - "SLH-DSA-SHAKE-256f"
+    cert_types: ["ca", "server", "client", "signature"]
+    priority: "P1"
+  Falcon:
+    type: ["signature"]
+    parameter:
+      - "Falcon-512"
+      - "Falcon-1024"
     cert_types: ["ca", "server", "client", "signature"]
     priority: "P1"
 operations:
   ca.create:
-    allowed_algorithms: ["SM2", "RSA", "ECC", "ML-DSA"]
+    allowed_algorithms: ["SM2", "RSA", "ECC", "ML-DSA", "SLH-DSA", "Falcon"]
   ca.intermediate.create:
-    allowed_algorithms: ["SM2", "RSA", "ECC", "ML-DSA"]
+    allowed_algorithms: ["SM2", "RSA", "ECC", "ML-DSA", "SLH-DSA", "Falcon"]
   csr.create:
-    allowed_algorithms: ["SM2", "RSA", "ECC", "ML-DSA"]
+    allowed_algorithms: ["SM2", "RSA", "ECC", "ML-DSA", "SLH-DSA", "Falcon"]
   cert.sign:
-    allowed_algorithms: ["SM2", "RSA", "ECC", "ML-DSA"]
+    allowed_algorithms: ["SM2", "RSA", "ECC", "ML-DSA", "SLH-DSA", "Falcon"]
     allowed_cert_types: ["server", "client", "signature", "encryption"]
     allowed_ca_source: ["local", "manual"]
   dual_cert.create:
     allowed_algorithms: ["SM2"]
   crl.create:
-    allowed_algorithms: ["SM2", "RSA", "ECC", "ML-DSA"]
+    allowed_algorithms: ["SM2", "RSA", "ECC", "ML-DSA", "SLH-DSA", "Falcon"]
     allowed_digest_algorithms: ["SM3", "SHA256", "SHA384", "SHA512"]
   cert.convert:
     allowed_algorithms: ["*"]
   cert.parse:
     allowed_algorithms: ["*"]
   key.manage:
-    allowed_algorithms: ["SM2", "RSA", "ECC", "ML-KEM", "ML-DSA", "SLH-DSA"]
+    allowed_algorithms: ["SM2", "RSA", "ECC", "ML-KEM", "ML-DSA", "SLH-DSA", "Falcon"]
   pqc.cert.create:
-    allowed_algorithms: ["ML-KEM", "ML-DSA", "SLH-DSA"]
+    allowed_algorithms: ["ML-KEM", "ML-DSA", "SLH-DSA", "Falcon"]
   chain.verify:
     allowed_algorithms: ["*"]
   batch.execute:
@@ -73,4 +86,4 @@ operations:
   ssl.config.generate:
     allowed_algorithms: ["*"]
   crypto.service:
-    allowed_algorithms: ["SM2", "RSA", "ECC", "ML-DSA", "SLH-DSA"]
+    allowed_algorithms: ["SM2", "RSA", "ECC", "ML-DSA", "SLH-DSA", "Falcon"]

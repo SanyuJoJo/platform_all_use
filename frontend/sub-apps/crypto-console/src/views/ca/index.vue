@@ -1,3 +1,4 @@
+
 <template>
   <div>
     <n-space vertical size="large">
@@ -50,7 +51,13 @@
         </n-form-item>
 
         <n-form-item label="公钥算法">
-          <n-select v-model:value="form.algorithm" :options="algorithmOptions" />
+          <n-select
+            v-model:value="form.algorithm"
+            :options="algStore.options"
+            :loading="algStore.loading"
+            :render-label="renderAlgLabel"
+            placeholder="选择算法"
+          />
         </n-form-item>
 
         <n-form-item label="使用者 DN">
@@ -114,14 +121,6 @@
         <n-form-item label="有效期天数">
           <n-input-number v-model:value="form.validity_days" :min="1" />
         </n-form-item>
-
-        <n-form-item label="RSA 位数" v-if="form.algorithm === 'RSA'">
-          <n-select v-model:value="form.key_params.key_size" :options="rsaSizeOptions" />
-        </n-form-item>
-
-        <n-form-item label="ECC 曲线" v-if="form.algorithm === 'ECC'">
-          <n-select v-model:value="form.key_params.curve" :options="eccCurveOptions" />
-        </n-form-item>
       </n-form>
 
       <template #footer>
@@ -130,7 +129,7 @@
           <n-button
             type="primary"
             :loading="submitting"
-            :disabled="dnPreview.errors.length > 0 || !form.dn.trim() || !form.domain"
+            :disabled="dnPreview.errors.length > 0 || !form.dn.trim() || !form.domain || !form.algorithm"
             @click="handleCreate"
           >
             提交
@@ -336,7 +335,7 @@
             </n-descriptions-item>
             <n-descriptions-item label="有效期（起）">{{ detail.not_before }}</n-descriptions-item>
             <n-descriptions-item label="有效期（止）">{{ detail.not_after }}</n-descriptions-item>
-            <n-descriptions-item label="公钥算法">{{ detail.public_key_algorithm }}</n-descriptions-item>
+            <n-descriptions-item label="公钥算法">{{ detailAlgLabel }}</n-descriptions-item>
             <n-descriptions-item label="签名摘要算法">{{ detail.signature_algorithm }}</n-descriptions-item>
             <n-descriptions-item label="签名摘要值">
               <n-popover trigger="click" :width="640" style="max-width: 90vw">
@@ -376,9 +375,12 @@ import { useOperation } from '@/composables/useOperation';
 import {
   DEFAULT_DN_SEPARATOR, DN_HELP_KEYS, DN_HELP_EXAMPLE, validateDN, parseDN,
 } from '@/utils/dn';
+import { useAlgorithmStore } from '@/store/algorithm';
+import { publicKeyLabel } from '@/utils/algorithms';
 
 const message = useMessage();
 const { run } = useOperation();
+const algStore = useAlgorithmStore();
 
 const loading = ref(false);
 const submitting = ref(false);
@@ -409,7 +411,6 @@ const form = reactive({
   dn: '',
   dnSeparator: DEFAULT_DN_SEPARATOR,
   validity_days: 3650,
-  key_params: { key_size: 2048, curve: 'prime256v1' },
 });
 
 const importForm = reactive({
@@ -430,11 +431,16 @@ const exportForm = reactive({
 const dnPreview = computed(() => parseDN(form.dn, form.dnSeparator));
 
 const domainOptions = computed(() =>
-  domains.value.map((d) => ({
-    label: d,
-    value: d,
-  }))
+  domains.value.map((d) => ({ label: d, value: d }))
 );
+
+// ★ 详情页算法展示：优先 algorithm（openDetail 时从列表带入），回退到解析结果
+const detailAlgLabel = computed(() => {
+  if (!detail.value) return '';
+  const alg = (detail.value as any).algorithm;
+  if (alg) return algStore.label(alg);
+  return publicKeyLabel(detail.value.public_key_algorithm);
+});
 
 const newDomainError = computed(() => {
   const v = newDomainName.value.trim();
@@ -449,25 +455,14 @@ const newDomainValid = computed(
   () => newDomainName.value.trim() !== '' && newDomainError.value === ''
 );
 
-const algorithmOptions = [
-  { label: 'SM2', value: 'SM2' },
-  { label: 'RSA', value: 'RSA' },
-  { label: 'ECC', value: 'ECC' },
-  { label: 'ML-DSA', value: 'ML-DSA' },
-];
-const rsaSizeOptions = [
-  { label: '2048', value: 2048 },
-  { label: '3072', value: 3072 },
-  { label: '4096', value: 4096 },
-];
-const eccCurveOptions = [
-  { label: 'P-256 / prime256v1', value: 'prime256v1' },
-  { label: 'P-384 / secp384r1', value: 'secp384r1' },
-];
+function renderAlgLabel(option: any) {
+  if (!option?.value) return option?.label ?? '';
+  const info = algStore.find(option.value);
+  const text = option.label;
+  if (!info?.Notes) return text;
+  return h('span', { title: info.Notes }, text);
+}
 
-// ============================================================================
-// 时间格式化
-// ============================================================================
 function fmtTime(t: any): string {
   if (!t) return '-';
   if (typeof t !== 'string') {
@@ -483,11 +478,6 @@ function fmtTime(t: any): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-// ============================================================================
-// 表格列
-// 列顺序：使用者 | 信任域 | 公钥算法 | 序列号 | 生效时间 | 失效时间
-//        | 状态 | 创建时间 | 私钥文件 | 操作
-// ============================================================================
 const columns: DataTableColumns<any> = [
   {
     title: '使用者',
@@ -502,19 +492,22 @@ const columns: DataTableColumns<any> = [
     render(row: any) {
       const d = row.domain || '-';
       if (d === '-') return d;
-      return h(
-        NTag,
-        { size: 'small', type: 'info' },
-        { default: () => d }
-      );
+      return h(NTag, { size: 'small', type: 'info' }, { default: () => d });
     },
   },
   {
     title: '公钥算法',
     key: 'public_key_algorithm',
-    width: 110,
+    width: 130,
     render(row: any) {
-      return row.public_key_algorithm || row.algorithm || '';
+      // ★ 优先 DB 规范 ID（algorithm），回退到解析结果
+      //   - algorithm = "SM2"     → "SM2"
+      //   - algorithm = "RSA2048" → "RSA-2048"
+      //   - 无 algorithm 时回退，如 "ECC(256)" → "ECC-256"
+      if (row.algorithm) {
+        return algStore.label(row.algorithm);
+      }
+      return publicKeyLabel(row.public_key_algorithm);
     },
   },
   {
@@ -587,9 +580,6 @@ function truncate(s: string | undefined | null, n: number): string {
   return s.length > n ? s.slice(0, n) + '...' : s;
 }
 
-// ============================================================================
-// 数据加载
-// ============================================================================
 async function fetchDomains() {
   domainLoading.value = true;
   try {
@@ -616,17 +606,12 @@ async function fetchList() {
   }
 }
 
-// ============================================================================
-// 创建
-// ============================================================================
 function openCreate() {
   form.domain = 'safe';
   form.algorithm = 'SM2';
   form.dn = '';
   form.dnSeparator = DEFAULT_DN_SEPARATOR;
   form.validity_days = 3650;
-  form.key_params.key_size = 2048;
-  form.key_params.curve = 'prime256v1';
   if (domains.value.length === 0) fetchDomains();
   showCreate.value = true;
 }
@@ -640,19 +625,13 @@ async function handleCreate() {
 
   submitting.value = true;
   try {
-    const params: Record<string, unknown> = {
+    await run('ca.create', {
       domain: form.domain,
       algorithm: form.algorithm,
       subject: result.subject,
       validity_days: form.validity_days,
       key_protection: { cipher: 'AES-256-GCM' },
-    };
-    if (form.algorithm === 'RSA') {
-      params.key_params = { key_size: form.key_params.key_size };
-    } else if (form.algorithm === 'ECC') {
-      params.key_params = { curve: form.key_params.curve };
-    }
-    await run('ca.create', params);
+    });
     showCreate.value = false;
     form.dn = '';
     form.dnSeparator = DEFAULT_DN_SEPARATOR;
@@ -662,9 +641,6 @@ async function handleCreate() {
   }
 }
 
-// ============================================================================
-// 导入
-// ============================================================================
 function openImport() {
   importForm.domain = 'safe';
   importForm.cert_pem = '';
@@ -760,9 +736,6 @@ async function handleImport() {
   }
 }
 
-// ============================================================================
-// 域管理
-// ============================================================================
 function openDomainManager() {
   newDomainName.value = '';
   fetchDomains();
@@ -798,9 +771,6 @@ async function handleDeleteDomain(name: string) {
   }
 }
 
-// ============================================================================
-// 导出
-// ============================================================================
 function openExport(row: any) {
   exportForm.ca_id = row.ca_id;
   exportForm.type = 'cert';
@@ -864,9 +834,7 @@ async function handleExport() {
   }
 }
 
-// ============================================================================
-// 详情 / 删除
-// ============================================================================
+// ★ 关键改动：CA 详情带入 algorithm，供详情页展示精确算法名
 async function handleDetail(row: any) {
   showDetail.value = true;
   detail.value = null;
@@ -874,6 +842,9 @@ async function handleDetail(row: any) {
   try {
     const res = await cryptoApi.getCADetail(row.ca_id);
     detail.value = (res.data as any) || null;
+    if (detail.value && row.algorithm) {
+      (detail.value as any).algorithm = row.algorithm;
+    }
   } catch (e: any) {
     message.error(e.message || '加载详情失败');
     showDetail.value = false;
@@ -893,7 +864,7 @@ async function handleDelete(row: any) {
 }
 
 onMounted(async () => {
-  await Promise.all([fetchList(), fetchDomains()]);
+  await Promise.all([fetchList(), fetchDomains(), algStore.ensureLoaded()]);
 });
 </script>
 

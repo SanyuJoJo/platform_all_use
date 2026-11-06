@@ -79,8 +79,7 @@ export interface DomainListResponse {
   domains: string[];
 }
 
-// ★ 修改：证书类型只保留签名 / 加密两类
-//   - 移除 'server' / 'client'（属于 X.509 EKU 语义，不属于平台业务分类）
+// ★ 证书类型只保留签名 / 加密两类
 export type CertTypeItem = 'signature' | 'encryption';
 
 // =============================================================================
@@ -172,29 +171,24 @@ export interface QueryEnvelopeResult {
 // =============================================================================
 
 export interface CFCASignParams {
-  // ---------- CA 来源 ----------
   ca_source?: 'local' | 'manual';
   ca_id?: string;
   ca_cert_pem?: string;
   ca_key_pem?: string;
   ca_key_password?: string;
 
-  // ---------- CSR 来源 ----------
   csr_source?: 'generate' | 'upload' | 'existing';
   csr_id?: string;
   csr_pem?: string;
   csr_key_pem?: string;
   csr_key_password?: string;
-  /** upload/existing 时 CSR 内无临时公钥 attribute 则必填（PEM）。前端不展示，仅保留类型兼容 */
   tmp_pub_pem?: string;
 
-  // ---------- 证书参数 ----------
   subject?: Record<string, string>;
   san?: string[];
   validity_days?: number;
   domain?: string;
 
-  // ---------- 私钥回传 ----------
   return_sign_key?: boolean;
   key_export_password?: string;
 }
@@ -202,7 +196,6 @@ export interface CFCASignParams {
 export interface CFCASignResult {
   sign_cert_pem: string;
   enc_cert_pem: string;
-  /** CFCA 5 段文本格式信封（80 字符十进制 header + 逗号分隔 5 段 base64） */
   encrypted_envelope: string;
   sign_cert_id?: string;
   enc_cert_id?: string;
@@ -253,6 +246,13 @@ export const cryptoApi = {
     return request.post<OperationResponse<T>>(
       `/crypto/operations/${operationId}`,
       { params, options: { timeout_ms: 5000, dry_run: false, ...options } }
+    );
+  },
+
+  // ★ 算法注册表（国密 / RSA / 后量子）——供前端下拉与能力位使用
+  listAlgorithms() {
+    return request.get<{ items: Array<Record<string, unknown>> }>(
+      '/crypto/algorithms'
     );
   },
 

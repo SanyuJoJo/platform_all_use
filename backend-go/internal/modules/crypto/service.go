@@ -22,12 +22,12 @@ import (
 // Service 密码操作服务。
 type Service struct {
 	adapter    *CoreAdapter
-	caller     *CoreCaller     // ★ 新增：csr.create 后处理导出私钥
-	whitebox   *WhiteboxClient // ★ 新增：csr.create 后处理白盒加密落盘
+	caller     *CoreCaller
+	whitebox   *WhiteboxClient
 	cfg        *config.Config
 	auditSvc   *audit_log.Service
 	db         *gorm.DB
-	layout     *PathLayout // 证书路径改造：供通用路由注入路径
+	layout     *PathLayout
 	sem        chan struct{}
 	taskMu     sync.Mutex
 	taskCancel map[string]context.CancelFunc
@@ -35,7 +35,6 @@ type Service struct {
 
 // NewService 创建密码操作服务。
 func NewService(cfg *config.Config, auditSvc *audit_log.Service, db *gorm.DB) *Service {
-	// core 二进制路径（CoreGoBin 优先，兼容 CoreDispatchPath，兜底 InstallRoot）
 	coreBin := strings.TrimSpace(cfg.CoreGoBin)
 	if coreBin == "" {
 		coreBin = strings.TrimSpace(cfg.CoreDispatchPath)
@@ -44,21 +43,15 @@ func NewService(cfg *config.Config, auditSvc *audit_log.Service, db *gorm.DB) *S
 		coreBin = filepath.Join(cfg.InstallRoot, "core", "bin", "core")
 	}
 
-	// core 根目录（供 FileStore / CoreCaller 使用）
 	coreRoot := strings.TrimSpace(cfg.CoreRoot)
 	if coreRoot == "" && cfg.InstallRoot != "" {
 		coreRoot = filepath.Join(cfg.InstallRoot, "core")
 	}
 
 	adapter := NewCoreAdapter(coreBin, cfg.CoreTimeoutMs, cfg.CoreMaxConcurrency)
-
-	// 证书路径改造：构造 layout，供通用路由注入 output_dir
 	layout := NewPathLayout(cfg)
 	_ = layout.EnsureRoots()
 
-	// ★ csr.create 后处理依赖：
-	//   - CoreCaller      → 从 keystore 导出明文私钥
-	//   - WhiteboxClient  → 白盒 SM4 加密落盘
 	files := NewFileStore(coreRoot)
 	caller := NewCoreCaller(adapter, coreRoot, files, layout)
 	whitebox := NewWhiteboxClient(cfg.CoreGoWhiteboxBin)
@@ -82,6 +75,10 @@ func (s *Service) HealthCheck() error {
 }
 
 // Execute 执行密码操作（同步）。
+//
+// ★ 关键点：构造 coreReq.Params 时使用**副本**并调用 applyCoreAlgorithmMapping，
+// 把 params.algorithm 从平台 ID（RSA2048/MLDSA65/...）转成 core 名（RSA/ML-DSA-65/...）。
+// persistMetadata 仍用 req.Params（平台 ID）落库。
 func (s *Service) Execute(
 	ctx context.Context,
 	op string,
@@ -143,6 +140,10 @@ func (s *Service) Execute(
 		}, 400, nil
 	}
 
+	// ★ 构造 core 请求：用副本，把 algorithm 映射为 core 名
+	coreParams := cloneParams(req.Params)
+	applyCoreAlgorithmMapping(coreParams)
+
 	// 构造 core 请求
 	coreReq := &CoreRequest{
 		SchemaVersion: "1.0",
@@ -152,7 +153,7 @@ func (s *Service) Execute(
 			Type: actorType,
 			ID:   actorID,
 		},
-		Params: req.Params,
+		Params: coreParams,
 	}
 	if req.Options != nil {
 		coreReq.Options = &CoreOptions{
@@ -235,13 +236,10 @@ func (s *Service) Execute(
 		}
 		s.writeAudit(requestID, op, "SUCCESS", durationMs, "", nil)
 
-		// 元数据落库
+		// 元数据落库（用 req.Params 里的平台 ID）
 		s.persistMetadata(op, req.Params, coreResp.Data)
 
-		// ★ csr.create 后处理：core 生成的私钥保存在 keystore 中，
-		//   这里导出并白盒加密落盘到 server/<dir_no>/<pubSM3>.key.pem，
-		//   保证 <dir_no>/ 下 .req.csr 与 .key.pem 成对存在，
-		//   与 CSRService.Import 的落盘规范一致。
+		// ★ csr.create 后处理：把 core 私钥导出并白盒加密落盘
 		if op == "csr.create" {
 			s.postProcessCsrCreate(ctx, req.Params, coreResp.Data)
 		}
@@ -260,18 +258,6 @@ func (s *Service) Execute(
 }
 
 // postProcessCsrCreate 把 core 生成的 CSR 私钥导出并白盒加密落盘。
-//
-// 背景：
-//   - core 的 csr.create 只在 keystore 中保存私钥并返回 key_ref，
-//     不会在 server/<dir_no>/ 下生成 .key.pem 文件；
-//   - 平台侧期望 .req.csr 与 .key.pem 成对出现，
-//     否则 CSRService.DownloadKey 会报「该 P10 未关联私钥」。
-//
-// 落盘规则（与 CSRService.deriveWhiteboxKeyPath 保持一致）：
-//
-//	<csr_path 去掉 .req.csr>.key.pem
-//
-// 失败仅告警，不影响 csr.create 主流程。
 func (s *Service) postProcessCsrCreate(
 	ctx context.Context, params, data map[string]interface{},
 ) {
@@ -279,7 +265,6 @@ func (s *Service) postProcessCsrCreate(
 		return
 	}
 
-	// core 已经返回 key_path 并落盘（新布局），跳过
 	if kp := getString(data, "key_path"); kp != "" {
 		abs := kp
 		if !filepath.IsAbs(abs) && s.layout != nil && s.layout.CertRoot != "" {
@@ -300,7 +285,6 @@ func (s *Service) postProcessCsrCreate(
 
 	csrPath := getString(data, "csr_path")
 	if csrPath == "" {
-		// 从 DB 反查（persistMetadata 已先落库）
 		if csrID := getString(data, "csr_id"); csrID != "" && s.db != nil {
 			var csr models.CSR
 			if err := s.db.Where("csr_id = ?", csrID).First(&csr).Error; err == nil {
@@ -322,14 +306,12 @@ func (s *Service) postProcessCsrCreate(
 	}
 	keyAbs := strings.TrimSuffix(absCsr, ".req.csr") + ".key.pem"
 
-	// 幂等：已存在则不覆盖
 	if st, err := os.Stat(keyAbs); err == nil && !st.IsDir() && st.Size() > 0 {
 		log.Debug().Str("path", keyAbs).
 			Msg("postProcessCsrCreate: key.pem 已存在，跳过")
 		return
 	}
 
-	// 1. 从 core keystore 导出明文私钥
 	plain, err := s.caller.ExportKey(ctx, keyRef)
 	if err != nil {
 		log.Error().Err(err).Str("key_ref", keyRef).
@@ -341,14 +323,12 @@ func (s *Service) postProcessCsrCreate(
 			Msg("postProcessCsrCreate: 导出的私钥为空（忽略）")
 		return
 	}
-	// 明文清零（best effort）
 	defer func() {
 		for i := range plain {
 			plain[i] = 0
 		}
 	}()
 
-	// 2. 白盒加密落盘
 	tmpDir, err := os.MkdirTemp("", "csr-key-")
 	if err != nil {
 		log.Error().Err(err).Msg("postProcessCsrCreate: 创建临时目录失败")
@@ -377,12 +357,6 @@ func (s *Service) postProcessCsrCreate(
 }
 
 // resolveCsrAbs 解析 CSR 相对/绝对路径为存在的绝对路径。
-//
-// 优先级：
-//  1. 绝对路径且文件存在
-//  2. 按 CertRoot 解析
-//  3. 按 CoreRoot 解析
-//  4. 原样（若为绝对路径）
 func (s *Service) resolveCsrAbs(p string) string {
 	if p == "" {
 		return ""
@@ -514,4 +488,20 @@ func strPtr(s string) *string {
 
 func intPtr(v int) *int {
 	return &v
+}
+
+// =============================================================================
+// 辅助
+// =============================================================================
+
+// cloneParams 浅拷贝 params，用于传给 core 前做算法名映射（避免污染调用方）。
+func cloneParams(src map[string]interface{}) map[string]interface{} {
+	if src == nil {
+		return map[string]interface{}{}
+	}
+	dst := make(map[string]interface{}, len(src)+2)
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }

@@ -113,9 +113,14 @@ func (s *CertService) Import(
 		keyRef = &req.KeyRef
 	}
 
-	// ★ 修复：证书类型不再推断，直接跟随证书真实扩展。
-	//   - KeyUsage / ExtendedKeyUsage 都为空 → "unknown"
-	//   - 有则保存原始文本
+	// ★ 规范化：用 PEM 推断规范 ID（不再用 detail.PublicKeyAlgorithm 展示名）
+	algID := certAlgorithmID(bin, certAbs)
+	if algID == "" {
+		// 兜底：按展示名反查；再不济留空（前端 algStore.label 会走兜底）
+		algID = displayNameToID(detail.PublicKeyAlgorithm, "")
+	}
+
+	// ★ cert_type 归一化为枚举
 	certType := certTypeFromUsage(detail.KeyUsage, detail.ExtendedKeyUsage)
 
 	now := time.Now().UTC()
@@ -127,9 +132,9 @@ func (s *CertService) Import(
 		SubjectCN:          cnFromSubject(detail.Subject),
 		Issuer:             detail.Issuer,
 		IssuerCN:           cnFromSubject(detail.Issuer),
-		Algorithm:          detail.PublicKeyAlgorithm,
+		Algorithm:          algID,                     // ★ 规范 ID
 		Fingerprint:        detail.Fingerprint,
-		PublicKeyAlgorithm: detail.PublicKeyAlgorithm,
+		PublicKeyAlgorithm: detail.PublicKeyAlgorithm, // ★ 展示名
 		SignatureAlgorithm: detail.SignatureAlgorithm,
 		NotBefore:          now,
 		NotAfter:           now,
@@ -141,7 +146,6 @@ func (s *CertService) Import(
 	if keyPath != "" {
 		cert.KeyPath = &keyPath
 	}
-	// ★ 运行时填充展示字段
 	cert.HasPrivateKey =
 		(cert.KeyRef != nil && *cert.KeyRef != "") ||
 			(cert.KeyPath != nil && *cert.KeyPath != "")
@@ -154,7 +158,10 @@ func (s *CertService) Import(
 	return cert, nil
 }
 
-// ImportDualCert 国密双证导入。
+// =============================================================================
+// 导入国密双证
+// =============================================================================
+
 func (s *CertService) ImportDualCert(
 	ctx context.Context, req *ImportDualCertRequest,
 ) (*models.Certificate, error) {
@@ -266,7 +273,6 @@ func (s *CertService) ImportDualCert(
 		cert.SignatureAlgorithm = encDetail.SignatureAlgorithm
 	}
 	cert.KeyPath = &encKeyAbs
-	// ★ 运行时填充
 	cert.HasPrivateKey = true
 
 	if err := s.db.Create(cert).Error; err != nil {
@@ -276,34 +282,57 @@ func (s *CertService) ImportDualCert(
 	return cert, nil
 }
 
-// certTypeFromUsage 直接从证书扩展读取用途，不做任何业务推断。
+// certTypeFromUsage 把证书扩展归一化为平台业务枚举。
 //
-// 规则：
-//   - KeyUsage 和 ExtendedKeyUsage 都为空 → "unknown"
-//   - 否则返回原始用途文本，两段用 "; " 分隔
+// ★ 平台业务枚举（唯一允许值）：
 //
-// 示例：
-//   - KeyUsage = "Digital Signature, Key Encipherment"
-//     ExtendedKeyUsage = "TLS Web Server Authentication"
-//     → "Digital Signature, Key Encipherment; TLS Web Server Authentication"
-//   - 两者都为空 → "unknown"
+//	"signature"           : 签名
+//	"encryption"          : 加密
+//	"signature,encryption": 双用途
+//	"dual_sign"           : 双证-签名（由其他路径直接写入）
+//	"dual_enc"            : 双证-加密（同上）
+//	"imported"            : 导入且无法推断
 //
-// ★ 不再根据公钥算法（SM2/ECC/RSA...）猜测证书用途，
-//   避免与第三方工具（按证书真实扩展展示）出现分歧。
+// 映射规则：
+//
+//	KeyUsage 含 "digital signature" / "non repudiation" / "contentcommitment"
+//	                     → 视为签名
+//	EKU 含 "TLS Web Server Authentication" / "clientAuth" / "codeSigning"
+//	                     → 视为签名
+//	KeyUsage 含 "key encipherment" / "data encipherment" / "key agreement"
+//	                     → 视为加密
+//
+// 兼容旧行为：同时有签名+加密时输出 "signature,encryption"；
+// 前端 formatCertType 会拆分为"签名、加密"展示。
 func certTypeFromUsage(keyUsage, extendedKeyUsage string) string {
-	ku := strings.TrimSpace(keyUsage)
-	eku := strings.TrimSpace(extendedKeyUsage)
+	ku := strings.ToLower(strings.TrimSpace(keyUsage))
+	eku := strings.ToLower(strings.TrimSpace(extendedKeyUsage))
 
 	if ku == "" && eku == "" {
-		return "unknown"
+		return "imported"
 	}
 
-	parts := make([]string, 0, 2)
-	if ku != "" {
-		parts = append(parts, ku)
+	hasSig := strings.Contains(ku, "digital signature") ||
+		strings.Contains(ku, "non repudiation") ||
+		strings.Contains(ku, "contentcommitment") ||
+		strings.Contains(eku, "server authentication") ||
+		strings.Contains(eku, "serverauth") ||
+		strings.Contains(eku, "client authentication") ||
+		strings.Contains(eku, "clientauth") ||
+		strings.Contains(eku, "code signing") ||
+		strings.Contains(eku, "codesigning")
+
+	hasEnc := strings.Contains(ku, "key encipherment") ||
+		strings.Contains(ku, "data encipherment") ||
+		strings.Contains(ku, "key agreement")
+
+	switch {
+	case hasSig && hasEnc:
+		return "signature,encryption"
+	case hasSig:
+		return "signature"
+	case hasEnc:
+		return "encryption"
 	}
-	if eku != "" {
-		parts = append(parts, eku)
-	}
-	return strings.Join(parts, "; ")
+	return "imported"
 }

@@ -20,6 +20,10 @@ import (
 	"backend-go/internal/exception"
 )
 
+// =============================================================================
+// CertParser / CertDetail
+// =============================================================================
+
 // CertParser 证书解析。优先铜锁 openssl，Go 标准库兜底。
 type CertParser struct {
 	coreRoot string
@@ -52,23 +56,117 @@ type CADetail = CertDetail
 // ★ 展示时区统一为北京时间 UTC+8（与第三方平台对齐）
 var cstZone = time.FixedZone("CST", 8*3600)
 
+// =============================================================================
+// OID → 展示名映射
+// =============================================================================
+//
+// 覆盖三类 OID：
+//  1. 标准 OID（SM2 / RSA / EC / ML-DSA / SLH-DSA）；
+//  2. OQS 私用 OID（1.3.9999.3.x），标准 oqs-provider 表；
+//  3. 现场定制 oqs-provider 的特殊映射 → 通过 CRYPTO_OID_<oid> 环境变量覆盖。
+//
+// ★ Falcon 特殊说明：
+//
+//	标准 oqs-provider：falcon512=1.3.9999.3.7 / falcon1024=1.3.9999.3.8
+//	现场定制版本可能与标准不同（例如把 falcon1024 编到了 1.3.9999.3.14）→
+//	Parse 阶段会用 `openssl pkey -text` 动态探测优先级高于本表；
+//	如果动态探测也失败，通过 CRYPTO_OID_<oid> 环境变量兜底。
+var oidToDisplay = map[string]string{
+	// ---- 标准 OID ----
+	"1.2.156.10197.1.301":     "ECC(256)",           // SM2
+	"1.2.840.113549.1.1.1":    "RSA",                // rsaEncryption
+	"1.2.840.10045.2.1":       "ECC(256)",           // id-ecPublicKey（曲线靠 ASN1 OID 识别，默认 256）
+	"2.16.840.1.101.3.4.3.17": "ML-DSA-44",          // FIPS 204
+	"2.16.840.1.101.3.4.3.18": "ML-DSA-65",
+	"2.16.840.1.101.3.4.3.19": "ML-DSA-87",
+	"2.16.840.1.101.3.4.3.20": "SLH-DSA-SHA2-128s",  // FIPS 205
+	"2.16.840.1.101.3.4.3.21": "SLH-DSA-SHA2-128f",
+	"2.16.840.1.101.3.4.3.22": "SLH-DSA-SHA2-192s",
+	"2.16.840.1.101.3.4.3.23": "SLH-DSA-SHA2-192f",
+	"2.16.840.1.101.3.4.3.24": "SLH-DSA-SHA2-256s",
+	"2.16.840.1.101.3.4.3.25": "SLH-DSA-SHA2-256f",
+	"2.16.840.1.101.3.4.3.26": "SLH-DSA-SHAKE-128s",
+	"2.16.840.1.101.3.4.3.27": "SLH-DSA-SHAKE-128f",
+	"2.16.840.1.101.3.4.3.28": "SLH-DSA-SHAKE-192s",
+	"2.16.840.1.101.3.4.3.29": "SLH-DSA-SHAKE-192f",
+	"2.16.840.1.101.3.4.3.30": "SLH-DSA-SHAKE-256s",
+	"2.16.840.1.101.3.4.3.31": "SLH-DSA-SHAKE-256f",
+
+	// ---- OQS 私用 OID（标准 oqs-provider 表）----
+	"1.3.9999.3.1":  "ML-DSA-44",           // dilithium2
+	"1.3.9999.3.2":  "ML-DSA-65",           // dilithium3
+	"1.3.9999.3.3":  "ML-DSA-87",           // dilithium5
+	"1.3.9999.3.4":  "ML-DSA-44-AES",
+	"1.3.9999.3.5":  "ML-DSA-65-AES",
+	"1.3.9999.3.6":  "ML-DSA-87-AES",
+	"1.3.9999.3.7":  "Falcon(512)",
+	"1.3.9999.3.8":  "Falcon(1024)",
+	"1.3.9999.3.9":  "Falcon-Padded-512",
+	"1.3.9999.3.10": "Falcon-Padded-1024",
+	"1.3.9999.3.11": "SLH-DSA-SHA2-128f",   // sphincssha2128fsimple
+	"1.3.9999.3.12": "SLH-DSA-SHA2-128s",
+	"1.3.9999.3.13": "SLH-DSA-SHA2-192f",
+	"1.3.9999.3.14": "SLH-DSA-SHA2-192s",
+	"1.3.9999.3.15": "SLH-DSA-SHA2-256f",
+	"1.3.9999.3.16": "SLH-DSA-SHA2-256s",
+	"1.3.9999.3.17": "SLH-DSA-SHAKE-128f",
+	"1.3.9999.3.18": "SLH-DSA-SHAKE-128s",
+	"1.3.9999.3.19": "SLH-DSA-SHAKE-192f",
+	"1.3.9999.3.20": "SLH-DSA-SHAKE-192s",
+	"1.3.9999.3.21": "SLH-DSA-SHAKE-256f",
+	"1.3.9999.3.22": "SLH-DSA-SHAKE-256s",
+}
+
+// oidOverride 环境变量覆盖某个 OID 的展示名（终极兜底）。
+//
+//	CRYPTO_OID_1.3.9999.3.14=Falcon(1024)
+func oidOverride(oid string) string {
+	if v := strings.TrimSpace(os.Getenv("CRYPTO_OID_" + oid)); v != "" {
+		return v
+	}
+	return ""
+}
+
+// lookupOIDDisplay 按 OID 查展示名；找不到返回空。
+func lookupOIDDisplay(oid string) string {
+	oid = strings.TrimSpace(oid)
+	if oid == "" {
+		return ""
+	}
+	if v := oidOverride(oid); v != "" {
+		return v
+	}
+	if v, ok := oidToDisplay[oid]; ok {
+		return v
+	}
+	// OQS 段但表中未收录 → 给可读占位，避免前端展示裸 OID
+	if strings.HasPrefix(oid, "1.3.9999.3.") {
+		return "OQS-" + oid
+	}
+	return ""
+}
+
+// =============================================================================
+// Parse
+// =============================================================================
+
 // Parse 解析证书。
 //
 // ★ 解析策略（同时用 openssl + Go 标准库，取长补短）：
 //
-//  1. openssl 优先：完整解析所有字段（serial/subject/issuer/时间/版本/算法/KeyUsage/EKU），
-//     能正确处理 SM2 等 Go 标准库不支持的算法；
-//  2. Go 标准库补充：如果 Go 能成功解析（RSA/ECDSA/Ed25519），用 Go 的
-//     RawSubjectPublicKeyInfo（完整 SPKI DER）与 Signature（签名 DER）
-//     覆盖 openssl 输出的公钥点与签名截断值；
-//  3. 展示名归一化：把 openssl 的 OID 原始名映射为第三方平台展示名
-//     （id-ecPublicKey → ECC(256)，SM2-with-SM3 → SM2SigningwithSM3）；
-//  4. ★ 与第三方平台对齐：摘要值 SHA1、时间 UTC+8、DN 顺序 C→ST→L→O→OU→CN、
-//     公钥值完整 SPKI DER hex（带空格）、签名值完整连续小写 hex。
+//  1. openssl 优先：完整解析所有字段；
+//  2. Go 标准库补充：SPKI / 签名 DER / 精确时间；
+//  3. ★ OID 动态探测：如果公钥算法是裸 OID（1.3.9999.3.x），
+//     通过 `openssl pkey -text` 从公钥内容获取 provider 返回的真实算法名；
+//     探测失败时回退到 oidToDisplay 硬编码表 + 环境变量覆盖；
+//  4. 展示名归一化：把 openssl 的 OID 原始名映射为第三方平台展示名；
+//  5. 与第三方平台对齐：摘要值 SHA1、时间 UTC+8、DN 顺序、SPKI hex。
 func (p *CertParser) Parse(certAbs string) (*CertDetail, error) {
+	bin := p.OpensslBin()
+
 	// 1. openssl 完整解析
 	var detail *CertDetail
-	if bin := p.OpensslBin(); bin != "" {
+	if bin != "" {
 		if d, err := p.parseWithOpenSSL(bin, certAbs); err == nil && d.Subject != "" {
 			detail = d
 		}
@@ -97,47 +195,50 @@ func (p *CertParser) Parse(certAbs string) (*CertDetail, error) {
 		)
 	}
 
-	// 3. ★ 统一展示名
+	// 3. ★ OID 动态探测（关键：解决 oqs-provider 版本差异导致的映射错位）
+	//
+	//    openssl x509 -text 对 oqs-provider 算法输出裸 OID（1.3.9999.3.x），
+	//    因为 openssl 的 OBJ 名字库只覆盖标准算法。
+	//    但 openssl pkey -text 走 provider，provider 会返回真实名字。
+	//    因此：公钥算法是裸 OID 时，用 pkey -text 探一次。
+	if bin != "" && isPureOID(detail.PublicKeyAlgorithm) {
+		if name := detectKeyAlgNameFromCert(bin, certAbs); name != "" {
+			detail.PublicKeyAlgorithm = name
+		}
+	}
+
+	// 4. ★ 统一展示名（此时 detail.PublicKeyAlgorithm 要么已经是真名，要么还是 OID）
 	detail.PublicKeyAlgorithm = normalizePublicKeyAlg(detail.PublicKeyAlgorithm)
 	detail.SignatureAlgorithm = normalizeSignatureAlg(detail.SignatureAlgorithm)
 
-	// 4. 补全 openssl 解析的兜底字段
-	if detail.Serial == "" {
-		if bin := p.OpensslBin(); bin != "" {
-			if serialOut, err := RunOpenSSL(bin, "x509", "-in", certAbs, "-noout", "-serial"); err == nil {
-				s := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(serialOut), "serial="))
-				detail.Serial = strings.ToLower(cleanHex(s))
+	// 5. 补全 openssl 解析的兜底字段
+	if detail.Serial == "" && bin != "" {
+		if serialOut, err := RunOpenSSL(bin, "x509", "-in", certAbs, "-noout", "-serial"); err == nil {
+			s := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(serialOut), "serial="))
+			detail.Serial = strings.ToLower(cleanHex(s))
+		}
+	}
+	if detail.KeyUsage == "" && bin != "" {
+		if kuOut, err := RunOpenSSL(bin, "x509", "-in", certAbs, "-noout", "-ext", "keyUsage"); err == nil {
+			if lines := extractExtLines(kuOut); len(lines) > 0 {
+				detail.KeyUsage = strings.Join(lines, ", ")
 			}
 		}
 	}
-	if detail.KeyUsage == "" {
-		if bin := p.OpensslBin(); bin != "" {
-			if kuOut, err := RunOpenSSL(bin, "x509", "-in", certAbs, "-noout", "-ext", "keyUsage"); err == nil {
-				lines := extractExtLines(kuOut)
-				if len(lines) > 0 {
-					detail.KeyUsage = strings.Join(lines, ", ")
-				}
-			}
-		}
-	}
-	if detail.ExtendedKeyUsage == "" {
-		if bin := p.OpensslBin(); bin != "" {
-			if ekuOut, err := RunOpenSSL(bin, "x509", "-in", certAbs, "-noout", "-ext", "extendedKeyUsage"); err == nil {
-				lines := extractExtLines(ekuOut)
-				if len(lines) > 0 {
-					detail.ExtendedKeyUsage = strings.Join(lines, ", ")
-				}
+	if detail.ExtendedKeyUsage == "" && bin != "" {
+		if ekuOut, err := RunOpenSSL(bin, "x509", "-in", certAbs, "-noout", "-ext", "extendedKeyUsage"); err == nil {
+			if lines := extractExtLines(ekuOut); len(lines) > 0 {
+				detail.ExtendedKeyUsage = strings.Join(lines, ", ")
 			}
 		}
 	}
 
-	// 5. ★ DN 顺序统一为 C → ST → L → O → OU → CN
+	// 6. DN 顺序统一为 C → ST → L → O → OU → CN
 	detail.Issuer = normalizeDNOrder(detail.Issuer)
 	detail.Subject = normalizeDNOrder(detail.Subject)
 
-	// 6. ★ 公钥值统一为完整 SPKI DER hex（字节间空格分隔）
-	//    以 openssl 输出为准，覆盖 Go 标准库（因 Go 无法解析 SM2）。
-	if bin := p.OpensslBin(); bin != "" {
+	// 7. 公钥值统一为完整 SPKI DER hex（字节间空格分隔）
+	if bin != "" {
 		if spkiHex, err := p.extractSPKIHex(bin, certAbs); err == nil && spkiHex != "" {
 			detail.PublicKeyValue = spkiHex
 		}
@@ -165,6 +266,473 @@ func (p *CertParser) OpensslBin() string {
 }
 
 // =============================================================================
+// ★ OID 动态探测：从公钥内容获取 provider 返回的真实算法名
+// =============================================================================
+
+// detectKeyAlgNameFromCert 用 `openssl pkey -text` 从公钥内容获取 provider 返回的真名。
+//
+// 为什么需要：
+//
+//	openssl x509 -text 输出 Public Key Algorithm 依赖 libcrypto 的 OBJ 名字库，
+//	该库只覆盖标准算法（RSA/SM2/ECC/ML-DSA/SLH-DSA 等由铜锁内置的算法）。
+//	oqs-provider 提供的 Falcon 等算法不在 OBJ 库里 → 输出裸 OID（1.3.9999.3.x）。
+//
+//	openssl pkey -text 走 provider（OSSL），provider 内部知道自己注册了什么名字，
+//	因此输出的第一行就是真实算法名（如 "Falcon-1024 Public-Key:"）。
+//
+// 兜底策略：
+//
+//	1. 先尝试默认加载（openssl.cnf 配置的 provider）；
+//	2. 失败时显式加载 oqsprovider + default；
+//	3. 再失败时尝试 oqs + default（兼容自编译版本）。
+func detectKeyAlgNameFromCert(bin, certAbs string) string {
+	if bin == "" || certAbs == "" {
+		return ""
+	}
+
+	// 提取公钥 PEM
+	pubPEM, err := RunOpenSSL(bin, "x509", "-in", certAbs, "-pubkey", "-noout")
+	if err != nil || strings.TrimSpace(pubPEM) == "" {
+		return ""
+	}
+
+	tmpDir, err := os.MkdirTemp("", "cert-alg-")
+	if err != nil {
+		return ""
+	}
+	defer os.RemoveAll(tmpDir)
+
+	pubPath := filepath.Join(tmpDir, "pub.pem")
+	if err := os.WriteFile(pubPath, []byte(pubPEM), 0600); err != nil {
+		return ""
+	}
+
+	providers := [][]string{
+		{},                        // 默认加载
+		{"oqsprovider", "default"}, // 标准 oqs-provider 名
+		{"oqs", "default"},         // 自编译版本名
+	}
+	for _, pv := range providers {
+		args := []string{"pkey", "-pubin", "-in", pubPath, "-noout", "-text"}
+		for _, p := range pv {
+			args = append(args, "-provider", p)
+		}
+		out, err := RunOpenSSL(bin, args...)
+		if err != nil {
+			continue
+		}
+		if name := extractKeyAlgName(out); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+// extractKeyAlgName 从 pkey -text 输出中提取算法名。
+//
+// 输出格式（首行）：
+//
+//	Falcon-1024 Public-Key:
+//	    pub:
+//	    ...
+//	ML-DSA-65 Public-Key:
+//	    ...
+//	Falcon-1024 Private-Key:
+//	    priv:
+//	    ...
+//
+// 返回 "Falcon-1024" / "ML-DSA-65" 等；找不到返回空字符串。
+func extractKeyAlgName(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// 逐个匹配常见后缀（兼容不同 openssl 版本）
+		for _, suffix := range []string{
+			" Public-Key:",
+			" Private-Key:",
+			" Public Key:",
+			" Private Key:",
+			" public key:",
+		} {
+			if strings.HasSuffix(line, suffix) {
+				name := strings.TrimSpace(strings.TrimSuffix(line, suffix))
+				if name != "" {
+					return name
+				}
+			}
+		}
+		// 遇到第一个非 "xxx:" 的行说明不是算法行，停止
+		if !strings.HasSuffix(line, ":") {
+			break
+		}
+	}
+	return ""
+}
+
+// =============================================================================
+// certAlgorithmID —— 从证书 PEM 推断规范算法 ID
+// =============================================================================
+//
+// 用于 cert_import.go / ca_import.go 落库前填充 Algorithm 字段：
+// 必须存**规范 ID**（"SM2" / "RSA2048" / "falcon1024" / "MLDSA65"），
+// 而不是解析展示名（"ECC(256)" / "Falcon(1024)"）。
+//
+// 推断顺序：
+//  1. openssl x509 -text 的 "Public Key Algorithm:" 行（标准算法名或裸 OID）；
+//  2. 裸 OID 时查 oidToDisplay 反查规范 ID；
+//  3. OID 表未命中时用 pkey -text 动态探测；
+//  4. 动态探测也失败时返回空（调用方兜底）。
+func certAlgorithmID(opensslBin, certAbs string) string {
+	if opensslBin == "" || certAbs == "" {
+		return ""
+	}
+
+	textOut, err := RunOpenSSL(opensslBin, "x509", "-in", certAbs, "-noout", "-text", "-nameopt", "RFC2253")
+	if err != nil {
+		return ""
+	}
+
+	// 1. 尝试 "Public Key Algorithm:" 行
+	algName := extractPubAlgFromX509Text(textOut)
+
+	// 2. 裸 OID → 查表
+	if isPureOID(algName) {
+		if disp := lookupOIDDisplay(algName); disp != "" {
+			if id := displayNameToID(disp, textOut); id != "" {
+				return id
+			}
+		}
+		// 3. 表未命中 → 动态探测
+		if name := detectKeyAlgNameFromCert(opensslBin, certAbs); name != "" {
+			algName = name
+		}
+	}
+
+	// 4. 名字 → 规范 ID
+	return displayNameToID(algName, textOut)
+}
+
+// extractPubAlgFromX509Text 从 x509 -text 中提取 "Public Key Algorithm:" 行。
+func extractPubAlgFromX509Text(text string) string {
+	for _, line := range strings.Split(text, "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "Public Key Algorithm:") {
+			return strings.TrimSpace(strings.TrimPrefix(t, "Public Key Algorithm:"))
+		}
+	}
+	return ""
+}
+
+// extractPubAlgFromCSRText 从 `openssl req -text` 输出中提取公钥算法名。
+//
+// 与 extractPubAlgFromX509Text 相同逻辑（`openssl req -text` 也输出
+// `Public Key Algorithm:` 行），单独函数仅为语义清晰，供 csr_service.go 调用。
+func extractPubAlgFromCSRText(text string) string {
+	return extractPubAlgFromX509Text(text)
+}
+
+// displayNameToID 把算法名或展示名转为规范 ID。
+//
+//	"SM2" / "ECC(256)"                              → "SM2"
+//	"RSA" + text 含 "(2048 bit)"                     → "RSA2048"
+//	"Falcon(512)" / "Falcon-512" / "falcon512"       → "falcon512"
+//	"ML-DSA-65" / "mldsa65" / "dilithium3"           → "MLDSA65"
+//	"SLH-DSA-SHA2-128s"                              → "slh-dsa-sha2-128s"
+func displayNameToID(name, x509Text string) string {
+	s := strings.ToLower(strings.TrimSpace(name))
+	if s == "" {
+		return ""
+	}
+
+	switch {
+	// ---- SM2 / ECC ----
+	case strings.Contains(s, "sm2"),
+		strings.Contains(s, "ecc"),
+		strings.Contains(s, "id-ecpublickey"),
+		strings.Contains(s, "prime256v1"):
+		return "SM2"
+
+	// ---- RSA ----
+	case strings.Contains(s, "rsa"):
+		switch {
+		case strings.Contains(x509Text, "(4096 bit)"):
+			return "RSA4096"
+		case strings.Contains(x509Text, "(2048 bit)"):
+			return "RSA2048"
+		case strings.Contains(x509Text, "(1024 bit)"):
+			return "RSA1024"
+		}
+		return "RSA2048"
+
+	// ---- ML-DSA ----
+	case strings.Contains(s, "ml-dsa-44"), strings.Contains(s, "mldsa44"), strings.Contains(s, "dilithium2"):
+		return "MLDSA44"
+	case strings.Contains(s, "ml-dsa-65"), strings.Contains(s, "mldsa65"), strings.Contains(s, "dilithium3"):
+		return "MLDSA65"
+	case strings.Contains(s, "ml-dsa-87"), strings.Contains(s, "mldsa87"), strings.Contains(s, "dilithium5"):
+		return "MLDSA87"
+
+	// ---- Falcon ----
+	case strings.Contains(s, "falcon(512)"),
+		strings.Contains(s, "falcon-512"),
+		strings.Contains(s, "falcon512"):
+		return "falcon512"
+	case strings.Contains(s, "falcon(1024)"),
+		strings.Contains(s, "falcon-1024"),
+		strings.Contains(s, "falcon1024"):
+		return "falcon1024"
+	}
+
+	// ---- SLH-DSA（全 12 变体）----
+	for _, h := range []string{"sha2", "shake"} {
+		for _, lvl := range []string{"128", "192", "256"} {
+			for _, spd := range []string{"s", "f"} {
+				id := "slh-dsa-" + h + "-" + lvl + spd
+				if strings.Contains(s, id) ||
+					strings.Contains(s, strings.ReplaceAll(id, "-", "")) {
+					return id
+				}
+			}
+		}
+	}
+
+	return ""
+}
+
+// =============================================================================
+// 展示名归一化
+// =============================================================================
+
+// normalizePublicKeyAlg 归一化公钥算法展示名。
+//
+// ★ 匹配优先级：
+//  1. OID 表（1.3.9999.3.x / 标准 OID）→ 直接返回展示名；
+//  2. 名字模糊匹配（SM2 / RSA / ML-DSA / Falcon / SLH-DSA / 传统算法）；
+//  3. 裸 OID 兜底 → "OID-<oid>"。
+//
+// ★ 注意：Falcon 返回**括号形态**（Falcon(512) / Falcon(1024)），
+// 与 algorithms.go 中 AlgorithmSpec.DisplayName 完全一致。
+func normalizePublicKeyAlg(alg string) string {
+	s := strings.TrimSpace(alg)
+	if s == "" {
+		return ""
+	}
+
+	// 1. OID 优先
+	if disp := lookupOIDDisplay(s); disp != "" {
+		return disp
+	}
+
+	lower := strings.ToLower(s)
+
+	switch {
+	// ---- SM2 / ECC ----
+	case strings.Contains(lower, "id-ecpublickey"),
+		strings.Contains(lower, "ecdsa"),
+		strings.Contains(lower, "sm2"),
+		strings.Contains(lower, "ecc"),
+		strings.Contains(lower, "prime256v1"),
+		strings.Contains(lower, "secp256"):
+		return "ECC(256)"
+	case strings.Contains(lower, "secp384"):
+		return "ECC(384)"
+	case strings.Contains(lower, "secp521"):
+		return "ECC(521)"
+
+	// ---- RSA ----
+	case strings.Contains(lower, "rsaencryption"),
+		strings.Contains(lower, "rsa"):
+		return "RSA"
+
+	// ---- ML-DSA ----
+	case strings.Contains(lower, "ml-dsa-44"),
+		strings.Contains(lower, "mldsa44"),
+		strings.Contains(lower, "dilithium2"):
+		return "ML-DSA-44"
+	case strings.Contains(lower, "ml-dsa-65"),
+		strings.Contains(lower, "mldsa65"),
+		strings.Contains(lower, "dilithium3"):
+		return "ML-DSA-65"
+	case strings.Contains(lower, "ml-dsa-87"),
+		strings.Contains(lower, "mldsa87"),
+		strings.Contains(lower, "dilithium5"):
+		return "ML-DSA-87"
+
+	// ---- Falcon ----
+	case strings.Contains(lower, "falcon(512)"),
+		strings.Contains(lower, "falcon-512"),
+		strings.Contains(lower, "falcon512"):
+		return "Falcon(512)"
+	case strings.Contains(lower, "falcon(1024)"),
+		strings.Contains(lower, "falcon-1024"),
+		strings.Contains(lower, "falcon1024"):
+		return "Falcon(1024)"
+
+	// ---- SLH-DSA ----
+	case strings.Contains(lower, "slh-dsa-sha2-128s"):
+		return "SLH-DSA-SHA2-128s"
+	case strings.Contains(lower, "slh-dsa-sha2-128f"):
+		return "SLH-DSA-SHA2-128f"
+	case strings.Contains(lower, "slh-dsa-sha2-192s"):
+		return "SLH-DSA-SHA2-192s"
+	case strings.Contains(lower, "slh-dsa-sha2-192f"):
+		return "SLH-DSA-SHA2-192f"
+	case strings.Contains(lower, "slh-dsa-sha2-256s"):
+		return "SLH-DSA-SHA2-256s"
+	case strings.Contains(lower, "slh-dsa-sha2-256f"):
+		return "SLH-DSA-SHA2-256f"
+	case strings.Contains(lower, "slh-dsa-shake-128s"):
+		return "SLH-DSA-SHAKE-128s"
+	case strings.Contains(lower, "slh-dsa-shake-128f"):
+		return "SLH-DSA-SHAKE-128f"
+	case strings.Contains(lower, "slh-dsa-shake-192s"):
+		return "SLH-DSA-SHAKE-192s"
+	case strings.Contains(lower, "slh-dsa-shake-192f"):
+		return "SLH-DSA-SHAKE-192f"
+	case strings.Contains(lower, "slh-dsa-shake-256s"):
+		return "SLH-DSA-SHAKE-256s"
+	case strings.Contains(lower, "slh-dsa-shake-256f"):
+		return "SLH-DSA-SHAKE-256f"
+
+	// ---- 其它传统算法 ----
+	case strings.Contains(lower, "ed25519"):
+		return "Ed25519"
+	case strings.Contains(lower, "ed448"):
+		return "Ed448"
+	case strings.Contains(lower, "dsa"):
+		return "DSA"
+	}
+
+	// 3. 裸 OID 兜底
+	if isPureOID(s) {
+		return "OID-" + s
+	}
+	return s
+}
+
+// normalizeSignatureAlg 归一化签名算法展示名。
+func normalizeSignatureAlg(alg string) string {
+	s := strings.TrimSpace(alg)
+	if s == "" {
+		return ""
+	}
+
+	// 1. OID 优先
+	if disp := lookupOIDDisplay(s); disp != "" {
+		return disp
+	}
+
+	lower := strings.ToLower(s)
+
+	switch {
+	// ---- SM2 ----
+	case strings.Contains(lower, "sm2-with-sm3"),
+		strings.Contains(lower, "sm2signwithsm3"),
+		strings.Contains(lower, "sm3-with-sm2"),
+		strings.Contains(lower, "sm2signingsm3"):
+		return "SM2SigningwithSM3"
+
+	// ---- ML-DSA ----
+	case strings.Contains(lower, "ml-dsa-44"),
+		strings.Contains(lower, "mldsa44"),
+		strings.Contains(lower, "dilithium2"):
+		return "ML-DSA-44"
+	case strings.Contains(lower, "ml-dsa-65"),
+		strings.Contains(lower, "mldsa65"),
+		strings.Contains(lower, "dilithium3"):
+		return "ML-DSA-65"
+	case strings.Contains(lower, "ml-dsa-87"),
+		strings.Contains(lower, "mldsa87"),
+		strings.Contains(lower, "dilithium5"):
+		return "ML-DSA-87"
+
+	// ---- Falcon ----
+	case strings.Contains(lower, "falcon(512)"),
+		strings.Contains(lower, "falcon-512"),
+		strings.Contains(lower, "falcon512"):
+		return "Falcon(512)"
+	case strings.Contains(lower, "falcon(1024)"),
+		strings.Contains(lower, "falcon-1024"),
+		strings.Contains(lower, "falcon1024"):
+		return "Falcon(1024)"
+
+	// ---- SLH-DSA ----
+	case strings.Contains(lower, "slh-dsa-sha2-128s"):
+		return "SLH-DSA-SHA2-128s"
+	case strings.Contains(lower, "slh-dsa-sha2-128f"):
+		return "SLH-DSA-SHA2-128f"
+	case strings.Contains(lower, "slh-dsa-sha2-192s"):
+		return "SLH-DSA-SHA2-192s"
+	case strings.Contains(lower, "slh-dsa-sha2-192f"):
+		return "SLH-DSA-SHA2-192f"
+	case strings.Contains(lower, "slh-dsa-sha2-256s"):
+		return "SLH-DSA-SHA2-256s"
+	case strings.Contains(lower, "slh-dsa-sha2-256f"):
+		return "SLH-DSA-SHA2-256f"
+	case strings.Contains(lower, "slh-dsa-shake-128s"):
+		return "SLH-DSA-SHAKE-128s"
+	case strings.Contains(lower, "slh-dsa-shake-128f"):
+		return "SLH-DSA-SHAKE-128f"
+	case strings.Contains(lower, "slh-dsa-shake-192s"):
+		return "SLH-DSA-SHAKE-192s"
+	case strings.Contains(lower, "slh-dsa-shake-192f"):
+		return "SLH-DSA-SHAKE-192f"
+	case strings.Contains(lower, "slh-dsa-shake-256s"):
+		return "SLH-DSA-SHAKE-256s"
+	case strings.Contains(lower, "slh-dsa-shake-256f"):
+		return "SLH-DSA-SHAKE-256f"
+
+	// ---- RSA 系列 ----
+	case strings.Contains(lower, "sha256withrsaencryption"),
+		strings.Contains(lower, "sha256withrsa"):
+		return "SHA256withRSA"
+	case strings.Contains(lower, "sha384withrsaencryption"),
+		strings.Contains(lower, "sha384withrsa"):
+		return "SHA384withRSA"
+	case strings.Contains(lower, "sha512withrsaencryption"),
+		strings.Contains(lower, "sha512withrsa"):
+		return "SHA512withRSA"
+	case strings.Contains(lower, "rsassa-pss"),
+		strings.Contains(lower, "rsa-pss"):
+		return "RSASSA-PSS"
+
+	// ---- ECDSA 系列 ----
+	case strings.Contains(lower, "ecdsa-with-sha256"):
+		return "ECDSAWithSHA256"
+	case strings.Contains(lower, "ecdsa-with-sha384"):
+		return "ECDSAWithSHA384"
+	case strings.Contains(lower, "ecdsa-with-sha512"):
+		return "ECDSAWithSHA512"
+	}
+
+	// 裸 OID 兜底
+	if isPureOID(s) {
+		return "OID-" + s
+	}
+	return s
+}
+
+// isPureOID 判断字符串是否为纯 OID 形式（如 "1.2.3.4" / "1.3.9999.3.11"）。
+//
+// 判定规则：只包含数字和 '.'，且至少有一个 '.'，且不以 '.' 开头/结尾。
+func isPureOID(s string) bool {
+	if s == "" || strings.HasPrefix(s, ".") || strings.HasSuffix(s, ".") {
+		return false
+	}
+	if !strings.Contains(s, ".") {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || c == '.') {
+			return false
+		}
+	}
+	return true
+}
+
+// =============================================================================
 // openssl 完整解析
 // =============================================================================
 
@@ -176,7 +744,6 @@ func (p *CertParser) parseWithOpenSSL(bin, certPath string) (*CertDetail, error)
 	detail := &CertDetail{}
 	parseCertText(textOut, detail)
 
-	// ★ 摘要值：SHA1（与第三方平台对齐），小写 hex
 	if fpOut, err := RunOpenSSL(bin, "x509", "-in", certPath, "-noout", "-fingerprint", "-sha1"); err == nil {
 		fp := strings.TrimSpace(fpOut)
 		if i := strings.Index(fp, "="); i >= 0 {
@@ -188,11 +755,6 @@ func (p *CertParser) parseWithOpenSSL(bin, certPath string) (*CertDetail, error)
 }
 
 // extractSPKIHex 提取证书公钥的完整 SubjectPublicKeyInfo DER，返回带空格的 hex。
-//
-// 步骤：
-//   openssl x509 -pubkey -noout        → 公钥 PEM
-//   openssl pkey -pubin -outform DER   → SPKI DER
-//   每个字节格式化为 %02x，空格分隔。
 func (p *CertParser) extractSPKIHex(opensslBin, certAbs string) (string, error) {
 	pubPEM, err := RunOpenSSL(opensslBin, "x509", "-in", certAbs, "-pubkey", "-noout")
 	if err != nil {
@@ -237,10 +799,6 @@ func formatHexBytes(b []byte) string {
 // Go 标准库解析（补充 SPKI / 签名 DER）
 // =============================================================================
 
-// parseFromPEM 用 Go 标准库解析证书。
-//
-// 用途：提取 RawSubjectPublicKeyInfo（完整 SPKI DER）与 Signature（签名 DER）。
-// 注意：Go 标准库不支持 SM2，SM2 证书会返回 error。
 func (p *CertParser) parseFromPEM(certAbs string) (*CertDetail, error) {
 	certPEM, err := os.ReadFile(certAbs)
 	if err != nil {
@@ -258,14 +816,7 @@ func (p *CertParser) parseFromPEM(certAbs string) (*CertDetail, error) {
 		)
 	}
 
-	// ★ 摘要值：SHA1（与第三方平台对齐），小写 hex
 	fp := sha1.Sum(cert.Raw)
-
-	// 公钥值：SPKI DER hex（小写，无分隔符）—— 仅作兜底，会被 openssl 覆盖
-	pubKeyValue := hex.EncodeToString(cert.RawSubjectPublicKeyInfo)
-	// 签名值：签名 DER hex（小写，无分隔符）
-	signValue := hex.EncodeToString(cert.Signature)
-
 	return &CertDetail{
 		Version:            fmt.Sprintf("v%d", cert.Version),
 		Serial:             strings.ToLower(cert.SerialNumber.Text(16)),
@@ -276,79 +827,9 @@ func (p *CertParser) parseFromPEM(certAbs string) (*CertDetail, error) {
 		NotAfter:           cert.NotAfter.In(cstZone).Format("2006-01-02 15:04:05"),
 		PublicKeyAlgorithm: cert.PublicKeyAlgorithm.String(),
 		SignatureAlgorithm: cert.SignatureAlgorithm.String(),
-		SignatureValue:     signValue,
-		PublicKeyValue:     pubKeyValue,
+		SignatureValue:     hex.EncodeToString(cert.Signature),
+		PublicKeyValue:     hex.EncodeToString(cert.RawSubjectPublicKeyInfo),
 	}, nil
-}
-
-// =============================================================================
-// 展示名归一化
-// =============================================================================
-
-// normalizePublicKeyAlg 归一化公钥算法展示名。
-func normalizePublicKeyAlg(alg string) string {
-	s := strings.TrimSpace(alg)
-	if s == "" {
-		return ""
-	}
-	lower := strings.ToLower(s)
-
-	switch {
-	case strings.Contains(lower, "id-ecpublickey"),
-		strings.Contains(lower, "ecdsa"),
-		strings.Contains(lower, "sm2"),
-		strings.Contains(lower, "ecc"),
-		strings.Contains(lower, "prime256v1"),
-		strings.Contains(lower, "secp256"):
-		return "ECC(256)"
-	case strings.Contains(lower, "secp384"):
-		return "ECC(384)"
-	case strings.Contains(lower, "secp521"):
-		return "ECC(521)"
-	case strings.Contains(lower, "rsaencryption"),
-		strings.Contains(lower, "rsa"):
-		return "RSA"
-	case strings.Contains(lower, "ed25519"):
-		return "Ed25519"
-	case strings.Contains(lower, "ed448"):
-		return "Ed448"
-	case strings.Contains(lower, "dsa"):
-		return "DSA"
-	}
-	return s
-}
-
-// normalizeSignatureAlg 归一化签名算法展示名。
-func normalizeSignatureAlg(alg string) string {
-	s := strings.TrimSpace(alg)
-	if s == "" {
-		return ""
-	}
-	lower := strings.ToLower(s)
-
-	switch {
-	case strings.Contains(lower, "sm2-with-sm3"),
-		strings.Contains(lower, "sm2signwithsm3"),
-		strings.Contains(lower, "sm3-with-sm2"),
-		strings.Contains(lower, "sm2signingsm3"):
-		return "SM2SigningwithSM3"
-	case strings.Contains(lower, "ecdsa-with-sha256"):
-		return "ECDSAWithSHA256"
-	case strings.Contains(lower, "ecdsa-with-sha384"):
-		return "ECDSAWithSHA384"
-	case strings.Contains(lower, "ecdsa-with-sha512"):
-		return "ECDSAWithSHA512"
-	case strings.Contains(lower, "sha256withrsaencryption"),
-		strings.Contains(lower, "sha256withrsa"):
-		return "SHA256withRSA"
-	case strings.Contains(lower, "sha384withrsaencryption"),
-		strings.Contains(lower, "sha384withrsa"):
-		return "SHA384withRSA"
-	case strings.Contains(lower, "sha512withrsaencryption"),
-		strings.Contains(lower, "sha512withrsa"):
-		return "SHA512withRSA"
-	}
-	return s
 }
 
 // =============================================================================
@@ -356,23 +837,12 @@ func normalizeSignatureAlg(alg string) string {
 // =============================================================================
 
 // normalizeDNOrder 把 DN 字符串按照 C → ST → L → O → OU → CN → 其他 的顺序重排。
-//
-// 输入形如：
-//
-//	"CN=213SDA,C=CN"          → "C=CN,CN=213SDA"
-//	"CN=AJ2D,C=CN"            → "C=CN,CN=AJ2D"
-//	"CN=a,O=b,OU=c,C=CN"      → "C=CN,O=b,OU=c,CN=a"
-//
-// 说明：
-//   - 未知属性的排序值为 99，按原相对顺序保留在最后；
-//   - 属性名统一大写；
-//   - 值中的转义字符（\, \= 等）原样保留。
 func normalizeDNOrder(dn string) string {
 	dn = strings.TrimSpace(dn)
 	if dn == "" {
 		return ""
 	}
-	parts := splitDN(dn) // 同包 cert_service.go 中定义
+	parts := splitDN(dn)
 	order := map[string]int{
 		"C": 1, "ST": 2, "L": 3, "O": 4, "OU": 5, "CN": 6,
 	}
@@ -617,8 +1087,6 @@ func parseCertText(text string, detail *CertDetail) {
 }
 
 // isHexLine 判断是否由十六进制字符与分隔符（冒号/空格/制表符）组成。
-//
-// ★ 修改点：允许空格，兼容 openssl 输出形如 "30 45 02 20 ..." 的签名值。
 func isHexLine(s string) bool {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -647,8 +1115,6 @@ func cleanHex(s string) string {
 }
 
 // normalizeTime 把 openssl 输出的时间统一格式化为北京时间（UTC+8）。
-//
-// ★ 修改点：由 UTC 改为 UTC+8，与第三方平台对齐。
 func normalizeTime(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {

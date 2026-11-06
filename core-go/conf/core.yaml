@@ -12,3 +12,27 @@ core:
   tmp_dir: "tmp"
   master_key_path: "data/keys/master.key"
   audit_log_file: "logs/audit.jsonl"
+
+  # ★ 新增：oqs-provider 配置（用于 Falcon 等 oqs-provider 提供的 PQC 算法）
+  #
+  # 行为：
+  #   - 每条 openssl 命令先按默认执行；失败且 enabled=true 时自动重试并注入
+  #     `-provider oqs -provider default`；
+  #   - 非 PQC 命令（SM2/RSA/ECC/ML-DSA/SLH-DSA/SM3）一次成功，不触发重试。
+  #
+  # 依赖前提：
+  #   - oqs-provider.so 已编译安装；
+  #   - 铜锁 openssl ≥ 3.0（属性查询机制需要 3.x，铜锁 8.5 满足）。
+  oqs_provider:
+    # 是否启用 oqs-provider 自动 fallback。生产环境建议 true。
+    enabled: true
+    # oqs-provider 模块的完整路径（.so / .dylib / .dll）。
+    #
+    # 三种配置方式：
+    #   1. 完整路径：指定到 .so 文件，加载时通过 OPENSSL_MODULES 定位
+    #      path: "/opt/plats_tool/core/libs/tongsuo/lib/ossl-modules/oqsprovider.so"
+    #   2. 目录路径：只指定目录，由 openssl 自动寻找 oqsprovider.so
+    #      path: "/opt/plats_tool/core/libs/tongsuo/lib/ossl-modules"
+    #   3. 留空：依赖系统默认搜索路径（$OPENSSL_MODULES、/usr/lib/ossl-modules/）
+    #      path: ""
+    path: "/opt/plats_tool/core/libs/tongsuo/lib/ossl-modules/oqsprovider.so"

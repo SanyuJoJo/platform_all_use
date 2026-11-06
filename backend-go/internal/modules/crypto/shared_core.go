@@ -31,26 +31,39 @@ func NewCoreCaller(
 	}
 }
 
-func (c *CoreCaller) CoreRoot() string       { return c.coreRoot }
-func (c *CoreCaller) Layout() *PathLayout     { return c.layout }
+func (c *CoreCaller) CoreRoot() string   { return c.coreRoot }
+func (c *CoreCaller) Layout() *PathLayout { return c.layout }
 
 // Run 调用任意 operation_id。
+//
+// ★ 内部会：
+//  1. 复制 params（副本），避免污染调用方；
+//  2. 调用 applyCoreAlgorithmMapping 把 algorithm 从平台 ID 映射为 core 名；
+//  3. InjectOutputLayout 注入 output_dir。
+//
+// 这样 CertService.Sign / dual_cert.create 等路径拿到的 params 中 algorithm
+// 会正确被 core 识别，同时落库用的 req.Algorithm 仍是平台 ID。
 func (c *CoreCaller) Run(
 	ctx context.Context, op string, params map[string]interface{},
 ) (*CoreResponse, error) {
 	if params == nil {
 		params = map[string]interface{}{}
 	}
-	if err := InjectOutputLayout(c.layout, op, params); err != nil {
+	// ★ 副本（避免污染调用方 map，同时允许后面安全修改）
+	p := cloneParams(params)
+
+	if err := InjectOutputLayout(c.layout, op, p); err != nil {
 		return nil, err
 	}
+	// ★ 算法名映射（平台 ID → core 名）
+	applyCoreAlgorithmMapping(p)
 
 	req := &CoreRequest{
 		SchemaVersion: "1.0",
 		OperationID:   op,
 		RequestID:     uuid.NewString(),
 		Actor:         CoreActor{Type: "platform-backend", ID: "system"},
-		Params:        params,
+		Params:        p,
 	}
 	resp, _, err := c.adapter.Call(ctx, op, req)
 	if err != nil {
@@ -98,17 +111,10 @@ func InjectOutputLayout(
 	return nil
 }
 
-// injectCAOutput 为 ca.create 注入 CA 目录。
-//
-// ★ 变更：domain 默认值从 subject.CN 派生改为固定 "safe"。
-//
-// domain 来源优先级：
-//  1. params["domain"]（显式指定）
-//  2. "safe"（默认域）
 func injectCAOutput(layout *PathLayout, params map[string]interface{}) error {
 	domain := strings.TrimSpace(getString(params, "domain"))
 	if domain == "" {
-		domain = "safe" // ★ 默认域
+		domain = "safe"
 	}
 
 	dir, err := layout.CADir(domain)

@@ -28,8 +28,22 @@ func (s *CertService) Sign(
 	if req.ValidityDays <= 0 {
 		req.ValidityDays = 365
 	}
-	if req.Algorithm == "" {
-		req.Algorithm = "SM2"
+
+	// ★ 算法校验 + 归一化（RSA/PQC 走白名单，SM2 兜底）
+	spec, err := ValidateAlgorithm(req.Algorithm)
+	if err != nil {
+		return nil, err
+	}
+	req.Algorithm = spec.ID
+	if req.KeyParams == nil && len(spec.DefaultParams) > 0 {
+		req.KeyParams = spec.DefaultParams
+	}
+
+	// ★ 双证门禁：仅 SM2
+	if req.CertMode == "dual" && !spec.SupportsDual {
+		return nil, exception.New(exception.CodeParamInvalid,
+			fmt.Sprintf("双证模式仅支持 SM2（当前算法：%s）", spec.ID),
+			400, nil)
 	}
 
 	if len(req.Subject) == 0 {

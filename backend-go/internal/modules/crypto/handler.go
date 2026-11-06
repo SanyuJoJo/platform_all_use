@@ -20,7 +20,8 @@ import (
 // 职责：
 //  1. 通过 MetaRegistry 聚合各领域子 Handler（CA / Cert / CSR / CRL / Key）的路由；
 //  2. 承载通用密码操作（/crypto/operations/:operation_id）与任务（/tasks/:task_id）路由；
-//  3. ★ 拦截 csr.create + p10_format=cfca，改走 cfca_envelope 生成 CFCA P10。
+//  3. ★ 拦截 csr.create + p10_format=cfca，改走 cfca_envelope 生成 CFCA P10；
+//  4. ★ 暴露 /crypto/algorithms 供前端渲染算法下拉框。
 type Handler struct {
 	svc  *Service
 	meta *MetaRegistry
@@ -51,6 +52,12 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
 			middleware.RequirePermission("crypto:operation:execute"),
 			h.Execute,
 		)
+
+		// ★ 算法清单（前端"新建证书 / 新建 CSR"下拉框使用）
+		crypto.GET("/algorithms",
+			middleware.RequirePermission("crypto:operation:execute"),
+			h.ListAlgorithms,
+		)
 	}
 
 	// ---- 任务路由 ----
@@ -65,6 +72,22 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
 			h.CancelTask,
 		)
 	}
+}
+
+// ListAlgorithms 返回算法注册表（供前端渲染下拉框）。
+//
+// 响应结构：
+//
+//	{
+//	  "code": "SUCCESS",
+//	  "data": { "items": [
+//	    {"id":"SM2","display_name":"SM2","category":"国密","supports_dual":true,"notes":"..."},
+//	    {"id":"RSA2048","display_name":"RSA-2048","category":"RSA","key_bits":2048,"notes":"..."},
+//	    ...
+//	  ]}
+//	}
+func (h *Handler) ListAlgorithms(c *gin.Context) {
+	response.Success(c, gin.H{"items": ListAlgorithms()}, "success")
 }
 
 // Execute 执行密码操作。

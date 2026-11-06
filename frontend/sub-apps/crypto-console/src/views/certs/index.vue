@@ -76,7 +76,7 @@
                 {{ selectedCA.ca_id }}
               </n-descriptions-item>
               <n-descriptions-item label="算法">
-                {{ selectedCA.public_key_algorithm || selectedCA.algorithm }}
+                {{ selectedCaAlgLabel }}
               </n-descriptions-item>
               <n-descriptions-item label="状态">
                 {{ selectedCA.status }}
@@ -118,7 +118,10 @@
         <n-form-item label="算法">
           <n-select
             v-model:value="signForm.algorithm"
-            :options="algorithmOptions"
+            :options="algStore.options"
+            :loading="algStore.loading"
+            :render-label="renderAlgLabel"
+            placeholder="选择算法"
           />
         </n-form-item>
 
@@ -206,7 +209,6 @@
           />
         </n-form-item>
 
-        <!-- ★ 修改：证书类型只保留 signature / encryption -->
         <n-form-item label="证书类型（可多选）">
           <n-checkbox-group v-model:value="signForm.cert_types">
             <n-space>
@@ -236,7 +238,7 @@
       </template>
     </n-modal>
 
-    <!-- ================= 导入证书（文件上传） ================= -->
+    <!-- ================= 导入证书 ================= -->
     <n-modal
       v-model:show="showImport"
       preset="card"
@@ -332,6 +334,16 @@
         与业务审批，并在安全环境中妥善保管导出文件。
       </n-alert>
 
+      <n-alert
+        v-if="pqcPkcs12Warning"
+        type="warning"
+        :show-icon="true"
+        style="margin-bottom: 12px"
+      >
+        当前证书算法为 PQC（{{ algStore.displayName(exportForm.algorithm) }}），
+        PKCS#12 导出依赖铜锁 8.5+；如失败请升级铜锁后重试。
+      </n-alert>
+
       <n-form :model="exportForm" label-placement="left" label-width="130">
         <n-form-item label="导出内容">
           <n-radio-group v-model:value="exportForm.type">
@@ -423,7 +435,7 @@
               {{ detail.not_after }}
             </n-descriptions-item>
             <n-descriptions-item label="公钥算法">
-              {{ detail.public_key_algorithm }}
+              {{ detailAlgLabel }}
             </n-descriptions-item>
             <n-descriptions-item label="签名摘要算法">
               {{ detail.signature_algorithm }}
@@ -500,8 +512,11 @@ import {
   parseDN,
   validateDN,
 } from '@/utils/dn';
+import { useAlgorithmStore } from '@/store/algorithm';
+import { publicKeyLabel } from '@/utils/algorithms';
 
 const message = useMessage();
+const algStore = useAlgorithmStore();
 
 const loading = ref(false);
 const submitting = ref(false);
@@ -538,7 +553,6 @@ const signForm = reactive({
   dn: '',
   dnSeparator: DEFAULT_DN_SEPARATOR,
   san: '',
-  // ★ 修改：默认类型从 server → signature
   cert_types: ['signature'] as CertTypeItem[],
   validity_days: 365,
 });
@@ -555,6 +569,7 @@ const exportForm = reactive({
   cert_id: '',
   type: 'cert' as 'cert' | 'key' | 'pkcs12',
   password: '',
+  algorithm: '' as string,
 });
 
 const dnPreview = computed(() => parseDN(signForm.dn, signForm.dnSeparator));
@@ -571,9 +586,26 @@ const caOptions = computed(() =>
   }))
 );
 
+// CA 算法展示：优先算法规范 ID，回退解析结果
+const selectedCaAlgLabel = computed(() => {
+  if (!selectedCA.value) return '';
+  const c = selectedCA.value as any;
+  if (c.algorithm) return algStore.label(c.algorithm);
+  return publicKeyLabel(c.public_key_algorithm);
+});
+
+// 详情页算法展示：优先 row.algorithm（openDetail 时从列表带入），回退解析结果
+const detailAlgLabel = computed(() => {
+  if (!detail.value) return '';
+  const alg = (detail.value as any).algorithm;
+  if (alg) return algStore.label(alg);
+  return publicKeyLabel(detail.value.public_key_algorithm);
+});
+
 const signDisabled = computed(() => {
   if (!signForm.dn.trim() || dnPreview.value.errors.length > 0) return true;
   if (signForm.cert_types.length === 0) return true;
+  if (!signForm.algorithm) return true;
   if (signForm.ca_source === 'local') {
     return !signForm.ca_id;
   }
@@ -587,15 +619,18 @@ const exportDisabled = computed(() => {
   return false;
 });
 
-const algorithmOptions = [
-  { label: 'SM2', value: 'SM2' },
-  { label: 'RSA', value: 'RSA' },
-  { label: 'ECC', value: 'ECC' },
-  { label: 'ML-DSA', value: 'ML-DSA' },
-];
+const pqcPkcs12Warning = computed(
+  () => exportForm.type === 'pkcs12' && algStore.isPqc(exportForm.algorithm)
+);
 
-// ★ 修改：展示映射新增 unknown；
-//   server / client 仅用于兼容历史脏数据展示，不再作为可选项。
+function renderAlgLabel(option: any) {
+  if (!option?.value) return option?.label ?? '';
+  const info = algStore.find(option.value);
+  const text = option.label;
+  if (!info?.Notes) return text;
+  return h('span', { title: info.Notes }, text);
+}
+
 const CERT_TYPE_LABEL: Record<string, string> = {
   signature: '签名',
   encryption: '加密',
@@ -603,22 +638,10 @@ const CERT_TYPE_LABEL: Record<string, string> = {
   unknown: '未知',
   dual_sign: '双证签名',
   dual_enc: '双证加密',
-  // 兼容历史数据（只用于展示，不再作为可选项）
   server: '服务端',
   client: '客户端',
 };
 
-// formatCertType
-//
-// 输入可能是：
-//   - 平台业务分类："signature" / "encryption" / "dual_sign" / "unknown" ...
-//   - 证书原始扩展："Digital Signature, Key Encipherment" /
-//     "Digital Signature; TLS Web Server Authentication" ...
-//
-// 处理策略：
-//   1. 先按分号拆（平台保存原始扩展时的拼接符），每段独立映射；
-//   2. 每段内再按逗号拆，逐项映射；
-//   3. 映射表命中则用中文标签，否则原样返回。
 function formatCertType(t: string | undefined | null): string {
   if (!t) return '';
   const segments = t
@@ -643,9 +666,6 @@ function formatCertType(t: string | undefined | null): string {
   return out.join('、');
 }
 
-// ============================================================================
-// 时间格式化
-// ============================================================================
 function fmtTime(t: any): string {
   if (!t) return '-';
   if (typeof t !== 'string') {
@@ -682,9 +702,17 @@ const columns: DataTableColumns<any> = [
   {
     title: '公钥算法',
     key: 'public_key_algorithm',
-    width: 110,
+    width: 130,
     render(row: any) {
-      return row.public_key_algorithm || row.algorithm || '';
+      // ★ 优先用 DB 规范 ID（algorithm），回退到证书解析展示名
+      //   - algorithm = "SM2"       → "SM2"
+      //   - algorithm = "RSA2048"   → "RSA-2048"
+      //   - algorithm = "falcon512" → "Falcon-512"
+      //   - 无 algorithm 时回退 public_key_algorithm，如 "ECC(256)" → "ECC-256"
+      if (row.algorithm) {
+        return algStore.label(row.algorithm);
+      }
+      return publicKeyLabel(row.public_key_algorithm);
     },
   },
   {
@@ -829,7 +857,6 @@ function openSign() {
   signForm.dn = '';
   signForm.dnSeparator = DEFAULT_DN_SEPARATOR;
   signForm.san = '';
-  // ★ 修改：重置默认类型 server → signature
   signForm.cert_types = ['signature'];
   signForm.validity_days = 365;
 
@@ -991,6 +1018,7 @@ function openExport(row: any) {
   exportForm.cert_id = row.cert_id;
   exportForm.type = 'cert';
   exportForm.password = '';
+  exportForm.algorithm = row.algorithm || row.public_key_algorithm || '';
   showExport.value = true;
 }
 
@@ -1057,6 +1085,8 @@ async function handleExport() {
   }
 }
 
+// ★ 关键改动：openDetail 时把 row.algorithm 一并带入 detail
+//   这样详情页也能精确展示 "SM2"，而不会被降级为 "ECC-256"
 async function openDetail(row: any) {
   showDetail.value = true;
   detail.value = null;
@@ -1064,6 +1094,9 @@ async function openDetail(row: any) {
   try {
     const res = await cryptoApi.getCertDetail(row.cert_id);
     detail.value = (res.data as any) || null;
+    if (detail.value && row.algorithm) {
+      (detail.value as any).algorithm = row.algorithm;
+    }
   } catch (e: any) {
     message.error(e.message || '详情加载失败');
     showDetail.value = false;
@@ -1083,7 +1116,7 @@ async function handleDelete(row: any) {
 }
 
 onMounted(async () => {
-  await Promise.all([fetchList(), fetchCAOptions()]);
+  await Promise.all([fetchList(), fetchCAOptions(), algStore.ensureLoaded()]);
 });
 </script>
 

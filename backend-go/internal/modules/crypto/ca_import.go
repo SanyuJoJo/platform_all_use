@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time" // ★ 新增：daysBetween 里用 time.ParseInLocation
 
 	"github.com/rs/zerolog/log"
 
@@ -36,6 +37,9 @@ type ImportCARequest struct {
 //   - KeyRef 非空 → 引用 core keystore（旧模式），DB 只记 KeyRef
 //   - KeyPEM 非空 → 白盒加密落盘（新模式），DB 只记 KeyPath
 //   - 都为空    → 无关联私钥（只能验证，不能签发）
+//
+// ★ Algorithm 落库为**规范 ID**（由 certAlgorithmID 从证书 PEM 推断），
+// 与 Certificate.Algorithm 语义一致；展示名由 PublicKeyAlgorithm 独立承载。
 func (s *CAService) Import(ctx context.Context, req *ImportCARequest) (*models.CA, error) {
 	certPEM := strings.TrimSpace(req.CertPEM)
 	if certPEM == "" {
@@ -92,9 +96,15 @@ func (s *CAService) Import(ctx context.Context, req *ImportCARequest) (*models.C
 	}
 	subject := detail.Subject
 	serial := detail.Serial
-	algorithm := detail.PublicKeyAlgorithm
 
-	// 5. 生成 rehash 软链
+	// ★ 5. 用 PEM 推断规范 ID（不再用 detail.PublicKeyAlgorithm 展示名）
+	algID := certAlgorithmID(bin, certAbs)
+	if algID == "" {
+		// 兜底：展示名反查
+		algID = displayNameToID(detail.PublicKeyAlgorithm, "")
+	}
+
+	// 6. 生成 rehash 软链
 	if err := s.ensureRehash(certAbs); err != nil {
 		log.Warn().
 			Str("cert", certAbs).
@@ -102,18 +112,17 @@ func (s *CAService) Import(ctx context.Context, req *ImportCARequest) (*models.C
 			Msg("ensureRehash 失败（忽略）")
 	}
 
-	// 6. 处理私钥
+	// 7. 处理私钥
 	keyRef, keyPath, err := s.resolveImportedKeyNew(ctx, req, caDir, pubSM3)
 	if err != nil {
 		return nil, err
 	}
 
-	// 7. 落库
+	// 8. 落库
 	now := timeNowUTC()
 	caID := "ca-" + pubSM3[:12]
 
 	// ★ 冲突检查：同一 pubkey 的 CA 已存在时拒绝，但**仍触发 bundle 重建**
-	//   （保证历史数据 / 手工补充的证书自动进 bundle）
 	var existing models.CA
 	if e := s.db.Where("ca_id = ?", caID).First(&existing).Error; e == nil {
 		if err := s.RebuildDomainBundle(domain); err != nil {
@@ -124,14 +133,22 @@ func (s *CAService) Import(ctx context.Context, req *ImportCARequest) (*models.C
 			"该 CA 已存在（相同公钥 SM3）", 409, nil)
 	}
 
+	// ★ 从 detail 提取有效期天数（用于回填 validity_days）
+	validityDays := 0
+	if detail.NotBefore != "" && detail.NotAfter != "" {
+		if days, ok := daysBetween(detail.NotBefore, detail.NotAfter); ok {
+			validityDays = days
+		}
+	}
+
 	ca := &models.CA{
 		CAID:         caID,
 		SubjectCN:    extractCNFromSubject(subject),
-		Algorithm:    algorithm,
+		Algorithm:    algID,        // ★ 规范 ID
 		CertPath:     certAbs,
 		KeyRef:       keyRef,
 		KeyPath:      keyPath,
-		ValidityDays: 0,
+		ValidityDays: validityDays, // ★ 回填
 		Status:       "ACTIVE",
 		CreatedAt:    now,
 		UpdatedAt:    now,
@@ -154,12 +171,27 @@ func (s *CAService) Import(ctx context.Context, req *ImportCARequest) (*models.C
 	log.Info().
 		Str("ca_id", caID).
 		Str("domain", domain).
+		Str("algorithm", algID).
 		Str("cert_path", certAbs).
 		Bool("has_key_ref", keyRef != "").
 		Bool("has_key_path", keyPath != "").
 		Msg("CA 导入完成")
 
 	return ca, nil
+}
+
+// daysBetween 计算两个"北京时间字符串"之间的天数（向下取整）。
+func daysBetween(notBefore, notAfter string) (int, bool) {
+	t1, err1 := time.ParseInLocation("2006-01-02 15:04:05", notBefore, cstZone)
+	t2, err2 := time.ParseInLocation("2006-01-02 15:04:05", notAfter, cstZone)
+	if err1 != nil || err2 != nil {
+		return 0, false
+	}
+	days := int(t2.Sub(t1).Hours() / 24)
+	if days <= 0 {
+		return 0, false
+	}
+	return days, true
 }
 
 // resolveImportedKeyNew 处理导入私钥。
@@ -238,6 +270,7 @@ func (s *CAService) resolveImportedKeyNew(
 	return "", keyAbs, nil
 }
 
+// ensureRehash 生成 OpenSSL c_rehash 兼容的软链 <subject_hash>.0。
 func (s *CAService) ensureRehash(certAbs string) error {
 	bin := s.parser.OpensslBin()
 	if bin == "" {

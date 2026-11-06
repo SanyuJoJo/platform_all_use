@@ -52,21 +52,10 @@ func NewCSRService(
 // ★ CFCA attribute 判定
 // =============================================================================
 
-// cfcaTmpPubOIDBytes 是 OID 1.2.840.113549.1.9.63 的 DER 编码
-// （tag 0x06，len 0x09，值为 2a 86 48 86 f7 0d 01 09 3f）。
-// 与 cfca_envelope.c 中 extract_tmp_pub_from_der 搜索的字节序列一致。
-//
-// 只在 PEM 解码后的 DER 中做字节扫描：PEM base64 文本不会命中，
-// 因此必须先 pem.Decode 再 Contains。
 var cfcaTmpPubOIDBytes = []byte{
 	0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x09, 0x3f,
 }
 
-// detectCFCAAttribute 判断 CSR 是否为 CFCA 格式。
-//
-// 原理：CFCA P10 在 CSR 的 attributes 段携带临时公钥 OID
-// （1.2.840.113549.1.9.63）；普通 PKCS10 不含该 OID。
-// 通过 PEM 解码后扫描 DER 中的 OID 编码即可判定，无需调用 core 或 C 工具。
 func (s *CSRService) detectCFCAAttribute(csrAbs string) bool {
 	data, err := os.ReadFile(csrAbs)
 	if err != nil {
@@ -83,14 +72,6 @@ func (s *CSRService) detectCFCAAttribute(csrAbs string) bool {
 // 列表 / 详情
 // =============================================================================
 
-// List P10 列表。
-//
-// ★ 运行时填充：
-//   - HasPrivateKey：KeyRef 或磁盘 <csr_dir>/<pubSM3>.key.pem 存在；
-//   - IsCFCA       ：CSR attributes 段是否携带 CFCA 临时公钥 OID；
-//   - Subject      ：完整 DN（从 CSR 文件解析，RFC2253 规范化）；
-//   - NotBefore    ：CreatedAt（北京时间）；
-//   - NotAfter     ：空（P10 无固有有效期）。
 func (s *CSRService) List(page, pageSize int) (map[string]interface{}, error) {
 	var csrs []models.CSR
 	q := s.db.Model(&models.CSR{}).Where("status <> ?", "DELETED")
@@ -105,7 +86,6 @@ func (s *CSRService) List(page, pageSize int) (map[string]interface{}, error) {
 	return result, nil
 }
 
-// Get 查询 P10 元数据。
 func (s *CSRService) Get(csrID string) (*models.CSR, error) {
 	var csr models.CSR
 	if err := s.db.Where("csr_id = ?", csrID).First(&csr).Error; err != nil {
@@ -120,13 +100,15 @@ func (s *CSRService) Get(csrID string) (*models.CSR, error) {
 
 // fillCSRDerivedFields 计算 CSR 的非持久化展示字段。
 //
-// 计算项：
-//   - HasPrivateKey：KeyRef 非空 或 磁盘 <csr_dir>/<pubSM3>.key.pem 存在；
-//   - IsCFCA       ：CSR attributes 段是否携带 CFCA 临时公钥 OID
-//                    （1.2.840.113549.1.9.63）；
-//   - Subject      ：从 CSR 文件解析完整 DN（RFC2253），并规范化顺序；
-//   - NotBefore    ：CreatedAt（北京时间字符串）；
-//   - NotAfter     ：空（P10 无固有有效期）。
+// ★ 填充项：
+//
+//	HasPrivateKey       : KeyRef 或磁盘 <csr_dir>/<pubSM3>.key.pem 存在；
+//	IsCFCA              : CSR attributes 段是否携带 CFCA 临时公钥 OID；
+//	Subject             : 从 CSR 文件解析完整 DN（RFC2253 规范化）；
+//	PublicKeyAlgorithm  : 解析展示名（"ECC(256)" / "Falcon(1024)" …）；
+//	                      —— 与 Algorithm（DB 规范 ID）完全独立；
+//	Algorithm           : **仅在为空时**兜底为规范 ID（老数据）；
+//	NotBefore/NotAfter  : CreatedAt（北京时间）/ 空。
 func (s *CSRService) fillCSRDerivedFields(csr *models.CSR) {
 	if csr == nil {
 		return
@@ -143,20 +125,46 @@ func (s *CSRService) fillCSRDerivedFields(csr *models.CSR) {
 	}
 	csr.HasPrivateKey = has
 
-	// ★ IsCFCA：从 CSR 文件判定（不落库）
+	// IsCFCA
 	if csr.CSRPath != "" {
 		csr.IsCFCA = s.detectCFCAAttribute(csr.CSRPath)
 	}
 
-	// Subject：从 CSR 文件解析完整 DN
-	if csr.Subject == "" && csr.CSRPath != "" {
+	// ★ Subject / PublicKeyAlgorithm / Algorithm 兜底
+	if csr.CSRPath != "" {
 		bin := s.parser.OpensslBin()
 		if bin != "" {
-			if out, err := RunOpenSSL(bin, "req", "-in", csr.CSRPath, "-noout", "-subject", "-nameopt", "RFC2253"); err == nil {
-				subj := strings.TrimSpace(out)
-				subj = strings.TrimSpace(strings.TrimPrefix(subj, "subject="))
-				if subj != "" {
-					csr.Subject = normalizeDNOrder(subj)
+			// 1. Subject
+			if csr.Subject == "" {
+				if out, err := RunOpenSSL(bin, "req", "-in", csr.CSRPath, "-noout", "-subject", "-nameopt", "RFC2253"); err == nil {
+					subj := strings.TrimSpace(out)
+					subj = strings.TrimSpace(strings.TrimPrefix(subj, "subject="))
+					if subj != "" {
+						csr.Subject = normalizeDNOrder(subj)
+					}
+				}
+			}
+
+			// 2. PublicKeyAlgorithm 展示名 + Algorithm 规范 ID 兜底（共用一次 openssl req -text）
+			if strings.TrimSpace(csr.PublicKeyAlgorithm) == "" || strings.TrimSpace(csr.Algorithm) == "" {
+				if textOut, err := RunOpenSSL(bin, "req", "-in", csr.CSRPath, "-noout", "-text"); err == nil {
+					if strings.TrimSpace(csr.PublicKeyAlgorithm) == "" {
+						if algName := extractPubAlgFromCSRText(textOut); algName != "" {
+							csr.PublicKeyAlgorithm = normalizePublicKeyAlg(algName)
+						}
+					}
+					if strings.TrimSpace(csr.Algorithm) == "" {
+						if id := detectAlgorithmFromCSRText(textOut); id != "" {
+							csr.Algorithm = id
+						}
+					}
+				}
+			}
+
+			// 3. 万一 Algorithm 仍为空，用展示名反查一次兜底
+			if strings.TrimSpace(csr.Algorithm) == "" && csr.PublicKeyAlgorithm != "" {
+				if id := displayNameToID(csr.PublicKeyAlgorithm, ""); id != "" {
+					csr.Algorithm = id
 				}
 			}
 		}
@@ -175,12 +183,6 @@ func (s *CSRService) fillCSRDerivedFields(csr *models.CSR) {
 // 导入 P10
 // =============================================================================
 
-// Import 导入 P10。
-//
-// ★ 证书路径改造：
-//   - 分配 server/<dir_no>/ 目录；
-//   - CSR 落 server/<dir_no>/<csr_pubkey_sm3>.req.csr（0640）；
-//   - 私钥（若有）白盒加密落 server/<dir_no>/<csr_pubkey_sm3>.key.pem（0600）。
 func (s *CSRService) Import(
 	ctx context.Context, req *ImportCsrRequest,
 ) (*models.CSR, error) {
@@ -198,7 +200,6 @@ func (s *CSRService) Import(
 		)
 	}
 
-	// 1. 分配 server 目录
 	dirNo, err := s.layout.AllocServerDir()
 	if err != nil {
 		return nil, exception.New(
@@ -214,7 +215,6 @@ func (s *CSRService) Import(
 		)
 	}
 
-	// 2. 计算 CSR 公钥 SM3
 	pubSM3, err := PubkeySM3FromCSRPEM(bin, csrPEM)
 	if err != nil {
 		return nil, exception.New(
@@ -223,7 +223,6 @@ func (s *CSRService) Import(
 		)
 	}
 
-	// 3. 写 CSR 到规范路径
 	csrAbs := filepath.Join(dir, pubSM3+".req.csr")
 	if err := os.WriteFile(csrAbs, []byte(csrPEM), 0640); err != nil {
 		return nil, exception.New(
@@ -238,13 +237,11 @@ func (s *CSRService) Import(
 		}
 	}()
 
-	// 4. 解析主题 / 算法
 	subject, algorithm, err := s.parseCSRInfo(csrAbs)
 	if err != nil {
 		return nil, err
 	}
 
-	// 5. 私钥处理：白盒加密落盘（无 .pass）
 	if strings.TrimSpace(req.KeyPEM) != "" {
 		if !strings.Contains(req.KeyPEM, "-----BEGIN") {
 			return nil, exception.New(
@@ -254,7 +251,6 @@ func (s *CSRService) Import(
 
 		plainKeyPEM := []byte(req.KeyPEM)
 
-		// 5.1 若私钥已加密，先解密到明文
 		if s.keys != nil {
 			tmpDir, _ := os.MkdirTemp("", "import-csr-key-")
 			defer os.RemoveAll(tmpDir)
@@ -299,7 +295,6 @@ func (s *CSRService) Import(
 			}
 		}
 
-		// 5.2 白盒加密落盘
 		keyAbs := filepath.Join(dir, pubSM3+".key.pem")
 
 		plainTmp := filepath.Join(dir, ".import.csr.key.plain.tmp")
@@ -320,18 +315,16 @@ func (s *CSRService) Import(
 		_ = os.Chmod(keyAbs, 0600)
 	}
 
-	// 6. 落库
 	now := time.Now().UTC()
 	csr := &models.CSR{
 		CSRID:     "csr-" + dirNo + "-" + pubSM3[:12],
 		SubjectCN: extractCNFromSubject(subject),
-		Algorithm: algorithm,
+		Algorithm: algorithm,   // ★ 规范 ID（detectAlgorithmFromCSRText 返回）
 		CSRPath:   csrAbs,
 		KeyRef:    nil,
 		Status:    "NEW",
 		CreatedAt: now,
 	}
-	// 填充派生展示字段（Subject / HasPrivateKey / IsCFCA / NotBefore / NotAfter）
 	s.fillCSRDerivedFields(csr)
 
 	if err := s.db.Create(csr).Error; err != nil {
@@ -344,7 +337,6 @@ func (s *CSRService) Import(
 	return csr, nil
 }
 
-// parseCSRInfo 解析 CSR 主题与公钥算法。
 func (s *CSRService) parseCSRInfo(csrAbs string) (string, string, error) {
 	bin := s.parser.OpensslBin()
 	if bin == "" {
@@ -368,23 +360,94 @@ func (s *CSRService) parseCSRInfo(csrAbs string) (string, string, error) {
 	subject := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(subjOut), "subject="))
 
 	textOut, _ := RunOpenSSL(bin, "req", "-in", csrAbs, "-noout", "-text")
-	algorithm := ""
-	switch {
-	case strings.Contains(textOut, "SM2"):
-		algorithm = "SM2"
-	case strings.Contains(textOut, "ML-DSA"):
-		algorithm = "ML-DSA"
-	case strings.Contains(textOut, "rsaEncryption") || strings.Contains(textOut, "RSA"):
-		algorithm = "RSA"
-	case strings.Contains(textOut, "id-ecPublicKey"):
-		algorithm = "ECC"
-	}
+	algorithm := detectAlgorithmFromCSRText(textOut)
 
 	return subject, algorithm, nil
 }
 
 // =============================================================================
-// 下载
+// 算法识别
+// =============================================================================
+
+// detectAlgorithmFromCSRText 从 `openssl req -text` 输出中识别算法，
+// 返回 AlgorithmRegistry 中的规范 ID（如 SM2 / RSA2048 / MLDSA65 /
+// falcon512 / slh-dsa-*）。
+func detectAlgorithmFromCSRText(textOut string) string {
+	lower := strings.ToLower(textOut)
+	if lower == "" {
+		return ""
+	}
+
+	// SLH-DSA（优先匹配，最具体）
+	for _, h := range []string{"sha2", "shake"} {
+		for _, lvl := range []string{"128", "192", "256"} {
+			for _, spd := range []string{"s", "f"} {
+				id := "slh-dsa-" + h + "-" + lvl + spd
+				if strings.Contains(lower, id) {
+					return id
+				}
+			}
+		}
+	}
+
+	// ML-DSA
+	switch {
+	case strings.Contains(lower, "ml-dsa-44") ||
+		strings.Contains(lower, "mldsa44") ||
+		strings.Contains(lower, "dilithium2"):
+		return "MLDSA44"
+	case strings.Contains(lower, "ml-dsa-65") ||
+		strings.Contains(lower, "mldsa65") ||
+		strings.Contains(lower, "dilithium3"):
+		return "MLDSA65"
+	case strings.Contains(lower, "ml-dsa-87") ||
+		strings.Contains(lower, "mldsa87") ||
+		strings.Contains(lower, "dilithium5"):
+		return "MLDSA87"
+	}
+
+	// Falcon
+	switch {
+	case strings.Contains(lower, "falcon-512") ||
+		strings.Contains(lower, "falcon512") ||
+		strings.Contains(lower, "falcon(512)"):
+		return "falcon512"
+	case strings.Contains(lower, "falcon-1024") ||
+		strings.Contains(lower, "falcon1024") ||
+		strings.Contains(lower, "falcon(1024)"):
+		return "falcon1024"
+	}
+
+	// SM2 / ECC
+	if strings.Contains(lower, "sm2") ||
+		strings.Contains(lower, "id-ecpublickey") ||
+		strings.Contains(lower, "prime256v1") ||
+		strings.Contains(lower, "secp256r1") {
+		return "SM2"
+	}
+
+	// RSA
+	if strings.Contains(lower, "rsa") {
+		return detectRSAKeySize(lower)
+	}
+
+	return ""
+}
+
+func detectRSAKeySize(lowerText string) string {
+	switch {
+	case strings.Contains(lowerText, "(4096 bit)"):
+		return "RSA4096"
+	case strings.Contains(lowerText, "(2048 bit)"):
+		return "RSA2048"
+	case strings.Contains(lowerText, "(1024 bit)"):
+		return "RSA1024"
+	}
+	return "RSA2048"
+}
+
+// =============================================================================
+// 下载 / 删除
 // =============================================================================
 
 func (s *CSRService) Download(csrID string) ([]byte, error) {
@@ -402,7 +465,6 @@ func (s *CSRService) Download(csrID string) ([]byte, error) {
 	return data, nil
 }
 
-// DownloadKey 下载 P10 对应的私钥，可选 AES-256-CBC 口令加密。
 func (s *CSRService) DownloadKey(
 	csrID string, encrypt bool, password string,
 ) ([]byte, error) {
@@ -464,7 +526,6 @@ func (s *CSRService) DownloadKey(
 	return encrypted, nil
 }
 
-// deriveWhiteboxKeyPath 从 CSR 路径推导白盒私钥路径（无 .pass）。
 func (s *CSRService) deriveWhiteboxKeyPath(csr *models.CSR) (string, error) {
 	if csr == nil || csr.CSRPath == "" {
 		return "", exception.New(
@@ -483,17 +544,6 @@ func (s *CSRService) deriveWhiteboxKeyPath(csr *models.CSR) (string, error) {
 	return filepath.Join(dir, pubSM3+".key.pem"), nil
 }
 
-// =============================================================================
-// 删除
-// =============================================================================
-
-// Delete 删除 P10（硬删除），同时清理白盒私钥（无 .pass）与空的 server 目录。
-//
-// 执行顺序：
-//  1. 查 DB；
-//  2. 删 DB 记录（Unscoped）；
-//  3. 删磁盘文件（.req.csr + .key.pem）；
-//  4. ★ 若 server/<dir_no>/ 已空，删除之（保留 ServerRoot 本身）。
 func (s *CSRService) Delete(csrID string) error {
 	if strings.TrimSpace(csrID) == "" {
 		return exception.New(exception.CodeParamInvalid, "csr_id 不能为空", 400, nil)
@@ -521,7 +571,6 @@ func (s *CSRService) Delete(csrID string) error {
 		return exception.New(exception.CodeNotFound, "P10 不存在或已删除", 404, nil)
 	}
 
-	// 清理磁盘文件：CSR + 白盒私钥
 	csrDir := ""
 	if csr.CSRPath != "" {
 		csrDir = filepath.Dir(csr.CSRPath)
@@ -531,19 +580,11 @@ func (s *CSRService) Delete(csrID string) error {
 		}
 	}
 
-	// ★ 若 server/<dir_no>/ 已空，删除之
 	s.tryRemoveEmptyServerDir(csrDir)
 
 	return nil
 }
 
-// tryRemoveEmptyServerDir 若 dir 是 <ServerRoot>/<4位数字> 且已空，删除之。
-//
-// 安全约束：
-//   - 只处理 <CertRoot> 下、<ServerRoot> 的直接子目录；
-//   - 目录名必须匹配 ^[0-9]{4}$；
-//   - 目录必须为空（不含隐藏文件）；
-//   - 失败仅告警，不阻断主流程。
 func (s *CSRService) tryRemoveEmptyServerDir(dir string) {
 	if dir == "" || s.layout == nil {
 		return

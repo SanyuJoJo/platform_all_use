@@ -26,7 +26,8 @@ func (h *KeyManageHandler) Execute(
 	action := strParam(req.Params, "action")
 	switch action {
 	case "generate":
-		return h.generate(ctx, req)
+		// ★ 新增 cfg：generate 内部需要读白名单
+		return h.generate(ctx, req, cfg)
 	case "import":
 		return h.importKey(ctx, req)
 	case "export":
@@ -43,10 +44,25 @@ func (h *KeyManageHandler) Execute(
 // -----------------------------------------------------------------------------
 
 // generate 生成密钥对并加密存 keystore。
+//
+// ★ 新增 key.manage 白名单校验：
+//   - 之前 key.manage.generate 无白名单门禁，任意算法名都能进 genPrivateKey；
+//   - 本次统一在入口拦截，与 cert.sign / csr.create 等保持一致。
 func (h *KeyManageHandler) generate(
-	ctx context.Context, req *envelope.Request,
+	ctx context.Context, req *envelope.Request, cfg *config.Config,
 ) *envelope.Response {
 	alg := strParamDefault(req.Params, "algorithm", "SM2")
+
+	// ★ key.manage 白名单
+	if cfg != nil && cfg.WhitelistPath != "" {
+		if wl, err := config.GetWhitelist(cfg.WhitelistPath); err == nil && wl != nil {
+			if !wl.IsAlgorithmAllowed("key.manage", alg) {
+				return envelope.NewErrorWithDetail("ALGORITHM_NOT_ALLOWED",
+					"algorithm not allowed",
+					map[string]interface{}{"algorithm": alg})
+			}
+		}
+	}
 
 	tmpDir, err := mkTmpDir("keygen")
 	if err != nil {

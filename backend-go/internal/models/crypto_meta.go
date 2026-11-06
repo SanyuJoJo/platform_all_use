@@ -8,10 +8,27 @@ import (
 
 // CA 根 CA 与中间 CA 元数据表。
 //
-// 非持久化展示字段（gorm:"-"）：
-//   - HasPrivateKey：是否存在私钥；
-//   - Domain       ：域目录名（从 CertPath 推导）；
-//   - NotBefore / NotAfter：证书生效/失效时间（从证书解析，北京时间字符串）。
+// ★ 双字段设计（与 Certificate 对齐）：
+//
+//	Algorithm           : DB **规范 ID**（"SM2" / "RSA2048" / "falcon1024" / "MLDSA65"）
+//	                      创建时写入，**不允许被证书解析结果覆盖**；
+//	                      前端 algStore.label(algorithm) 映射到展示名。
+//
+//	PublicKeyAlgorithm  : 证书解析**展示名**（"ECC(256)" / "Falcon(1024)" / "ML-DSA-65"）
+//	                      非持久化（gorm:"-"），运行时由 CAService.fillCADerivedFields 填充，
+//	                      仅用于老数据 / 导入证书的兜底展示。
+//
+// ★ 历史 bug（本次修复）：
+//
+//	早期 Algorithm 的 JSON tag 被误标为 `public_key_algorithm`，导致：
+//	  - DB 里存的是规范 ID，但 JSON 输出为 public_key_algorithm；
+//	  - fillCADerivedFields 又用证书解析展示名覆盖了 Algorithm → 前端拿到的是
+//	    "SLH-DSA-SHA2-192s" 而非 "falcon1024"；
+//	  - 前端无法区分 ID 与展示名，显示错乱（CA 显示 falcon1024 / SLH-DSA-SHA2-192s，
+//	    而证书显示 Falcon-1024，同一字段语义不一致）。
+//
+//	本次修复：Algorithm JSON tag 改为 `algorithm`，新增独立的 PublicKeyAlgorithm 展示字段。
+//	修复后契约与 Certificate 模型一致，前端一刀切逻辑即可正确工作。
 type CA struct {
 	ID         uint    `gorm:"primaryKey;autoIncrement" json:"-"`
 	CAID       string  `gorm:"size:64;not null;uniqueIndex" json:"ca_id"`
@@ -19,8 +36,14 @@ type CA struct {
 	SubjectCN  string  `gorm:"size:255;not null" json:"subject_cn"`
 	SubjectO   *string `gorm:"size:255" json:"subject_o"`
 
-	// ★ Algorithm 存储公钥算法，JSON 键为 public_key_algorithm。
-	Algorithm string `gorm:"column:algorithm;size:32;not null" json:"public_key_algorithm"`
+	// ★ Algorithm 存储**规范 ID**（"SM2" / "RSA2048" / "falcon1024" / "MLDSA65"）。
+	//   JSON 键为 `algorithm`，与 Certificate.Algorithm 对齐。
+	Algorithm string `gorm:"column:algorithm;size:32;not null" json:"algorithm"`
+
+	// ★ PublicKeyAlgorithm 非持久化**展示名**（"Falcon(1024)" / "ECC(256)" / "RSA"）。
+	//   仅供老数据 / 导入证书兜底展示，**不写 DB**。
+	//   运行时由 CAService.fillCADerivedFields 从证书解析结果填充。
+	PublicKeyAlgorithm string `gorm:"-" json:"public_key_algorithm,omitempty"`
 
 	KeyParams    JSONMap `gorm:"type:json" json:"key_params,omitempty"`
 	ValidityDays int     `gorm:"not null" json:"validity_days"`
@@ -35,7 +58,7 @@ type CA struct {
 	CreatedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"created_at"`
 	UpdatedAt time.Time `gorm:"not null;default:CURRENT_TIMESTAMP" json:"updated_at"`
 
-	// ★ 非持久化展示字段
+	// ★ 其它非持久化展示字段
 	HasPrivateKey bool   `gorm:"-" json:"has_private_key"`
 	Domain        string `gorm:"-" json:"domain,omitempty"`
 	NotBefore     string `gorm:"-" json:"not_before,omitempty"`
@@ -46,6 +69,14 @@ type CA struct {
 func (CA) TableName() string { return "platform_ca" }
 
 // Certificate 终端证书元数据表。
+//
+// ★ 双字段设计（本就是正确的）：
+//
+//	Algorithm          : DB 规范 ID（"SM2" / "RSA2048" / "falcon1024"）；
+//	PublicKeyAlgorithm : 解析展示名（"ECC(256)" / "RSA" / "ML-DSA-65"），持久化。
+//
+// 这就是为什么"证书管理界面"一直能正确显示 Falcon-1024 / SM2 / RSA-2048 的原因——
+// 前端 algStore.label(row.algorithm) 拿到的是规范 ID。
 type Certificate struct {
 	ID       uint   `gorm:"primaryKey;autoIncrement" json:"-"`
 	CertID   string `gorm:"size:64;not null;uniqueIndex" json:"cert_id"`
@@ -82,20 +113,28 @@ func (Certificate) TableName() string { return "platform_certificate" }
 
 // CSR P10 元数据表。
 //
-// 非持久化展示字段（gorm:"-"）：
-//   - HasPrivateKey：是否存在私钥；
-//   - IsCFCA       ：CSR attributes 段是否携带 CFCA 临时公钥 OID
-//                    （1.2.840.113549.1.9.63）；
-//   - Subject      ：完整 DN（运行时从 CSR 文件解析，RFC2253 规范化）；
-//   - NotBefore    ：CreatedAt（北京时间，展示用）；
-//   - NotAfter     ：空（P10 无固有有效期）。
+// ★ 双字段设计（与 CA / Certificate 对齐）：
+//
+//	Algorithm           : DB **规范 ID**（"SM2" / "RSA2048" / "falcon1024"）；
+//	                      由 detectAlgorithmFromCSRText 从 CSR 文件推断后写入；
+//	PublicKeyAlgorithm  : 证书解析**展示名**（"ECC(256)" / "Falcon(1024)"），
+//	                      非持久化（gorm:"-"），运行时由 CSRService.fillCSRDerivedFields 填充。
+//
+// ★ 历史 bug（本次修复）：
+//
+//	CSR.Algorithm 的 JSON tag 也被误标为 `public_key_algorithm`，
+//	与 CA 同样的语义混乱。本次一并修复。
 type CSR struct {
 	ID        uint   `gorm:"primaryKey;autoIncrement" json:"-"`
 	CSRID     string `gorm:"size:64;not null;uniqueIndex" json:"csr_id"`
 	SubjectCN string `gorm:"size:255;not null" json:"subject_cn"`
 
-	// ★ Algorithm 存储公钥算法，JSON 键为 public_key_algorithm。
-	Algorithm string `gorm:"column:algorithm;size:32;not null" json:"public_key_algorithm"`
+	// ★ Algorithm 存储**规范 ID**（"SM2" / "RSA2048" / "falcon1024" / "MLDSA65"）。
+	//   JSON 键为 `algorithm`。
+	Algorithm string `gorm:"column:algorithm;size:32;not null" json:"algorithm"`
+
+	// ★ PublicKeyAlgorithm 非持久化**展示名**。
+	PublicKeyAlgorithm string `gorm:"-" json:"public_key_algorithm,omitempty"`
 
 	CSRPath   string    `gorm:"size:255;not null" json:"csr_path"`
 	KeyRef    *string   `gorm:"size:64" json:"key_ref,omitempty"`
@@ -106,8 +145,10 @@ type CSR struct {
 	HasPrivateKey bool   `gorm:"-" json:"has_private_key"`
 	NotBefore     string `gorm:"-" json:"not_before,omitempty"`
 	NotAfter      string `gorm:"-" json:"not_after,omitempty"`
+
 	// ★ Subject 完整 DN（运行时从 CSR 文件解析）
 	Subject string `gorm:"-" json:"subject,omitempty"`
+
 	// ★ IsCFCA P10 是否为 CFCA 格式（CSR attributes 段携带
 	// OID 1.2.840.113549.1.9.63）。运行时由 CSRService 从 CSR 文件判定，
 	// 不落库。
