@@ -1,7 +1,323 @@
+# ============================================================
+# config.yaml — 平台部署配置参考（v1.5 含音视频模块）
+#
+# 目录：backend-go/configs/config.yaml
+#
+# 说明：
+#   1. 当前 Go 后端（config.Load()）读取的是环境变量（含 .env），
+#      **不会解析本 YAML**；本文件是配置项全集参考 + 部署模板。
+#   2. 所有字段均可用「环境变量」形式覆盖；
+#      YAML 键 → 环境变量的映射见各段注释与文末附录。
+#   3. 启动时会自动派生以下字段（显式配置优先）：
+#        InstallRoot → CoreGoBin / CoreGoWhiteboxBin / CoreGoOpensslBin
+#        InstallRoot → CertRoot / CARoot / ServerRoot / CertTmpDir
+#        InstallRoot → MediaRoot（媒体库）
+#        ServerHost + ServerPort → PublicBaseURL（媒体外链）
+# ============================================================
+version: "1.5"
+
+# ============================================================
+# 一、安装路径
+#
+# 派生关系（与 core/Makefile 的 TONSUO_DEPLOY_* 一致）：
+#   install_root
+#   ├── core/
+#   │   ├── bin/core                      → core_go_bin
+#   │   ├── bin/whitebox_sm4              → whitebox_bin
+#   │   ├── run/bin/openssl               → openssl_bin          ★ 二进制在 run/bin
+#   │   └── libs/tongsuo/
+#   │       └── libs/                     （动态库，含 ossl-modules/oqsprovider.so）
+#   ├── user_data/
+#   │   ├── cert/                         → cert_root
+#   │   │   ├── ca/                       → ca_root
+#   │   │   ├── server/                   → server_root
+#   │   │   └── tmp/                      → cert_tmp_dir（0700）
+#   │   └── media/                        → media_root（音视频模块）
+#   │       ├── video/
+#   │       │   └── thumbnails/
+#   │       ├── audio/
+#   │       └── tmp/uploads/<upload_id>/
+#   └── video/                            （由 core/libs/Makefile 部署 ZLM）
+#       ├── run/bin/MediaServer
+#       ├── libs/ZLMediaKit/*.so
+#       └── conf/zlmediakit/config.ini
+#
+# 对应环境变量：PLATS_*
+# ============================================================
 paths:
   install_root: "/opt/plats_tool"
   core_go_bin: "/opt/plats_tool/core/bin/core"
+  whitebox_bin: "/opt/plats_tool/core/bin/whitebox_sm4"
+  openssl_bin: "/opt/plats_tool/core/run/bin/openssl"          # ★ 修正：run/bin（不是 libs/tongsuo/bin）
   cert_root: "/opt/plats_tool/user_data/cert"
   ca_root: "/opt/plats_tool/user_data/cert/ca"
   server_root: "/opt/plats_tool/user_data/cert/server"
-  whitebox_bin: "/opt/plats_tool/core/bin/whitebox_sm4"
+  cert_tmp_dir: "/opt/plats_tool/user_data/cert/tmp"
+  media_root: "/opt/plats_tool/user_data/media"
+
+# ============================================================
+# 二、应用基础信息
+# ============================================================
+app:
+  name: "Platform Backend"
+  env: "development"                       # development | production
+  debug: true
+  secret_key: "change-this-in-production-please"
+  algorithm: "HS256"
+  access_token_expire_minutes: 1440
+  log_level: "DEBUG"                       # DEBUG | INFO | WARN | ERROR
+
+# ============================================================
+# 三、服务监听
+#
+# 规则：
+#   - server.host 为空时回退 env 的 HOST；
+#   - 两者都为空：0.0.0.0
+#   - server.port 为 0 时回退 env 的 PORT；
+#   - 两者都为 0：8000
+# ============================================================
+server:
+  host: "0.0.0.0"
+  port: 8000
+  read_timeout: "10s"
+  write_timeout: "10s"
+  shutdown_timeout: "10s"
+
+# ============================================================
+# 四、数据库
+#
+# 支持协议：
+#   sqlite+aiosqlite:///./app.db       （SQLite，纯 Go 驱动，CGO_ENABLED=0 可用）
+#   sqlite:///./app.db
+#   postgresql+asyncpg://user:pass@host:5432/db
+#   postgres://user:pass@host:5432/db
+# ============================================================
+database:
+  url: "sqlite+aiosqlite:///./app.db"
+  max_open_conns: 20
+  max_idle_conns: 10
+  conn_max_lifetime: "1h"
+
+# ============================================================
+# 五、CORS
+#
+# 生产环境：
+#   - 必须显式配置具体域名（逗号分隔）；
+#   - 留空或 "*" 会触发启动告警（生产环境为 error 级别）。
+# 开发环境：
+#   - 留空回退 "*" 并输出 warn。
+# ============================================================
+cors:
+  origins: ""                              # 例：https://console.example.com,https://admin.example.com
+
+# ============================================================
+# 六、前端静态资源
+#
+# frontend.deploy_dir 留空时后端按序自动探测：
+#   ../frontend/deploy → ./frontend/deploy
+# 命中 main-app/index.html 即启用静态托管。
+# ============================================================
+frontend:
+  deploy_dir: "../frontend/deploy"
+  config_path: "configs/frontend.yaml"
+
+# ============================================================
+# 七、模块管理
+# ============================================================
+module_manager:
+  modules_dir: "src/modules"
+  upload_dir: "./uploads/modules"
+  zip_max_size: 52428800                   # 50 MB
+  zip_max_total: 209715200                 # 200 MB
+  zip_max_files: 2000
+
+# ============================================================
+# 八、License
+# ============================================================
+license:
+  secret_key: "change-this-license-secret-in-production"
+  activation_url: ""                       # 在线激活服务基址，为空表示只支持离线 .lic
+  machine_code_override: ""                # 固定机器码（容器/跨机一致性排障用）
+
+# ============================================================
+# 九、Core 引擎（兼容保留）
+#
+# CoreGoBin 优先级：PLATS_CORE_GO_BIN > CORE_DISPATCH_PATH > <install_root>/core/bin/core
+# ============================================================
+core:
+  dispatch_path: ""                        # 旧模式：脚本路径（core/sbin/*.sh）
+  root: ""                                 # dispatch_path 为脚本时的显式根
+  timeout_ms: 10000
+  max_concurrency: 8
+
+# ============================================================
+# 十、媒体管理（音视频模块）
+# ============================================================
+media:
+  # 媒体文件根目录；留空则派生为 <paths.install_root>/user_data/media
+  # 首次启动自动创建以下子目录（0755）：
+  #   video/  video/thumbnails/  audio/  tmp/uploads/
+  root: "/opt/plats_tool/user_data/media"
+
+  # 分片上传的单片大小（字节）；前端按此值切片，5MB 为推荐值
+  # 后端不做强制切片校验，仅作为默认值/参考
+  chunk_size: 5242880                    # 5 * 1024 * 1024
+
+  # 上传会话过期时间；超时未完成合并的分片目录由后台清理
+  # 清理触发：init 时轻量触发 + 每次进程启动后台轮询
+  session_ttl: "2h"
+
+  # ffprobe / ffmpeg 可执行文件路径
+  # 缺省走 $PATH（apt install ffmpeg 后默认可达）
+  # 若未安装或路径不可达：上传仍会成功，但 duration/resolution/thumbnail 置空
+  ffprobe_path: "ffprobe"
+  ffmpeg_path: "ffmpeg"
+
+# ============================================================
+# 十一、ZLMediaKit（音视频模块）
+#
+# 部署位置（由 core/libs/Makefile 保证）：
+#   /opt/plats_tool/video/run/bin/MediaServer
+#   /opt/plats_tool/video/libs/ZLMediaKit/*.so
+#   /opt/plats_tool/video/conf/zlmediakit/config.ini
+#
+# 注意：
+#   - secret 必须与 ZLM 的 config.ini [api] secret 完全一致，
+#     否则 /live/streams 会返回"拉取直播流失败"；
+#   - http_host 应为客户端可达的域名或 IP（不是 127.0.0.1），
+#     它决定了前端拿到的播放地址；
+#   - rtc_port 为 0 表示未启用 WebRTC，前端 WebRTC 标签将不可用。
+# ============================================================
+zlm:
+  base_url: "http://127.0.0.1:8080"        # 后端调用 ZLM HTTP API 的地址（内网）
+  secret: "035c73f7-bb6b-4889-a715-d9eb2d1925cc"
+  http_host: "192.168.56.14"               # 对外可达 host（拼播放地址用）
+  http_port: 8080
+  rtmp_port: 1935
+  rtc_port: 8000
+
+# ============================================================
+# 十二、对外可达 URL（媒体外链拼接用）
+#
+# 媒体列表返回的 thumbnail / play_url / download_url 均以此为前缀。
+# 为空时回退：http://{server.host}:{server.port}
+#   server.host 为 0.0.0.0 / :: / 空 时回退 127.0.0.1。
+#
+# 生产环境建议显式配置为反向代理对外域名，例如：
+#   https://media-api.example.com
+# ============================================================
+public_base_url: "http://192.168.56.14:18000"
+
+# ============================================================
+# 附录 A：YAML 键 → 环境变量 映射（在 .env 中使用）
+# ============================================================
+#
+# [paths]
+#   install_root        → PLATS_INSTALL_ROOT
+#   core_go_bin         → PLATS_CORE_GO_BIN
+#   whitebox_bin        → PLATS_CORE_GO_WHITEBOX_BIN
+#   openssl_bin         → PLATS_CORE_GO_OPENSSL_BIN
+#   cert_root           → PLATS_CERT_ROOT
+#   ca_root             → PLATS_CA_ROOT
+#   server_root         → PLATS_SERVER_ROOT
+#   cert_tmp_dir        → PLATS_CERT_TMP_DIR
+#   media_root          → MEDIA_ROOT
+#
+# [app]
+#   name                → APP_NAME
+#   env                 → APP_ENV
+#   debug               → DEBUG
+#   secret_key          → SECRET_KEY
+#   algorithm           → ALGORITHM
+#   access_token_expire_minutes → ACCESS_TOKEN_EXPIRE_MINUTES
+#   log_level           → LOG_LEVEL
+#
+# [server]
+#   host                → SERVER_HOST
+#   port                → SERVER_PORT
+#   read_timeout        → READ_TIMEOUT
+#   write_timeout       → WRITE_TIMEOUT
+#   shutdown_timeout    → SHUTDOWN_TIMEOUT
+#
+# [database]
+#   url                 → DATABASE_URL
+#   max_open_conns      → DB_MAX_OPEN_CONNS
+#   max_idle_conns      → DB_MAX_IDLE_CONNS
+#   conn_max_lifetime   → DB_CONN_MAX_LIFETIME
+#
+# [cors]
+#   origins             → CORS_ORIGINS
+#
+# [frontend]
+#   deploy_dir          → FRONTEND_DEPLOY_DIR
+#   config_path         → FRONTEND_CONFIG_PATH
+#
+# [module_manager]
+#   modules_dir         → MODULES_DIR
+#   upload_dir          → MODULE_UPLOAD_DIR
+#   zip_max_size        → MODULE_ZIP_MAX_SIZE
+#   zip_max_total       → MODULE_ZIP_MAX_TOTAL
+#   zip_max_files       → MODULE_ZIP_MAX_FILES
+#
+# [license]
+#   secret_key          → LICENSE_SECRET_KEY
+#   activation_url      → LICENSE_ACTIVATION_URL
+#   machine_code_override → LICENSE_MACHINE_CODE_OVERRIDE
+#
+# [core]
+#   dispatch_path       → CORE_DISPATCH_PATH
+#   root                → CORE_ROOT
+#   timeout_ms          → CORE_TIMEOUT_MS
+#   max_concurrency     → CORE_MAX_CONCURRENCY
+#
+# [media]
+#   root                → MEDIA_ROOT
+#   chunk_size          → MEDIA_CHUNK_SIZE
+#   session_ttl         → MEDIA_SESSION_TTL
+#   ffprobe_path        → MEDIA_FFPROBE_PATH
+#   ffmpeg_path         → MEDIA_FFMPEG_PATH
+#
+# [zlm]
+#   base_url            → ZLM_BASE_URL
+#   secret              → ZLM_SECRET
+#   http_host           → ZLM_HTTP_HOST
+#   http_port           → ZLM_HTTP_PORT
+#   rtmp_port           → ZLM_RTMP_PORT
+#   rtc_port            → ZLM_RTC_PORT
+#
+# [public_base_url]     → PUBLIC_BASE_URL
+#
+# ============================================================
+# 附录 B：生产环境推荐 .env 片段（与本 YAML 等价）
+# ============================================================
+#
+# APP_ENV=production
+# DEBUG=false
+# LOG_LEVEL=INFO
+# SECRET_KEY=<32+ 位强随机>
+#
+# DATABASE_URL=postgres://platform:***@127.0.0.1:5432/platform?sslmode=disable
+# DB_MAX_OPEN_CONNS=50
+# DB_MAX_IDLE_CONNS=20
+# DB_CONN_MAX_LIFETIME=30m
+#
+# SERVER_HOST=0.0.0.0
+# SERVER_PORT=18000
+#
+# CORS_ORIGINS=https://console.example.com,https://admin.example.com
+# FRONTEND_DEPLOY_DIR=/opt/plats_tool/frontend/deploy
+#
+# PLATS_INSTALL_ROOT=/opt/plats_tool
+# PLATS_CORE_GO_OPENSSL_BIN=/opt/plats_tool/core/run/bin/openssl          # ★ 修正
+# MEDIA_ROOT=/opt/plats_tool/user_data/media
+#
+# ZLM_BASE_URL=http://127.0.0.1:8080
+# ZLM_SECRET=<与 ZLM config.ini [api] secret 一致>
+# ZLM_HTTP_HOST=media.example.com
+# ZLM_HTTP_PORT=8080
+# ZLM_RTMP_PORT=1935
+# ZLM_RTC_PORT=8000
+#
+# PUBLIC_BASE_URL=https://media-api.example.com
+#
+# ============================================================

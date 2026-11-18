@@ -64,6 +64,12 @@ const (
 	DefaultSSLSessionTimeout = "10m"
 )
 
+// DefaultCADomain 默认 CA 信任域。
+//
+// 服务端模式开启双向认证时必须有 CA（ssl_client_certificate）；
+// 平台的默认信任域固定为 safe。
+const DefaultCADomain = "safe"
+
 const (
 	SSLCiphersModeDefault = "default"
 	SSLCiphersModeCustom  = "custom"

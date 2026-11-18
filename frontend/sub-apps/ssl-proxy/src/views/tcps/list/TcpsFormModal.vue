@@ -231,7 +231,7 @@ function buildEmptyForm(mode: TcpsMode = 'client'): TcpsCreateReq {
     backend_tls: false, ssl_server_name: '',
     listen_ssl: mode === 'server' ? true : undefined,
     cert_id: '', enc_cert_id: '', intl_cert_id: '',
-    ca_cert_id: '', ca_domain: '', client_cert_id: '',
+    ca_cert_id: '', ca_domain: 'safe', client_cert_id: '',
     client_enc_cert_id: '', intl_client_cert_id: '', client_key_ref: '',
     ssl_protocols: tcpsDefaultProtocolsFor(protocol),
     ssl_ciphers: tcpsDefaultCiphers(),

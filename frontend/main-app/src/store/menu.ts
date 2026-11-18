@@ -114,7 +114,7 @@ export const useMenuStore = defineStore('menu', () => {
         const microApp = inferMicroApp(n);
         const rawPath = (n as any).path;
         let fullPath: string | undefined;
-        if (rawPath) {
+        if (rawPath && (n as any).type !== 'directory') {
           const safe = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
           fullPath = isMainAppId(microApp) ? safe : `/${microApp}${safe}`;
         }

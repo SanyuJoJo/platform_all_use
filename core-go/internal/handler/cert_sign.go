@@ -48,9 +48,19 @@ func (h *CertSignHandler) Execute(
 		return genErr("INVALID_PARAM", "invalid ca_source: "+caSource)
 	}
 
-	certType := strParamDefault(req.Params, "cert_type", "server")
-	if !wl.IsCertTypeAllowed("cert.sign", certType) {
-		return genErr("INVALID_PARAM", "invalid cert_type: "+certType)
+	// 证书类型支持多选（前端可同时申请 signature + encryption）。
+	// ★ 必须按「全部选中类型」求 keyUsage 并集：国密 NTLS 允许同一张证书
+	//   同时用于签名与加密，但证书必须同时具备 digitalSignature 与
+	//   keyEncipherment 用途，否则 tongsuo 的 SSL_CTX_use_enc_certificate()
+	//   会以 "called a function you should not call" 拒绝加载。
+	certTypes := certTypesFromParams(req.Params)
+	if len(certTypes) == 0 {
+		certTypes = []string{"server"}
+	}
+	for _, ct := range certTypes {
+		if !wl.IsCertTypeAllowed("cert.sign", ct) {
+			return genErr("INVALID_PARAM", "invalid cert_type: "+ct)
+		}
 	}
 
 	// ---------- 输出路径参数 ----------
@@ -176,7 +186,7 @@ func (h *CertSignHandler) Execute(
 
 	// ---------- 扩展配置 ----------
 	extPath := filepath.Join(tmpDir, "ext.cnf")
-	if err := writeCertExt(extPath, certType); err != nil {
+	if err := writeCertExt(extPath, certTypes); err != nil {
 		return genErr("CORE_EXEC_FAILED", err.Error())
 	}
 
@@ -288,28 +298,101 @@ func (h *CertSignHandler) Execute(
 	return envelope.NewSuccess(data)
 }
 
-// writeCertExt 写证书扩展配置文件。
-func writeCertExt(path, certType string) error {
-	var ku, eku string
-	switch certType {
-	case "server":
-		ku = "digitalSignature,keyEncipherment"
-		eku = "serverAuth"
-	case "client":
-		ku = "digitalSignature"
-		eku = "clientAuth"
-	case "signature":
-		ku = "digitalSignature,nonRepudiation"
-	case "encryption":
-		ku = "keyEncipherment,keyAgreement"
-	default:
-		ku = "digitalSignature"
+// certTypesFromParams 解析证书类型列表。
+//
+// 优先读取 cert_types（数组或逗号分隔字符串，前端多选场景），
+// 缺省回退到 cert_type（单值，兼容旧调用）。
+func certTypesFromParams(params map[string]interface{}) []string {
+	var out []string
+	seen := make(map[string]bool, 4)
+	add := func(raw string) {
+		t := strings.ToLower(strings.TrimSpace(raw))
+		if t == "" || seen[t] {
+			return
+		}
+		seen[t] = true
+		out = append(out, t)
 	}
+	if v, ok := params["cert_types"]; ok {
+		switch x := v.(type) {
+		case []interface{}:
+			for _, item := range x {
+				if s, ok := item.(string); ok {
+					add(s)
+				}
+			}
+		case []string:
+			for _, s := range x {
+				add(s)
+			}
+		case string:
+			for _, s := range strings.Split(x, ",") {
+				add(s)
+			}
+		}
+	}
+	if len(out) == 0 {
+		add(strParam(params, "cert_type"))
+	}
+	return out
+}
+
+// writeCertExt 写证书扩展配置文件。
+//
+// certTypes 为全部申请类型，keyUsage 取并集：
+//
+//	signature  → digitalSignature,nonRepudiation
+//	encryption → keyEncipherment,keyAgreement
+//	server     → digitalSignature,keyEncipherment（+ EKU serverAuth）
+//	client     → digitalSignature（+ EKU clientAuth）
+//
+// 同时申请 signature + encryption 时两类用途叠加：这样同一张证书既能用于
+// 国密签名也能用于国密加密（tongsuo 要求加密证书带 keyEncipherment /
+// dataEncipherment，否则 SSL_CTX_use_enc_certificate 会拒绝加载）。
+func writeCertExt(path string, certTypes []string) error {
+	var ku, eku []string
+	seenKU := make(map[string]bool, 4)
+	seenEKU := make(map[string]bool, 2)
+	addKU := func(items ...string) {
+		for _, it := range items {
+			if it = strings.TrimSpace(it); it != "" && !seenKU[it] {
+				seenKU[it] = true
+				ku = append(ku, it)
+			}
+		}
+	}
+	addEKU := func(items ...string) {
+		for _, it := range items {
+			if it = strings.TrimSpace(it); it != "" && !seenEKU[it] {
+				seenEKU[it] = true
+				eku = append(eku, it)
+			}
+		}
+	}
+
+	for _, t := range certTypes {
+		switch t {
+		case "server":
+			addKU("digitalSignature", "keyEncipherment")
+			addEKU("serverAuth")
+		case "client":
+			addKU("digitalSignature")
+			addEKU("clientAuth")
+		case "signature":
+			addKU("digitalSignature", "nonRepudiation")
+		case "encryption":
+			addKU("keyEncipherment", "keyAgreement")
+		}
+	}
+	if len(ku) == 0 {
+		addKU("digitalSignature")
+	}
+
 	var sb strings.Builder
 	sb.WriteString("basicConstraints=CA:FALSE\n")
-	sb.WriteString("keyUsage=critical," + ku + "\n")
-	if eku != "" {
-		sb.WriteString("extendedKeyUsage=" + eku + "\n")
+	sb.WriteString("keyUsage=critical," + strings.Join(ku, ",") + "\n")
+	if len(eku) > 0 {
+		sb.WriteString("extendedKeyUsage=" + strings.Join(eku, ",") + "\n")
 	}
 	return os.WriteFile(path, []byte(sb.String()), 0600)
 }

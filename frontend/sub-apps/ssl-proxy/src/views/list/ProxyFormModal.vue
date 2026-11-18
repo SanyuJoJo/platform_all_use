@@ -279,7 +279,11 @@ function buildEmptyForm(mode: ProxyMode = 'client'): ProxyCreateReq {
     enc_cert_id: '',
     intl_cert_id: '',
     ca_cert_id: '',
-    ca_domain: '',
+    // ★ 服务端模式默认信任域 safe：双向认证必须有 CA，
+    //   否则生成的 nginx 配置只有 ssl_verify_client on; 而没有
+    //   ssl_client_certificate，nginx -t 会失败。
+    //   客户端模式留空表示不校验后端证书（与详情页提示一致）。
+    ca_domain: mode === 'server' ? 'safe' : '',
     client_cert_id: '',
     client_enc_cert_id: '',
     intl_client_cert_id: '',

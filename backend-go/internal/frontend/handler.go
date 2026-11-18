@@ -220,6 +220,9 @@ func (h *Handler) NoRoute(c *gin.Context) {
 	}
 
 	// SPA fallback 到主应用 index.html
+	c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
 	c.File(h.indexPath)
 }
 
@@ -279,6 +282,13 @@ func (h *Handler) tryServeFile(c *gin.Context, root, urlPath string) bool {
 	info, err := os.Stat(absFull)
 	if err != nil || info.IsDir() {
 		return false
+	}
+	// 对 HTML 入口禁缓存：前端每次发版后 index.html 引用新 hash，
+	// 若浏览器/中间层缓存旧 index.html，qiankun 子应用会继续加载旧资源。
+	if strings.HasSuffix(strings.ToLower(absFull), ".html") {
+		c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+		c.Header("Pragma", "no-cache")
+		c.Header("Expires", "0")
 	}
 	c.File(absFull)
 	return true

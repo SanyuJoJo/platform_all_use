@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-13T05:10:29.524Z",
+  "generatedAt": "2026-11-17T09:42:29.535Z",
   "mainApp": {
     "dir": "main-app",
     "base": "/",
@@ -39,12 +39,28 @@
       "staticBase": "/sub-apps/license/"
     },
     {
+      "dir": "media",
+      "pkgName": "module-media",
+      "moduleId": "media",
+      "entry": "/sub-apps/media/",
+      "activeRule": "/media",
+      "staticBase": "/sub-apps/media/"
+    },
+    {
       "dir": "module-manager",
       "pkgName": "module-manager",
       "moduleId": "module_manager",
       "entry": "/sub-apps/module-manager/",
       "activeRule": "/module_manager",
       "staticBase": "/sub-apps/module-manager/"
+    },
+    {
+      "dir": "ssl-proxy",
+      "pkgName": "module-ssl-proxy",
+      "moduleId": "ssl_proxy",
+      "entry": "/sub-apps/ssl-proxy/",
+      "activeRule": "/ssl_proxy",
+      "staticBase": "/sub-apps/ssl-proxy/"
     }
   ],
   "fastapi": {

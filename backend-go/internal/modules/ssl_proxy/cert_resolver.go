@@ -2,6 +2,10 @@
 package ssl_proxy
 
 import (
+	"crypto/x509/pkix"
+	"encoding/asn1"
+	"encoding/pem"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -121,9 +125,15 @@ func (r *DefaultCertResolver) Resolve(p *PlatformSSLProxy, confDir string) (*Res
 			if err != nil {
 				return nil, newErr(ErrCertResolve, "获取国密加密证书路径失败", err.Error())
 			}
-			_, signKeyPEM, _, encKeyPEM, err := r.Provider.GetGMPair(p.CertID, p.EncCertID)
+			signCertPEM, signKeyPEM, encCertPEM, encKeyPEM, err := r.Provider.GetGMPair(p.CertID, p.EncCertID)
 			if err != nil {
 				return nil, newErr(ErrCertResolve, "获取国密双证书失败", err.Error())
+			}
+			if err := validateGMCertUsage(signCertPEM, "国密签名证书", true); err != nil {
+				return nil, err
+			}
+			if err := validateGMCertUsage(encCertPEM, "国密加密证书", false); err != nil {
+				return nil, err
 			}
 			sk, err := writeKey(confDir, "server_sign", signKeyPEM)
 			if err != nil {
@@ -193,9 +203,15 @@ func (r *DefaultCertResolver) Resolve(p *PlatformSSLProxy, confDir string) (*Res
 			if err != nil {
 				return nil, newErr(ErrCertResolve, "获取国密客户端加密证书路径失败", err.Error())
 			}
-			_, signKeyPEM, _, encKeyPEM, err := r.Provider.GetGMPair(p.ClientCertID, p.ClientEncCertID)
+			signCertPEM, signKeyPEM, encCertPEM, encKeyPEM, err := r.Provider.GetGMPair(p.ClientCertID, p.ClientEncCertID)
 			if err != nil {
 				return nil, newErr(ErrCertResolve, "获取国密客户端双证书失败", err.Error())
+			}
+			if err := validateGMCertUsage(signCertPEM, "国密客户端签名证书", true); err != nil {
+				return nil, err
+			}
+			if err := validateGMCertUsage(encCertPEM, "国密客户端加密证书", false); err != nil {
+				return nil, err
 			}
 			sk, err := writeKey(confDir, "client_sign", signKeyPEM)
 			if err != nil {
@@ -315,4 +331,108 @@ func writeKey(dir, name string, pem []byte) (string, error) {
 	}
 	_ = os.Chmod(p, 0600)
 	return p, nil
+}
+
+// validateGMCertUsage 校验国密证书的 X509 KeyUsage 是否满足 tongsuo 的加载要求。
+//
+// ★ 背景：tongsuo 的 SSL_CTX_use_enc_certificate() 会直接拒绝缺少加密用途
+// （keyEncipherment / dataEncipherment）的证书，报错为：
+//
+//	SSL: error:0A0C0101:SSL routines::called a function you should not call
+//
+// 从 nginx -t 输出完全看不出根因，因此这里提前给出可读错误。
+//
+// ★ 说明：国密证书（SM2 曲线）无法用 crypto/x509 完整解析（报
+// unsupported elliptic curve），所以这里只按 ASN.1 取出 keyUsage 扩展
+// （OID 2.5.29.15）的 BIT STRING 做位判断。
+//
+// 签名证书与加密证书允许是同一张（tongsuo 不做限制），只要该证书的
+// KeyUsage 同时包含两类用途 —— 这正是「申请证书」时同时勾选
+// 签名 + 加密 的语义。
+func validateGMCertUsage(certPEM []byte, label string, wantSign bool) error {
+	const (
+		kuDigitalSignature = 0
+		kuKeyEncipherment  = 2
+		kuDataEncipherment = 3
+		kuKeyCertSign      = 5
+		kuCRLSign          = 6
+	)
+	bits, present, err := certKeyUsageBits(certPEM)
+	if err != nil {
+		return newErr(ErrCertResolve, label+"解析失败", err.Error())
+	}
+	// ★ 与 OpenSSL 的 X509_get_key_usage() 保持一致：证书未声明
+	//   keyUsage 扩展时视为「不限制」（返回全 1），
+	//   tongsuo 不会拒绝，因此这里也不做限制。
+	if !present {
+		return nil
+	}
+	has := func(idx int) bool { return bits.At(idx) == 1 }
+
+	if wantSign {
+		if !has(kuDigitalSignature) && !has(kuKeyCertSign) && !has(kuCRLSign) {
+			return newErr(ErrCertResolve, label+"缺少签名用途",
+				"证书 KeyUsage 需包含 digitalSignature（当前证书未声明该用途）")
+		}
+		return nil
+	}
+	if !has(kuKeyEncipherment) && !has(kuDataEncipherment) {
+		return newErr(ErrCertResolve, label+"缺少加密用途",
+			"证书 KeyUsage 需包含 keyEncipherment 或 dataEncipherment，否则 nginx(tongsuo) "+
+				"加载时报 SSL_CTX_use_enc_certificate failed；"+
+				"请在证书管理中重新申请同时勾选「签名 + 加密」的证书")
+	}
+	return nil
+}
+
+// certKeyUsageBits 从 PEM 证书中取出 keyUsage 扩展的 BIT STRING。
+//
+// 只做最基本的 ASN.1 结构解析，回避 crypto/x509 对 SM2 曲线的不支持问题。
+// present=false 表示证书未声明 keyUsage 扩展（此时 tongsuo 的
+// X509_get_key_usage() 返回 0，任何用途都不可用）。
+func certKeyUsageBits(certPEM []byte) (asn1.BitString, bool, error) {
+	var empty asn1.BitString
+
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return empty, false, fmt.Errorf("证书不是有效的 PEM 格式")
+	}
+
+	var cert struct {
+		TBSCertificate     asn1.RawValue
+		SignatureAlgorithm asn1.RawValue
+		SignatureValue     asn1.BitString
+	}
+	if _, err := asn1.Unmarshal(block.Bytes, &cert); err != nil {
+		return empty, false, fmt.Errorf("证书 ASN.1 解析失败: %w", err)
+	}
+
+	// TBSCertificate 为 SEQUENCE，按元素拆开：extensions 是 [3] EXPLICIT。
+	var fields []asn1.RawValue
+	if _, err := asn1.Unmarshal(cert.TBSCertificate.FullBytes, &fields); err != nil {
+		return empty, false, fmt.Errorf("证书 TBSCertificate 解析失败: %w", err)
+	}
+
+	kuOID := asn1.ObjectIdentifier{2, 5, 29, 15}
+	for _, f := range fields {
+		if f.Class != asn1.ClassContextSpecific || f.Tag != 3 {
+			continue
+		}
+		var exts []pkix.Extension
+		if _, err := asn1.Unmarshal(f.Bytes, &exts); err != nil {
+			return empty, false, fmt.Errorf("证书扩展解析失败: %w", err)
+		}
+		for _, ext := range exts {
+			if !ext.Id.Equal(kuOID) {
+				continue
+			}
+			var bits asn1.BitString
+			if _, err := asn1.Unmarshal(ext.Value, &bits); err != nil {
+				return empty, false, fmt.Errorf("keyUsage 扩展解析失败: %w", err)
+			}
+			return bits, true, nil
+		}
+		return empty, false, nil
+	}
+	return empty, false, nil
 }

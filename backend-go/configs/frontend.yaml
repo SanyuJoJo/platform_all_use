@@ -8,6 +8,12 @@
 #
 # entry_frontend_overrides：
 #   按模块 ID 覆盖子应用入口；未提及的模块保留 DB 值。
+#
+# 校验规则（menus/loader.go → Validate）：
+#   - 同一模块内 id 唯一；
+#   - title / path 非空；
+#   - permission（若非空）符合 {module}:{resource}:{action} 三段式小写；
+#   - menus_hidden 与 module_menus 同时出现时，以 menus_hidden 为准（仅告警）。
 # ============================================================
 version: "1.0"
 
@@ -134,6 +140,59 @@ module_menus:
           order: 20
           children: []   # 暂时留空，后续可在此添加业务管理相关菜单
 
+  # ============================================================
+  # 音视频管理（module_menus.media）
+  #
+  # 路径规划：
+  #   - 父目录 path=/media（qiankun 加载 media 子应用的入口前缀）
+  #   - 媒体库：path=/media       → 子应用内 normalizePath 后为 '/'      → 匹配 MediaList
+  #   - 直播管理：path=/media/live → 子应用内 normalizePath 后为 '/live'  → 匹配 MediaLive
+  #
+  # 与 media 子应用 dynamic.ts 的 defaultRouters 保持语义一致：
+  #   { name: 'MediaRoot',   path: '',      type: 'directory', children: [
+  #       { name: 'MediaList', path: '/media', component: 'media/index' },
+  #       { name: 'MediaLive', path: '/live',  component: 'live/index'  },
+  #   ]}
+  #
+  # 权限码：
+  #   media:media:view    查看媒体库 / 列表 / 详情 / 播放地址
+  #   media:media:upload  上传（init / chunk / complete）
+  #   media:media:download 下载（download / raw 直链，前端通过 ?token= 访问）
+  #   media:media:delete  删除
+  #   media:live:push     创建推流
+  #   media:live:stop     停止推流
+  #   media:live:play     拉流 / 流列表
+  #
+  # 说明：
+  #   - 父目录 media:root 的 path 与子菜单 media:list 的 path 相同（均为 /media），
+  #     父目录仅作侧边栏分组，不会单独渲染为可点击菜单项；
+  #   - component 采用 `views/xxx/index.vue` 风格（与 auth / crypto_console 一致），
+  #     media 子应用 dynamic.ts 的 resolveView 会剥离前缀后加载 `media/index.vue`。
+  # ============================================================
+  media:
+    - id: media:root
+      title: 音视频管理
+      icon: Video
+      path: /media
+      component: views/media/index.vue
+      permission: media:media:view
+      order: 100
+      children:
+        - id: media:list
+          title: 媒体库
+          icon: FolderOpen
+          path: /
+          component: views/media/index.vue
+          permission: media:media:view
+          order: 10
+        - id: media:live
+          title: 直播管理
+          icon: Pulse
+          path: /media/live
+          component: views/live/index.vue
+          permission: media:live:play
+          order: 20
+
   # 说明：module_manager / audit_log / license / ssl_proxy 未列出，
   #      将自动加载 DB manifest 里的菜单。
 
@@ -146,3 +205,4 @@ entry_frontend_overrides:
   license: /sub-apps/license/
   crypto_console: /sub-apps/crypto-console/
   ssl_proxy: /sub-apps/ssl-proxy/
+  media: /sub-apps/media/            # ★ 新增：音视频管理子应用

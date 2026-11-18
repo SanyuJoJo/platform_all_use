@@ -555,7 +555,14 @@ func applyCreateDefaults(req *ProxyCreateReq) {
 		req.SSLSessionTickets = nil
 	}
 
-	// ★ ca_domain 只在详情页配置，新建时不设默认值（保持空字符串）
+	// ★ 新建时默认信任域 safe（与 TCP 代理保持一致）。
+	//   服务端模式开启双向认证时必须有 CA；若 ca_domain 为空，生成的配置
+	//   只有 `ssl_verify_client on;` 而没有 `ssl_client_certificate`，
+	//   nginx -t 会报 "no ssl_client_certificate for ssl_verify_client"，
+	//   导致新建的 HTTP 服务端代理必须编辑并选择信任域后才能启动。
+	if req.Mode == ModeServer && strings.TrimSpace(req.CADomain) == "" {
+		req.CADomain = DefaultCADomain
+	}
 }
 
 func applyUpdateDefaults(req *ProxyUpdateReq, mode, protocol string, cur *PlatformSSLProxy) {

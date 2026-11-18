@@ -9,6 +9,7 @@ var CORE_MODULE_IDS = map[string]struct{}{
 	"license":        {},
 	"crypto_console": {},
 	"ssl_proxy":      {},
+	"media":          {},  // ★ 新增：音视频管理（基础设施，视为核心）
 }
 
 // ZIP 安全默认值（可被 settings 覆盖）。
@@ -278,14 +279,6 @@ var CoreModules = []CoreModuleSeed{
 		},
 		Config: map[string]interface{}{},
 	},
-	// ========================================================================
-	// SSL 代理
-	//
-	// 菜单挂在"业务管理"（crypto_console:business）下作为子项。
-	//
-	// ★ path=/list 与子应用路由 /list 对应；子应用 router base=/ssl_proxy，
-	//   所以最终 URL 是 /ssl_proxy/list，内部匹配到 /list，渲染列表页。
-	// ========================================================================
 	{
 		ID: "ssl_proxy", Name: "SSL 代理", Version: "1.0.0",
 		Description:   "SSL 代理服务，支持 HTTP over TLS、后量子 SSL、国密 SSL",
@@ -313,6 +306,66 @@ var CoreModules = []CoreModuleSeed{
 					"component":  "views/list/index.vue",
 					"permission": "ssl_proxy:proxy:view",
 					"order":      21,
+				},
+			},
+		},
+		Config: map[string]interface{}{},
+	},
+	// ========================================================================
+	// 音视频管理（★ 本次新增）
+	//
+	// 说明：
+	//   - 注册为 active 核心模块，确保 module_manager 页面可见、
+	//     entry_frontend 被 qiankun 识别，且不被视为"业务模块"受 License 限制；
+	//   - manifest.menus 只影响"模块管理页 → 模块详情"展示；
+	//     主应用侧边栏不读这里，由 menu/seed.go 的 platform_menu 驱动。
+	// ========================================================================
+	{
+		ID: "media", Name: "音视频管理", Version: "1.0.0",
+		Description:   "音视频上传、下载、点播、推流、拉流",
+		Author:        "平台团队",
+		Status:        "active",
+		EntryBackend:  "router:router",
+		EntryFrontend: strPtr("/sub-apps/media/"),
+		Manifest: map[string]interface{}{
+			"id":          "media",
+			"name":        "音视频管理",
+			"version":     "1.0.0",
+			"description": "音视频上传、下载、点播、推流、拉流",
+			"dependencies": []interface{}{
+				"auth",
+			},
+			"permissions": []interface{}{},
+			"menus": []interface{}{
+				map[string]interface{}{
+					"id":         "media:root",
+					"parent_id":  nil,
+					"title":      "音视频管理",
+					"icon":       "Video",
+					"path":       "/media",
+					"component":  "views/media/index.vue",
+					"permission": "media:media:view",
+					"order":      100,
+				},
+				map[string]interface{}{
+					"id":         "media:list",
+					"parent_id":  "media:root",
+					"title":      "媒体库",
+					"icon":       "FolderOpen",
+					"path":       "/",
+					"component":  "views/media/index.vue",
+					"permission": "media:media:view",
+					"order":      10,
+				},
+				map[string]interface{}{
+					"id":         "media:live",
+					"parent_id":  "media:root",
+					"title":      "直播管理",
+					"icon":       "Pulse",
+					"path":       "/media/live",
+					"component":  "views/live/index.vue",
+					"permission": "media:live:play",
+					"order":      20,
 				},
 			},
 		},

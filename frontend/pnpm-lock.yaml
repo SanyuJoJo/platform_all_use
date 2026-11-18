@@ -257,6 +257,52 @@ importers:
         specifier: ^2.1.10
         version: 2.2.12(typescript@5.6.2)
 
+  sub-apps/media:
+    dependencies:
+      axios:
+        specifier: ^1.6.0
+        version: 1.20.0
+      flv.js:
+        specifier: ^1.6.2
+        version: 1.6.2
+      hls.js:
+        specifier: ^1.5.17
+        version: 1.7.4
+      mpegts.js:
+        specifier: ^1.8.2
+        version: 1.8.2
+      naive-ui:
+        specifier: ^2.38.0
+        version: 2.45.3(vue@3.5.42)
+      pinia:
+        specifier: ^2.1.7
+        version: 2.3.1(typescript@5.6.2)(vue@3.5.42)
+      qiankun:
+        specifier: ^2.10.16
+        version: 2.10.16
+      vue:
+        specifier: ^3.4.0
+        version: 3.5.42(typescript@5.6.2)
+      vue-router:
+        specifier: ^4.2.5
+        version: 4.6.4(vue@3.5.42)
+    devDependencies:
+      '@vitejs/plugin-vue':
+        specifier: ^5.0.0
+        version: 5.2.4(vite@5.4.21)(vue@3.5.42)
+      '@vue/tsconfig':
+        specifier: ^0.5.1
+        version: 0.5.1
+      vite:
+        specifier: ^5.0.0
+        version: 5.4.21(@types/node@20.19.43)
+      vite-plugin-qiankun:
+        specifier: ^1.0.12
+        version: 1.0.15(typescript@5.6.2)(vite@5.4.21)
+      vue-tsc:
+        specifier: ^2.1.10
+        version: 2.2.12(typescript@5.6.2)
+
   sub-apps/module-manager:
     dependencies:
       axios:
@@ -2234,6 +2280,10 @@ packages:
       has-tostringtag: 1.0.2
       hasown: 2.0.4
 
+  /es6-promise@4.2.8:
+    resolution: {integrity: sha512-HJDGx5daxeIvxdBxvG2cb9g4tEvwIk3i8+nhX0yGrYmZUzbkdg8QbDevheDB8gd0//uPj4c1EQua8Q+MViT0/w==}
+    dev: false
+
   /esbuild@0.21.5:
     resolution: {integrity: sha512-mg3OPMV4hXywwpoDxu3Qda5xCKQi+vCTZq8S9J/EpkhB2HzKXq4SNFZE3+NK93JYxc8VMSep+lOUSC/RVKaBqw==}
     engines: {node: '>=12'}
@@ -2469,6 +2519,11 @@ packages:
     resolution: {integrity: sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==}
     dev: true
 
+  /events@3.3.0:
+    resolution: {integrity: sha512-mQw+2fkQbALzQ7V0MY0IqdnXNOeTtP4r0lN9z7AAawCXgqea7bDii20AYrIBrFd/Hx0M2Ocz6S111CaFkUcb0Q==}
+    engines: {node: '>=0.8.x'}
+    dev: false
+
   /evtd@0.2.4:
     resolution: {integrity: sha512-qaeGN5bx63s/AXgQo8gj6fBkxge+OoLddLniox5qtLAEY5HSnuSlISXVPxnSae1dWblvTh4/HoMIB+mbMsvZzw==}
     dev: false
@@ -2570,6 +2625,13 @@ packages:
   /flatted@3.4.4:
     resolution: {integrity: sha512-5+ybhBZANEJxaH3X5evAFatUxLfEHSr7n6kYJ+1Qd0mUqr4eu9gIf6GDbWHf8RJijHrjjO8G+la14SlL2SeS1Q==}
     dev: true
+
+  /flv.js@1.6.2:
+    resolution: {integrity: sha512-xre4gUbX1MPtgQRKj2pxJENp/RnaHaxYvy3YToVVCrSmAWUu85b9mug6pTXF6zakUjNP2lFWZ1rkSX7gxhB/2A==}
+    dependencies:
+      es6-promise: 4.2.8
+      webworkify-webpack: 2.1.5
+    dev: false
 
   /follow-redirects@1.16.0:
     resolution: {integrity: sha512-y5rN/uOsadFT/JfYwhxRS5R7Qce+g3zG97+JrtFZlC9klX/W5hD7iiLzScI4nZqUS7DNUdhPgw4xI8W2LuXlUw==}
@@ -2729,6 +2791,10 @@ packages:
   /highlight.js@11.12.0:
     resolution: {integrity: sha512-nbfWpyRMcMrPMmDwJB+dhX/eiaPKtc2RB+0QZskqJ3WjRA/FDS0e9hZrx8EC/lbEv8gXy98FcDbNa/dspAaJMg==}
     engines: {node: '>=12.0.0'}
+    dev: false
+
+  /hls.js@1.7.4:
+    resolution: {integrity: sha512-3GlxGdPvT2YHvQYOt+yOzT/DEior/qJVNIylHA77kgeoBTdQQqi70GwefNEUmHQeNGyjC8U62+bruqW/Tpm+tg==}
     dev: false
 
   /html-encoding-sniffer@4.0.0:
@@ -3133,6 +3199,14 @@ packages:
     dependencies:
       commander: 15.0.0
     dev: true
+
+  /mpegts.js@1.8.2:
+    resolution: {integrity: sha512-cZYMa5muASH55wrS6JK5IGkUqnCA96c0f+WdnW91jIK9s/N6NzjmTQDJNYg9A5u/G2Q5nj2b3w1Zwzze/9guxA==}
+    engines: {node: '>=20.9.0'}
+    dependencies:
+      es6-promise: 4.2.8
+      events: 3.3.0
+    dev: false
 
   /ms@2.0.0:
     resolution: {integrity: sha512-Tpp60P6IUJDTuOq/5Z8cdskzJujfwqfOTkrwIwj7IRISpnkJnT6SyJ4PCPnGMoFjC9ddhal5KVIYtAt97ix05A==}
@@ -4150,6 +4224,10 @@ packages:
     resolution: {integrity: sha512-VwddBukDzu71offAQR975unBIGqfKZpM+8ZX6ySk8nYhVoo5CYaZyzt3YBvYtRtO+aoGlqxPg/B87NGVZ/fu6g==}
     engines: {node: '>=12'}
     dev: true
+
+  /webworkify-webpack@2.1.5:
+    resolution: {integrity: sha512-2akF8FIyUvbiBBdD+RoHpoTbHMQF2HwjcxfDvgztAX5YwbZNyrtfUMgvfgFVsgDhDPVTlkbb5vyasqDHfIDPQw==}
+    dev: false
 
   /whatwg-encoding@3.1.1:
     resolution: {integrity: sha512-6qN4hJdMwfYBtE3YBTTHhoeuUrDBPZmbQaxWAqSALV/MeEnR5z1xd8UKud2RAkFoPkmB+hli1TZSnyi84xz1vQ==}

@@ -46,6 +46,9 @@ import {
   TimeOutline,
   TrendingUpOutline,
   WarningOutline,
+
+  // 音视频
+  VideocamOutline,
 } from '@vicons/ionicons5';
 
 if (import.meta.env.DEV) {
@@ -118,6 +121,9 @@ const iconMap: Record<string, Component> = {
   Speedometer: SpeedometerOutline,
   Time: TimeOutline,
   Warning: WarningOutline,
+
+  // ============ 音视频 ============
+  Video: VideocamOutline,          // 后端「音视频管理」
 };
 
 export function renderIcon(iconName: string): () => VNode {

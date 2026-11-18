@@ -27,6 +27,7 @@ const SUB_APP_DIR_MAP: Record<string, string> = {
   license: 'license',
   crypto_console: 'crypto-console',
   ssl_proxy: 'ssl-proxy',
+  media: 'media',
 };
 
 function getSubAppDir(moduleId: string): string {
@@ -53,8 +54,13 @@ function resolveEntry(module: Module): string {
     let resolved = '';
     if (/^https?:\/\//i.test(raw)) resolved = raw;
     else if (raw.startsWith('//')) resolved = `${window.location.protocol}${raw}`;
-    else if (raw.startsWith('/')) resolved = new URL(raw, window.location.origin).href;
-    else resolved = new URL(`/${raw}`, window.location.origin).href;
+    else if (raw.startsWith('/')) {
+      // 生产环境给相对入口追加版本 query，绕过浏览器对子应用入口 HTML 的缓存，
+      // 否则前端发版后 qiankun 会继续加载旧 index.html（旧 hash）。
+      const sep = raw.includes('?') ? '&' : '?';
+      const suffix = import.meta.env.PROD ? `${sep}v=${Date.now()}` : '';
+      resolved = new URL(raw + suffix, window.location.origin).href;
+    } else resolved = new URL(`/${raw}`, window.location.origin).href;
 
     if (
       import.meta.env.PROD &&

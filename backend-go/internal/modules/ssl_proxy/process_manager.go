@@ -434,7 +434,14 @@ func (m *ProcessManager) testConfig(p *PlatformSSLProxy, confPath string) error 
 	cmd.Env = m.childEnv()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return newErr(ErrConfigGenerate, "nginx -t 校验失败", string(out))
+		detail := string(out)
+		// 铜锁/tongsuo 对国密证书加载失败的报错非常隐晦，这里补充可读提示。
+		if strings.Contains(detail, "use_enc_certificate") {
+			detail += "\n\n提示：国密加密证书缺少 keyEncipherment/dataEncipherment 用途。" +
+				"请在证书管理中重新申请并同时勾选「签名 + 加密」；" +
+				"签名证书与加密证书可以是同一张。"
+		}
+		return newErr(ErrConfigGenerate, "nginx -t 校验失败", detail)
 	}
 	return nil
 }

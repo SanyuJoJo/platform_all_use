@@ -271,9 +271,17 @@ func isClientTLSTraffic(p *PlatformSSLProxy) bool {
 	return p.Mode == ModeClient && p.BackendScheme == BackendSchemeHTTPS
 }
 
-// hasCAConfigured 是否配置了 CA（ca_domain 默认 safe，正常恒为 true）。
+// hasCAConfigured 是否配置了 CA。
+//
+// ★ 服务端模式（双向认证）即使 ca_domain 为空也按默认信任域 safe 处理：
+//   cert_resolver.resolveCAPath 对空值同样兜底 safe，两边必须保持一致，
+//   否则会生成 `ssl_verify_client on;` 而没有 `ssl_client_certificate`，
+//   nginx -t 直接失败（历史数据 / 直接调 API 创建等场景）。
 func hasCAConfigured(p *PlatformSSLProxy) bool {
-	return p.CACertID != "" || p.CADomain != ""
+	if p.CACertID != "" || strings.TrimSpace(p.CADomain) != "" {
+		return true
+	}
+	return p.Mode == ModeServer
 }
 
 // shouldEnable 指令启用条件。
@@ -358,8 +366,7 @@ func shouldEnable(cmd string, p *PlatformSSLProxy, resolvedSNI string) bool {
 
 	case "ssl_client_certificate":
 		return p.Mode == ModeServer && p.ListenSSL &&
-			p.SSLVerifyClient &&
-			(p.CADomain != "" || p.CACertID != "")
+			p.SSLVerifyClient && hasCA
 	}
 	return false
 }

@@ -24,9 +24,21 @@
     "static_base": "/sub-apps/license/"
   },
   {
+    "module_id": "media",
+    "entry_frontend": "/sub-apps/media/",
+    "active_rule": "/media",
+    "static_base": "/sub-apps/media/"
+  },
+  {
     "module_id": "module_manager",
     "entry_frontend": "/sub-apps/module-manager/",
     "active_rule": "/module_manager",
     "static_base": "/sub-apps/module-manager/"
+  },
+  {
+    "module_id": "ssl_proxy",
+    "entry_frontend": "/sub-apps/ssl-proxy/",
+    "active_rule": "/ssl_proxy",
+    "static_base": "/sub-apps/ssl-proxy/"
   }
 ]

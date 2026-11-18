@@ -83,7 +83,7 @@ type seedMenuEntry struct {
 //	    │   ├── 停止代理 (F, ssl_proxy:proxy:stop)
 //	    │   ├── 查看配置 (F, ssl_proxy:proxy:config)
 //	    │   └── 查看日志 (F, ssl_proxy:proxy:logs)
-//	    └── TCPS 管理   (C, /tcps/list)                    ← 本次新增
+//	    └── TCPS 管理   (C, /tcps/list)
 //	        ├── 新建 TCPS  (F, ssl_proxy:tcps:create)
 //	        ├── 编辑 TCPS  (F, ssl_proxy:tcps:update)
 //	        ├── 删除 TCPS  (F, ssl_proxy:tcps:delete)
@@ -91,12 +91,25 @@ type seedMenuEntry struct {
 //	        ├── 停止 TCPS  (F, ssl_proxy:tcps:stop)
 //	        ├── 查看 TCPS 配置 (F, ssl_proxy:tcps:config)
 //	        └── 查看 TCPS 日志 (F, ssl_proxy:tcps:logs)
+//	音视频管理          (M, media, /media)        ★ 本次新增
+//	├── 媒体库          (C, /media, media/index)
+//	└── 直播管理        (C, /live,  live/index)
 //
 // 约定：
 //   - M 目录：path 用累积路径（含父级），如 /security/cert-ops；
-//   - C 菜单：path 用相对路径（如 /ca），前端按 `/{microApp}/{path}` 拼接；
-//     但 ssl_proxy 子应用因历史原因 path 直接以 /list / /tcps/list 存放，
-//     前端 normalizePath 时剥离 /ssl_proxy 前缀后与子应用路由对齐即可；
+//   - C 菜单：path 用子应用内部路由路径，**不带 {microApp} 前缀**；
+//     主应用按 `/{microApp}/{path}` 拼接为浏览器 URL；
+//     子应用 createWebHistory('/{microApp}') 会剥离前缀得到 {path}；
+//     举例：
+//       license     : path=/licenses  → 浏览器 /license/licenses
+//       media:list  : path=/media     → 浏览器 /media/media
+//       media:live  : path=/live      → 浏览器 /media/live
+//   - C 菜单 component：相对子应用 src/views/ 的路径，**不带 views/ 前缀**，
+//     子应用 resolveView 会自行拼 `../views/${component}.vue`；
+//     举例：
+//       license     : license/index   → ../views/license/index.vue
+//       media:list  : media/index     → ../views/media/index.vue
+//       media:live  : live/index      → ../views/live/index.vue
 //   - F 按钮：path 留空（不参与路由），perms 为按钮权限码；
 //   - 每个节点用「自身所属模块的 microApp」，不是父节点的。
 var seedMenuEntries = []seedMenuEntry{
@@ -414,7 +427,7 @@ var seedMenuEntries = []seedMenuEntry{
 		MenuType: "C", Icon: "Connection", ModuleID: "ssl_proxy",
 		Perms: "ssl_proxy:proxy:view",
 	}},
-	// ★ 本次新增：TCPS 管理（4 层 TCP/TLS 代理）
+	// TCPS 管理（4 层 TCP/TLS 代理）
 	//
 	// Path 使用 /tcps/list，前端 ssl_proxy 子应用路由也是 /tcps/list，
 	// 主应用把 microApp 前缀 /ssl_proxy 拼接后得到 /ssl_proxy/tcps/list，
@@ -467,11 +480,7 @@ var seedMenuEntries = []seedMenuEntry{
 	}},
 
 	// ========================================================================
-	// TCPS 管理 按钮（★ 本次新增，与 auth/seed.go 中 8 条权限码对应）
-	//
-	// 说明：ssl_proxy:tcps:view 权限由父级 C 菜单「TCPS 管理」的 perms 字段承载，
-	//       不单独作为 F 按钮，避免重复。其余 7 条操作权限作为 F 类型按钮，
-	//       供管理员在角色菜单界面勾选。
+	// TCPS 管理 按钮
 	// ========================================================================
 	{ParentChain: "安全管理/业务管理/TCPS 管理", Menu: models.Menu{
 		MenuName: "新建 TCPS", Name: "TcpsProxyCreate", MicroApp: "ssl_proxy",
@@ -508,12 +517,58 @@ var seedMenuEntries = []seedMenuEntry{
 		OrderNum: 7, MenuType: "F", ModuleID: "ssl_proxy",
 		Perms: "ssl_proxy:tcps:logs",
 	}},
+
+	// ========================================================================
+	// 音视频管理（★ 本次新增，已按 license 约定修正）
+	//
+	// 关键字段约定（与 license 对齐）：
+	//   1. component **不带 views/ 前缀**：
+	//      - 子应用 resolveView 会拼 `../views/${component}.vue`
+	//      - 错误值 views/media/index.vue → 子应用拼成 ../views/views/media/index.vue → 404
+	//      - 正确值 media/index          → 子应用拼成 ../views/media/index.vue → ✓
+	//
+	//   2. path **不带 {microApp} 前缀**，仅表示子应用内部路由：
+	//      - MediaList  : path=/media  → 主应用侧 URL /media/media → 子应用 view /media → 匹配 MediaList
+	//      - MediaLive  : path=/live   → 主应用侧 URL /media/live  → 子应用 view /live  → 匹配 MediaLive
+	//      - 错误值 /media/live → 主应用侧 URL /media/media/live → 子应用 view /media/live → 匹配不到
+	//
+	//   3. microApp 统一为 "media"，主应用据此加载 /sub-apps/media/
+	//      （子应用入口由 module_manager_module.entry_frontend 提供）
+	//
+	//   4. perms 权限码已由 media.EnsureSeedData 注册到 auth_permission；
+	//      若 admin 角色未同步，可用 auth.EnsureAdminRoleMenus 或手工授权补齐。
+	//
+	//   5. 父目录 path 保留 /media 作为分组锚点：
+	//      - directory 不参与 vue-router addRoute；
+	//      - 主应用侧边栏渲染时仅作为分组标题；
+	//      - 若历史数据里父目录 name/path 与这里不一致（如 name=Stream），
+	//        EnsureMenuSeedData 会按 (parent_id, menu_name) 判重跳过，
+	//        修复历史数据请直接 UPDATE（见联调步骤）。
+	// ========================================================================
+	{ParentChain: "", Menu: models.Menu{
+		MenuName: "音视频管理", Name: "Media", MicroApp: "media",
+		OrderNum: 7, Path: "/media", MenuType: "M",
+		Icon: "Video", ModuleID: "media",
+	}},
+	{ParentChain: "音视频管理", Menu: models.Menu{
+		MenuName: "媒体库", Name: "MediaList", MicroApp: "media",
+		OrderNum: 1, Path: "/", Component: "media/index",
+		MenuType: "C", Icon: "FolderOpen", ModuleID: "media",
+		Perms: "media:media:view",
+	}},
+	{ParentChain: "音视频管理", Menu: models.Menu{
+		MenuName: "直播管理", Name: "MediaLive", MicroApp: "media",
+		OrderNum: 2, Path: "/live", Component: "live/index",
+		MenuType: "C", Icon: "Pulse", ModuleID: "media",
+		Perms: "media:live:play",
+	}},
 }
 
 // seedPermissions 菜单管理相关权限码，需在 auth.EnsureAuthSeedData 之后调用。
 //
 // 说明：仅"菜单管理"和"路由权限管理"自身接口需要的权限码，
-// 其它业务模块的权限码（如 ssl_proxy:tcps:*）在各自模块的 seed 文件里。
+// 其它业务模块的权限码（如 ssl_proxy:tcps:*、media:media:*）在各自模块的
+// seed 文件里（media.EnsureSeedData / ssl_proxy.EnsureSeedData 等）。
 var seedPermissions = []models.Permission{
 	{Code: "auth:menu:list", Name: "菜单查询", ModuleID: "auth", Resource: "menu", Action: "list"},
 	{Code: "auth:menu:create", Name: "菜单新增", ModuleID: "auth", Resource: "menu", Action: "create"},
@@ -531,7 +586,9 @@ var seedPermissions = []models.Permission{
 // 这样 resolveParentChain 解析链时父节点已存在于数据库。
 //
 // 幂等：按 (parent_id, menu_name) 判重，已存在则跳过。
-// 所以新增 F 节点（如 TCPS 的 7 条按钮）在下次启动时会自动插入，无需清表。
+// 注意：判重不更新已存在记录的字段，所以历史错误数据（如 component
+// 带 views/ 前缀、path 带 /{microApp} 前缀）需要手工 UPDATE 修复，
+// 详见联调步骤中的"修复历史数据"一节。
 func EnsureMenuSeedData(db *gorm.DB) error {
 	if err := ensurePermissions(db); err != nil {
 		return err
@@ -601,7 +658,7 @@ func ensurePermissions(db *gorm.DB) error {
 
 // ensureOneMenu 按 (parent_id, menu_name) 判重插入。
 //
-// 已存在则跳过（不更新任何字段），因此结构性变更需清表重建。
+// 已存在则跳过（不更新任何字段），因此结构性变更需手工 UPDATE 或清表重建。
 // F 类型节点的 path 留空，perms 为按钮权限码。
 func ensureOneMenu(db *gorm.DB, m *models.Menu, now time.Time) error {
 	var exist models.Menu

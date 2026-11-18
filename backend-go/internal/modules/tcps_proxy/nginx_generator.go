@@ -262,7 +262,13 @@ func shouldEnableTCPS(cmd string, p *PlatformTCPSProxy, resolvedSNI string) bool
 	clientIntlSSL := clientSSL && (p.Protocol == ProtocolTLS || p.Protocol == ProtocolPQC)
 	clientGMSSL := clientSSL && p.Protocol == ProtocolGMSSL
 
-	hasCA := p.CACertID != "" || p.CADomain != ""
+	hasCA := p.CACertID != "" || strings.TrimSpace(p.CADomain) != ""
+	if !hasCA && p.Mode == ModeServer {
+		// ★ 与 HTTP 代理保持一致：服务端双向认证时，ca_domain 为空
+		//   按默认信任域 safe 处理，避免只渲染 ssl_verify_client on;
+		//   而没有 ssl_client_certificate 导致 nginx -t 失败。
+		hasCA = true
+	}
 
 	switch cmd {
 	// =====================================================================
@@ -335,8 +341,7 @@ func shouldEnableTCPS(cmd string, p *PlatformTCPSProxy, resolvedSNI string) bool
 		return p.IsListenSSL() && p.SSLVerifyClient
 
 	case "ssl_client_certificate":
-		return p.IsListenSSL() && p.SSLVerifyClient &&
-			(p.CADomain != "" || p.CACertID != "")
+		return p.IsListenSSL() && p.SSLVerifyClient && hasCA
 	}
 	return false
 }
