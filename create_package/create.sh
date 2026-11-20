@@ -216,6 +216,19 @@ fi
 [ -f "$TMP_VIDEO/video/conf/zlmediakit/config.ini" ] \
   || fail "video.tar.gz 缺少 video/conf/zlmediakit/config.ini"
 log "✅ video.tar.gz 校验通过"
+# ---------- 校验 nshttps_gm.tar.gz（v1.7） ----------
+log "校验 nshttps_gm.tar.gz 内部结构..."
+TMP_NSG="$(mktemp -d)"
+cleanup_tmp() { rm -rf "$TMP_BACKEND" "$TMP_FRONTEND" "$TMP_CORE" "$TMP_VIDEO" "$TMP_NSG"; }
+if ! tar -xzf "$PAYLOAD_DIR/nshttps_gm.tar.gz" -C "$TMP_NSG" 2>/dev/null; then
+  fail "nshttps_gm.tar.gz 不是合法 tar.gz"
+fi
+[ -x "$TMP_NSG/runtime/tengine-3.1.0/bin/sbin/nginx" ] \
+  || fail "nshttps_gm.tar.gz 缺少可执行文件 runtime/tengine-3.1.0/bin/sbin/nginx"
+[ -f "$TMP_NSG/runtime/tongsuo-bin/bin/openssl" ] \
+  || fail "nshttps_gm.tar.gz 缺少 runtime/tongsuo-bin/bin/openssl"
+[ -f "$TMP_NSG/install.sh" ] || fail "nshttps_gm.tar.gz 缺少 install.sh"
+log "✅ nshttps_gm.tar.gz 校验通过"
 # ============================================================================
 # 复制到 staging
 # ============================================================================
@@ -227,6 +240,7 @@ cp "$PAYLOAD_DIR/backend.tar.gz" "$STAGING_DIR/bin/backend.tar.gz"
 cp "$PAYLOAD_DIR/dist.war" "$STAGING_DIR/bin/dist.war"
 cp "$PAYLOAD_DIR/core.tar.gz" "$STAGING_DIR/bin/core.tar.gz"
 cp "$PAYLOAD_DIR/video.tar.gz" "$STAGING_DIR/bin/video.tar.gz"
+cp "$PAYLOAD_DIR/nshttps_gm.tar.gz" "$STAGING_DIR/bin/nshttps_gm.tar.gz"
 cp -R "$TEMPLATES_DIR/." "$STAGING_DIR/templates/"
 chmod +x "$STAGING_DIR/install.sh"
 find "$STAGING_DIR/templates" -type f -name "*.sh" -exec chmod +x {} \;
@@ -239,11 +253,13 @@ if command -v sha256sum >/dev/null 2>&1; then
   FRONTEND_SHA="$(sha256sum "$PAYLOAD_DIR/dist.war" | awk '{print $1}')"
   CORE_SHA="$(sha256sum "$PAYLOAD_DIR/core.tar.gz" | awk '{print $1}')"
   VIDEO_SHA="$(sha256sum "$PAYLOAD_DIR/video.tar.gz" | awk '{print $1}')"
+  NSG_SHA="$(sha256sum "$PAYLOAD_DIR/nshttps_gm.tar.gz" | awk '{print $1}')"
 elif command -v shasum >/dev/null 2>&1; then
   BACKEND_SHA="$(shasum -a 256 "$PAYLOAD_DIR/backend.tar.gz" | awk '{print $1}')"
   FRONTEND_SHA="$(shasum -a 256 "$PAYLOAD_DIR/dist.war" | awk '{print $1}')"
   CORE_SHA="$(shasum -a 256 "$PAYLOAD_DIR/core.tar.gz" | awk '{print $1}')"
   VIDEO_SHA="$(shasum -a 256 "$PAYLOAD_DIR/video.tar.gz" | awk '{print $1}')"
+  NSG_SHA="$(shasum -a 256 "$PAYLOAD_DIR/nshttps_gm.tar.gz" | awk '{print $1}')"
 else
   fail "缺少 sha256sum 或 shasum"
 fi
@@ -251,6 +267,7 @@ BACKEND_SIZE="$(stat -c%s "$PAYLOAD_DIR/backend.tar.gz" 2>/dev/null || stat -f%z
 FRONTEND_SIZE="$(stat -c%s "$PAYLOAD_DIR/dist.war" 2>/dev/null || stat -f%z "$PAYLOAD_DIR/dist.war")"
 CORE_SIZE="$(stat -c%s "$PAYLOAD_DIR/core.tar.gz" 2>/dev/null || stat -f%z "$PAYLOAD_DIR/core.tar.gz")"
 VIDEO_SIZE="$(stat -c%s "$PAYLOAD_DIR/video.tar.gz" 2>/dev/null || stat -f%z "$PAYLOAD_DIR/video.tar.gz")"
+NSG_SIZE="$(stat -c%s "$PAYLOAD_DIR/nshttps_gm.tar.gz" 2>/dev/null || stat -f%z "$PAYLOAD_DIR/nshttps_gm.tar.gz")"
 cat > "$STAGING_DIR/manifest.json" <<EOF
 {
   "name": "platform-product-installer",
@@ -260,7 +277,8 @@ cat > "$STAGING_DIR/manifest.json" <<EOF
     "backend":  { "path": "bin/backend.tar.gz", "size": ${BACKEND_SIZE},  "sha256": "${BACKEND_SHA}" },
     "frontend": { "path": "bin/dist.war",       "size": ${FRONTEND_SIZE}, "sha256": "${FRONTEND_SHA}" },
     "core":     { "path": "bin/core.tar.gz",    "size": ${CORE_SIZE},     "sha256": "${CORE_SHA}" },
-    "video":    { "path": "bin/video.tar.gz",   "size": ${VIDEO_SIZE},    "sha256": "${VIDEO_SHA}" }
+    "video":    { "path": "bin/video.tar.gz",   "size": ${VIDEO_SIZE},    "sha256": "${VIDEO_SHA}" },
+    "nshttps_gm":{ "path": "bin/nshttps_gm.tar.gz","size": ${NSG_SIZE},    "sha256": "${NSG_SHA}" }
   },
   "default_install_dir": "/opt/plats_tool",
   "default_port": 8000

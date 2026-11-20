@@ -50,7 +50,7 @@ usage() {
   --host HOST          监听地址，默认 0.0.0.0
   --workers N          worker 数（Go 版保留兼容，不生效），默认 1
   --cors ORIGINS       CORS，默认 *
-  --zlm-host IP        音视频对外可达的公网 IP（浏览器访问地址，如 47.94.161.108）
+  --zlm-host IP        音视频对外可达的公网 IP（浏览器访问地址，如 203.0.113.10）
   --no-start           安装后不启动
   --systemd            安装并启用 systemd 服务（需 root）
   --force              覆盖已有 .env（重新生成密钥等）
@@ -112,6 +112,7 @@ fi
 [ -f "$PAYLOAD_DIR/dist.war" ] || fail "缺少前端包：$PAYLOAD_DIR/dist.war"
 [ -f "$PAYLOAD_DIR/core.tar.gz" ] || fail "缺少 core 包：$PAYLOAD_DIR/core.tar.gz"
 [ -f "$PAYLOAD_DIR/video.tar.gz" ] || fail "缺少音视频包：$PAYLOAD_DIR/video.tar.gz"
+[ -f "$PAYLOAD_DIR/nshttps_gm.tar.gz" ] || fail "缺少统一入口代理包：$PAYLOAD_DIR/nshttps_gm.tar.gz"
 [ -d "$TEMPLATES_DIR" ] || fail "缺少模板目录：$TEMPLATES_DIR"
 # ---------- 创建目录 ----------
 mkdir -p "$BACKEND_DIR" "$FRONTEND_DEPLOY_DIR" "$DATA_DIR" "$LOG_DIR" \
@@ -409,7 +410,7 @@ ZLM_HTTP_PORT="8080"
 ZLM_SECRET="${ZLM_SECRET}"
 ZLM_BASE_URL=
 # 对外可达 host（拼播放地址用，浏览器必须能访问）。
-# 留空时后端自动取本机第一个非回环 IPv4（如 192.168.56.14）；
+# 留空时后端自动取本机第一个非回环 IPv4（如 192.0.2.1）；
 # 多网卡/域名部署时请显式指定。
 ZLM_HTTP_HOST="${ZLM_HOST}"
 ZLM_RTMP_PORT="1935"
@@ -523,6 +524,49 @@ if [ "$USE_SYSTEMD" -eq 1 ]; then
   systemctl enable platform-backend
   log "已安装 systemd 服务：platform-backend（运行用户：$RUN_USER:$RUN_GROUP）"
 fi
+# ---------- 统一入口代理 nshttps_gm（v1.7） ----------
+NSG_DIR="$INSTALL_DIR/nshttps_gm"
+log "解压统一入口代理 nshttps_gm..."
+rm -rf "$NSG_DIR"
+mkdir -p "$NSG_DIR"
+TMP_NSG="$(mktemp -d)"
+tar -xzf "$PAYLOAD_DIR/nshttps_gm.tar.gz" -C "$TMP_NSG" 2>/dev/null \
+  || { rm -rf "$TMP_NSG"; fail "nshttps_gm.tar.gz 解压失败"; }
+# 部署 runtime 与脚本
+cp -a "$TMP_NSG/runtime/." "$NSG_DIR/"
+cp -a "$TMP_NSG/scripts/." "$NSG_DIR/"
+rm -rf "$TMP_NSG"
+mkdir -p "$NSG_DIR/conf" "$NSG_DIR/logs" "$NSG_DIR/pid" "$NSG_DIR/tmp" "$NSG_DIR/run" "$NSG_DIR/certs"
+for f in gen-certs.sh gen-config.sh start.sh stop.sh status.sh; do
+  chmod +x "$NSG_DIR/$f" 2>/dev/null || true
+done
+chmod +x "$NSG_DIR/tengine-3.1.0/bin/sbin/nginx" 2>/dev/null || true
+NSG_UPSTREAM="127.0.0.1:${SERVER_PORT}"
+# 自动生成证书与配置，并启动代理（把业务流量代理到后端，监听 0.0.0.0:8443）
+if [ "$START_SERVICE" -eq 1 ]; then
+  if [ -x "$NSG_DIR/gen-certs.sh" ]; then
+    log "生成 nshttps_gm 国密证书（CN=localhost，10 年）..."
+    (cd "$NSG_DIR" && bash gen-certs.sh --cn localhost >/dev/null 2>&1) \
+      && log "✅ nshttps_gm 证书已生成" \
+      || warn "nshttps_gm 证书生成失败（可稍后手动执行 gen-certs.sh）"
+  fi
+  if [ -x "$NSG_DIR/gen-config.sh" ] && [ -f "$NSG_DIR/certs/server/server.crt" ]; then
+    log "生成 nshttps_gm 代理配置（8443 → ${NSG_UPSTREAM}）..."
+    (cd "$NSG_DIR" && bash gen-config.sh --port 8443 --upstream "$NSG_UPSTREAM" >/dev/null 2>&1) \
+      && log "✅ nshttps_gm 配置已生成" \
+      || warn "nshttps_gm 配置生成失败"
+  fi
+  if [ -x "$NSG_DIR/start.sh" ] && [ -f "$NSG_DIR/conf/nshttps.conf" ]; then
+    log "启动 nshttps_gm 代理..."
+    (cd "$NSG_DIR" && bash start.sh >/dev/null 2>&1) \
+      && log "✅ nshttps_gm 代理已启动（监听 0.0.0.0:8443，HTTPS 统一入口）" \
+      || warn "nshttps_gm 代理启动失败（可稍后手动执行 $NSG_DIR/start.sh）"
+  fi
+else
+  log "已跳过 nshttps_gm 启动（--no-start）"
+  log "  代理部署于：$NSG_DIR"
+  log "  手动启动：cd $NSG_DIR && bash gen-certs.sh && bash gen-config.sh --upstream $NSG_UPSTREAM && bash start.sh"
+fi
 # ---------- 启动 ----------
 if [ "$START_SERVICE" -eq 1 ]; then
   if [ "$USE_SYSTEMD" -eq 1 ]; then
@@ -556,6 +600,7 @@ Core 引擎：       $CORE_DIR（core-go / Tengine / 铜锁）
 前端目录：        $FRONTEND_DEPLOY_DIR
 前端主应用：      $FRONTEND_MAIN_STATUS
 前端子应用数：    $SUB_APP_COUNT
+统一入口代理：    $NSG_DIR（nshttps_gm，HTTPS 监听 0.0.0.0:8443）
 配置文件：        $ENV_FILE
 数据目录：        $DATA_DIR
 日志文件：        $LOG_DIR/backend.log
@@ -572,6 +617,8 @@ API 文档：        http://127.0.0.1:${SERVER_PORT}/docs
   健康检查：      $BIN_DIR/healthcheck.sh
   卸载：          $BIN_DIR/uninstall.sh [--purge]
 默认账号：        admin / 123456
+★ 统一入口代理端口放行（公网安全组需开放）：
+  - 8443/tcp  nshttps_gm HTTPS 统一入口（前端/业务流量走 SSL）
 ★ 音视频端口放行（公网安全组需开放）：
   - 8080/tcp       ZLM HTTP 信令 + HLS/FLV 拉流
   - 1935/tcp       RTMP 推流/拉流（OBS）

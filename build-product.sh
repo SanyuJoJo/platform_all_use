@@ -19,6 +19,10 @@
 #   - 阶段扩展为 [1/6]~[6/6]
 #   - 新增 [4/6] 构建 ZLM 载荷（build-zlm-payload.sh → video.tar.gz）
 #   - [5/6] 载荷校验增加 video.tar.gz 结构校验
+# v1.7 变更（安装含统一入口代理 nshttps_gm）：
+#   - 阶段扩展为 [1/7]~[7/7]
+#   - 新增 [5/7] 构建 nshttps_gm 载荷（build-nshttps-payload.sh → nshttps_gm.tar.gz）
+#   - [6/7] 载荷校验增加 nshttps_gm.tar.gz 结构校验
 # ============================================================================
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -123,9 +127,18 @@ bash "$ZLM_PAYLOAD_SH"
 [ -f "$PAYLOAD_DIR/video.tar.gz" ] || die "音视频载荷构建未生成 video.tar.gz"
 echo "  ✅ video.tar.gz 已生成"
 # ============================================================================
-# [5/6] 载荷校验
+# [5/7] 构建 nshttps_gm 统一入口代理载荷（Tengine + 内部 Tongsuo → nshttps_gm.tar.gz）
 # ============================================================================
-log "[5/6] 载荷校验"
+log "[5/7] 构建 nshttps_gm 统一入口代理载荷"
+NSG_PAYLOAD_SH="$ROOT/create_package/build-nshttps-payload.sh"
+[ -x "$NSG_PAYLOAD_SH" ] || die "缺少或不可执行：$NSG_PAYLOAD_SH"
+bash "$NSG_PAYLOAD_SH"
+[ -f "$PAYLOAD_DIR/nshttps_gm.tar.gz" ] || die "nshttps_gm 载荷构建未生成 nshttps_gm.tar.gz"
+echo "  ✅ nshttps_gm.tar.gz 已生成"
+# ============================================================================
+# [6/7] 载荷校验
+# ============================================================================
+log "[6/7] 载荷校验"
 TMP_BACKEND="$(mktemp -d)"
 TMP_FRONTEND="$(mktemp -d)"
 cleanup_tmp() { rm -rf "$TMP_BACKEND" "$TMP_FRONTEND"; }
@@ -264,7 +277,7 @@ echo "✅ 载荷校验通过"
 # ============================================================================
 # [6/6] 生成产品安装包
 # ============================================================================
-log "[6/6] 生成产品安装包"
+log "[7/7] 生成产品安装包"
 [ -x "$CREATE_SH" ] || die "缺少或不可执行：$CREATE_SH"
 cd "$ROOT/create_package"
 bash "$CREATE_SH"

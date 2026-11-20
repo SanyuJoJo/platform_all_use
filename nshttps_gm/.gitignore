@@ -1,0 +1,18 @@
+# 运行期产物：证书、日志、pid、tmp、run
+certs/
+logs/
+pid/
+tmp/
+run/
+# 构建产物：内部 tongsuo 运行库、Tengine 编译中间物、部署包
+tongsuo-bin/
+out/
+.pkg-stage/
+tengine-3.1.0/objs/
+tengine-3.1.0/bin/
+# 内部集成的 tongsuo 源码产物
+tongsuo/libcrypto.so*
+tongsuo/libssl.so*
+tongsuo/configdata.pm
+tongsuo/builddata.pm
+tongsuo/installdata.pm

@@ -31,6 +31,7 @@
 /create_package/bin/bin/dist.war
 /create_package/bin/bin/core.tar.gz
 /create_package/bin/bin/video.tar.gz
+/create_package/bin/bin/nshttps_gm.tar.gz
 
 # 最终产品安装包（v1.3 新增）
 /create_package/out/
@@ -51,3 +52,23 @@
 *.swo
 .DS_Store
 Thumbs.db
+
+
+# ============================================================
+# nshttps_gm 统一入口代理（v1.11 新增）
+# ============================================================
+/nshttps_gm/certs/
+/nshttps_gm/logs/
+/nshttps_gm/pid/
+/nshttps_gm/tmp/
+/nshttps_gm/run/
+/nshttps_gm/tengine-3.1.0/objs/
+/nshttps_gm/tongsuo-bin/
+/nshttps_gm/out/
+/nshttps_gm/.pkg-stage/
+
+# ============================================================
+# 开发环境内部文档（含编译机/办公网 IP，勿提交）
+# ============================================================
+/DEV_PLAN_win_local_ubuntu_remote.md
+/FREEZE_DIAGNOSIS_vbox_ubuntu.md
