@@ -98,6 +98,14 @@ func (s *Service) gcLoop() {
 
 // CreateRoom 创建直播间。
 func (s *Service) CreateRoom(userID uint, req *CreateRoomReq) (*Room, error) {
+	// ★ v1.5：webrtc / obs / proxy 都要求 ZLM 引擎就绪。
+	//   否则房间建出来也没有推流/播放能力，且前端"推流失败"后会在 DB 残留空房间。
+	//   统一在这里前置校验，未就绪直接报错、不创建房间。
+	if req.PushType == "webrtc" || req.PushType == "obs" || req.PushType == "proxy" {
+		if err := s.requireEngine("创建直播间"); err != nil {
+			return nil, err
+		}
+	}
 	if req.PushType == "proxy" {
 		if strings.TrimSpace(req.SourceURL) == "" {
 			return nil, exception.New(exception.CodeParamInvalid,
@@ -107,9 +115,6 @@ func (s *Service) CreateRoom(userID uint, req *CreateRoomReq) (*Room, error) {
 			return nil, exception.New(exception.CodeParamInvalid,
 				"source_url 必须包含协议前缀（rtmp:// / rtsp:// / http:// / https://）",
 				400, nil)
-		}
-		if err := s.requireEngine("创建拉流代理"); err != nil {
-			return nil, err
 		}
 	}
 

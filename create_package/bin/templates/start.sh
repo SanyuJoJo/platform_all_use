@@ -33,6 +33,18 @@ set +a
 # ★ v1.1（P1-03）：兼容 Python 版 HOST / PORT 别名
 SERVER_HOST="${SERVER_HOST:-${HOST:-@HOST@}}"
 SERVER_PORT="${SERVER_PORT:-${PORT:-@PORT@}}"
+# ★ v1.4：core 根目录兜底 + 导出铜锁动态库路径
+#   CORE_ROOT 供 core 静态二进制识别 coreRoot；LD_LIBRARY_PATH 供
+#   nginx / 铜锁 openssl 子进程在自定义安装目录下找到动态库。
+CORE_ROOT="${CORE_ROOT:-$INSTALL_DIR/core}"
+export CORE_ROOT
+if [ -d "$CORE_ROOT/libs/tongsuo/libs" ]; then
+  if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+    export LD_LIBRARY_PATH="$CORE_ROOT/libs/tongsuo/libs:$LD_LIBRARY_PATH"
+  else
+    export LD_LIBRARY_PATH="$CORE_ROOT/libs/tongsuo/libs"
+  fi
+fi
 # 端口占用检查
 port_in_use=0
 if command -v ss >/dev/null 2>&1; then

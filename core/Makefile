@@ -1,16 +1,28 @@
 # ============================================================
 # core/Makefile — 项目总编译入口
 # 路径：core/Makefile
+#
+# 职责：
+#   - 编排 libs / tengine / tool 的编译与部署
+#   - 提供 init-dirs / install-templates / verify-templates 等运维命令
+#
+# libsrtp 的编译细节全部由 libs/Makefile 负责（含 Tongsuo 软链处理、
+# config.h GCM 宏验证、aes_gcm.o 强制检查）。
 # ============================================================
 SHELL := /bin/sh
 CORE_ROOT := $(abspath $(CURDIR))
 
 # ---------- 部署路径 ----------
 DEPLOY_ROOT ?= /opt/plats_tool/core
-# 加一层 libs，匹配 tool 的 RPATH $ORIGIN/../libs/tongsuo/libs
 TONSUO_DEPLOY_LIB_DIR := $(DEPLOY_ROOT)/libs/tongsuo/libs
 TONSUO_DEPLOY_BIN_DIR := $(DEPLOY_ROOT)/run/bin
 TONSUO_DEPLOY_OPENSSL := $(TONSUO_DEPLOY_BIN_DIR)/openssl
+
+# ---------- ZLMediaKit 独立部署根 ----------
+VIDEO_DEPLOY_ROOT ?= /opt/plats_tool/video
+ZLM_DEPLOY_LIB_DIR := $(VIDEO_DEPLOY_ROOT)/libs/ZLMediaKit
+ZLM_DEPLOY_BIN_DIR := $(VIDEO_DEPLOY_ROOT)/run/bin
+ZLM_DEPLOY_CONF_DIR := $(VIDEO_DEPLOY_ROOT)/conf/zlmediakit
 
 # ---------- Tengine 编译路径 ----------
 TENGINE_SRC := $(CORE_ROOT)/src/tengine-3.1.0
@@ -23,6 +35,13 @@ TONSUO_SRC := $(CORE_ROOT)/libs/src/tongsuo
 TONSUO_BUILD_PREFIX := $(CORE_ROOT)/libs/bin/tongsuo
 TONSUO_BUILD_OPENSSL := $(TONSUO_BUILD_PREFIX)/bin/openssl
 
+# ---------- ZLMediaKit 构建路径 ----------
+ZLM_SRC := $(CORE_ROOT)/libs/src/ZLMediaKit
+ZLM_BUILD_PREFIX := $(CORE_ROOT)/libs/bin/zlmediakit
+
+# ---------- libsrtp ----------
+SRTP_VER ?= 2.5.0
+
 # ---------- 版本与并行 ----------
 TONSUO_MIN_VERSION ?= 8.5.0
 TENGINE_CONFIGURE_OPTS ?=
@@ -31,8 +50,6 @@ JOBS ?= $(shell if [ $(NPROC) -gt 1 ]; then echo $$(( $(NPROC) - 1 )); else echo
 
 # ============================================================
 # 模板安装变量
-#   源码模板：$(CORE_ROOT)/conf/template/
-#   部署目标：$(DEPLOY_ROOT)/conf/template/
 # ============================================================
 TEMPLATE_SRC_DIR    := $(CORE_ROOT)/conf/template
 TEMPLATE_DEPLOY_DIR := $(DEPLOY_ROOT)/conf/template
@@ -41,34 +58,62 @@ HTTP_TEMPLATES := nchttp.conf.tmpl nshttp.conf.tmpl
 TCPS_TEMPLATES := tcps_client.conf.tmpl tcps_server.conf.tmpl
 ALL_TEMPLATES  := $(HTTP_TEMPLATES) $(TCPS_TEMPLATES)
 
-.PHONY: all libs oqs-provider tengine tool sbin check-version \
+.PHONY: all libs libsrtp oqs-provider zlmediakit tengine tool sbin check-version \
         init-dirs init-deploy-dirs clean distclean \
         install-templates install-tcps-templates install-all-templates verify-templates
 
 # ============================================================
 # 默认目标
 # ============================================================
-all: libs tengine tool sbin check-version
+all: libs zlmediakit tengine tool sbin check-version
 
-# ---------- 编译 Tongsuo + liboqs + oqs-provider，并部署 ----------
+# ============================================================
+# libs — 编译全部第三方库并部署
+#   Tongsuo → liboqs → oqs-provider → libsrtp → ZLMediaKit
+# ============================================================
 libs:
 	$(MAKE) -C libs all \
 		DEPLOY_ROOT="$(DEPLOY_ROOT)" \
-		TONSUO_DEPLOY_LIB_DIR="$(TONSUO_DEPLOY_LIB_DIR)" \
+		VIDEO_DEPLOY_ROOT="$(VIDEO_DEPLOY_ROOT)" \
+		TONSUO_DEPLOY_LIB_DIR="$(DEPLOY_ROOT)/libs/tongsuo" \
 		TONSUO_DEPLOY_BIN_DIR="$(TONSUO_DEPLOY_BIN_DIR)" \
 		TONSUO_MIN_VERSION="$(TONSUO_MIN_VERSION)" \
 		TONSUO_CONFIGURE_OPTS="$(TONSUO_CONFIGURE_OPTS)" \
+		SRTP_VER="$(SRTP_VER)" \
 		JOBS="$(JOBS)"
 
-# ---------- 单独编译/部署 oqs-provider ----------
+# ============================================================
+# libsrtp — 单独编译 libsrtp（含 GCM 验证）
+# ============================================================
+libsrtp:
+	$(MAKE) -C libs libsrtp \
+		SRTP_VER="$(SRTP_VER)" \
+		JOBS="$(JOBS)"
+
+# ============================================================
+# oqs-provider — 单独编译/部署 oqs-provider
+# ============================================================
 oqs-provider:
 	$(MAKE) -C libs oqs-provider deploy \
 		DEPLOY_ROOT="$(DEPLOY_ROOT)" \
-		TONSUO_DEPLOY_LIB_DIR="$(TONSUO_DEPLOY_LIB_DIR)" \
+		VIDEO_DEPLOY_ROOT="$(VIDEO_DEPLOY_ROOT)" \
+		TONSUO_DEPLOY_LIB_DIR="$(DEPLOY_ROOT)/libs/tongsuo" \
 		TONSUO_DEPLOY_BIN_DIR="$(TONSUO_DEPLOY_BIN_DIR)" \
 		JOBS="$(JOBS)"
 
-# ---------- 编译 Tengine ----------
+# ============================================================
+# zlmediakit — 单独编译 ZLMediaKit（含 srtp 符号验证）
+# ============================================================
+zlmediakit:
+	$(MAKE) -C libs zlmediakit \
+		VIDEO_DEPLOY_ROOT="$(VIDEO_DEPLOY_ROOT)" \
+		DEPLOY_ROOT="$(DEPLOY_ROOT)" \
+		SRTP_VER="$(SRTP_VER)" \
+		JOBS="$(JOBS)"
+
+# ============================================================
+# tengine
+# ============================================================
 tengine: $(TENGINE_BUILD_NGINX)
 
 $(TENGINE_BUILD_NGINX): $(TENGINE_BUILD_SH) $(TONSUO_BUILD_OPENSSL)
@@ -86,28 +131,36 @@ $(TENGINE_BUILD_NGINX): $(TENGINE_BUILD_SH) $(TONSUO_BUILD_OPENSSL)
 	@test -x "$(TENGINE_BUILD_NGINX)" || \
 		(echo "tengine not built: $(TENGINE_BUILD_NGINX)" >&2; exit 9)
 
-# ---------- 编译 C 工具 ----------
+# ============================================================
+# tool — C 工具
+# ============================================================
 tool:
 	$(MAKE) -C src/tool all \
 		DEPLOY_BIN_DIR="$(DEPLOY_ROOT)/bin"
 
-# ---------- 脚本权限 ----------
+# ============================================================
+# sbin — 脚本权限
+# ============================================================
 sbin:
 	chmod +x sbin/*.sh sbin/lib/*.sh
 	-chmod +x tests/*.sh 2>/dev/null || true
 
-# ---------- 版本检查 ----------
+# ============================================================
+# check-version
+# ============================================================
 check-version:
 	TONSUO_OPENSSL_BIN="$(TONSUO_BUILD_OPENSSL)" \
 	TONSUO_MIN_VERSION="$(TONSUO_MIN_VERSION)" \
 		./sbin/lib/version_check.sh --json
 
-# ---------- 初始化目录 ----------
+# ============================================================
+# init-dirs / init-deploy-dirs
+# ============================================================
 init-dirs:
 	mkdir -p libs/bin/tongsuo src/tool/bin \
-	         src/tengine-3.1.0/bin/sbin \
-	         conf logs data/keys tmp tests \
-	         conf/template
+		 src/tengine-3.1.0/bin/sbin \
+		 conf logs data/keys tmp tests \
+		 conf/template
 	chmod 0755 .
 	chmod 0750 conf logs
 	chmod 0700 data/keys tmp
@@ -115,9 +168,12 @@ init-dirs:
 
 init-deploy-dirs:
 	mkdir -p "$(TONSUO_DEPLOY_LIB_DIR)" \
-	         "$(TONSUO_DEPLOY_LIB_DIR)/ossl-modules" \
-	         "$(TONSUO_DEPLOY_BIN_DIR)" \
-	         "$(DEPLOY_ROOT)/bin"
+		 "$(TONSUO_DEPLOY_LIB_DIR)/ossl-modules" \
+		 "$(TONSUO_DEPLOY_BIN_DIR)" \
+		 "$(DEPLOY_ROOT)/bin" \
+		 "$(ZLM_DEPLOY_LIB_DIR)" \
+		 "$(ZLM_DEPLOY_BIN_DIR)" \
+		 "$(ZLM_DEPLOY_CONF_DIR)"
 	mkdir -p "$(TEMPLATE_DEPLOY_DIR)"
 	chmod 0755 "$(DEPLOY_ROOT)" \
 	  "$(DEPLOY_ROOT)/libs" \
@@ -128,7 +184,14 @@ init-deploy-dirs:
 	  "$(DEPLOY_ROOT)/run" \
 	  "$(TONSUO_DEPLOY_BIN_DIR)" \
 	  "$(DEPLOY_ROOT)/conf" \
-	  "$(TEMPLATE_DEPLOY_DIR)"
+	  "$(TEMPLATE_DEPLOY_DIR)" \
+	  "$(VIDEO_DEPLOY_ROOT)" \
+	  "$(VIDEO_DEPLOY_ROOT)/libs" \
+	  "$(ZLM_DEPLOY_LIB_DIR)" \
+	  "$(VIDEO_DEPLOY_ROOT)/run" \
+	  "$(ZLM_DEPLOY_BIN_DIR)" \
+	  "$(VIDEO_DEPLOY_ROOT)/conf" \
+	  "$(ZLM_DEPLOY_CONF_DIR)"
 
 # ============================================================
 # 模板安装
@@ -136,7 +199,6 @@ init-deploy-dirs:
 install-templates:
 	@if [ ! -d "$(TEMPLATE_SRC_DIR)" ]; then \
 		echo "ERROR: 模板源目录不存在: $(TEMPLATE_SRC_DIR)" >&2; \
-		echo "       请先执行 make init-dirs，或将模板放入该目录" >&2; \
 		exit 1; \
 	fi
 	@mkdir -p "$(TEMPLATE_DEPLOY_DIR)"
@@ -147,7 +209,6 @@ install-templates:
 install-tcps-templates:
 	@if [ ! -d "$(TEMPLATE_SRC_DIR)" ]; then \
 		echo "ERROR: 模板源目录不存在: $(TEMPLATE_SRC_DIR)" >&2; \
-		echo "       请先执行 make init-dirs，或将模板放入该目录" >&2; \
 		exit 1; \
 	fi
 	@mkdir -p "$(TEMPLATE_DEPLOY_DIR)"
@@ -158,7 +219,6 @@ install-tcps-templates:
 install-all-templates:
 	@if [ ! -d "$(TEMPLATE_SRC_DIR)" ]; then \
 		echo "ERROR: 模板源目录不存在: $(TEMPLATE_SRC_DIR)" >&2; \
-		echo "       请先执行 make init-dirs，或将模板放入该目录" >&2; \
 		exit 1; \
 	fi
 	@mkdir -p "$(TEMPLATE_DEPLOY_DIR)"
@@ -178,7 +238,6 @@ verify-templates:
 	@echo "--- 模板校验 (部署: $(TEMPLATE_DEPLOY_DIR)) ---"
 	@if [ ! -d "$(TEMPLATE_DEPLOY_DIR)" ]; then \
 		echo "ERROR: 部署目录不存在: $(TEMPLATE_DEPLOY_DIR)" >&2; \
-		echo "       请执行 sudo make install-all-templates" >&2; \
 		exit 1; \
 	fi
 	@for tpl in $(ALL_TEMPLATES); do \
@@ -191,7 +250,9 @@ verify-templates:
 	done
 	@echo "--- 全部模板已就位 ---"
 
-# ---------- 清理 ----------
+# ============================================================
+# 清理
+# ============================================================
 clean:
 	$(MAKE) -C libs clean || true
 	$(MAKE) -C src/tool clean || true
@@ -204,4 +265,6 @@ distclean: clean
 	rm -rf libs/bin/tongsuo
 	rm -rf libs/bin/liboqs
 	rm -rf libs/bin/oqs-provider
+	rm -rf libs/bin/libsrtp
+	rm -rf libs/bin/zlmediakit
 	rm -rf src/tengine-3.1.0/bin

@@ -164,6 +164,7 @@ func (c *Client) execOnce(ctx context.Context, stdin []byte, args []string) ([]b
 	}
 
 	cmd := exec.CommandContext(ctx, c.bin, args...)
+	cmd.Env = childEnv()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

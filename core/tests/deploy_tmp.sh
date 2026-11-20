@@ -1,25 +1,10 @@
 #!/usr/bin/env bash
 # =============================================================================
-# core 临时部署脚本（Go 化改造后 + SSL 代理扩展 + oqs-provider）
+# core 临时部署脚本（含 SSL 代理 + oqs-provider + ZLMediaKit + libsrtp）
 #
-# 用途：
-#   把开发目录的「铜锁 openssl + Tengine + 模板 + mime.types + C 工具
-#   + oqs-provider」部署到 CoreRoot：
-#     <root>/core/sbin/nginx                       ← Tengine 二进制
-#     <root>/core/conf/mime.types                  ← nginx mime 映射（模板引用绝对路径）
-#     <root>/core/conf/template/*.tmpl             ← SSL 代理模板
-#     <root>/core/bin/keycrypt                     ← C 工具
-#     <root>/core/bin/whitebox_sm4
-#     <root>/core/libs/tongsuo/bin/openssl         ← 铜锁
-#     <root>/core/libs/tongsuo/libs/ossl-modules/oqsprovider.so  ← oqs-provider
-#
-# 源路径（固定）：
-#   Tengine     : <core>/src/tengine/bin/sbin/nginx
-#   mime.types  : <core>/src/tengine/bin/conf/mime.types
-#   模板        : <core>/src/tengine/conf/template/*.tmpl
-#   C 工具      : <core>/src/tool/bin/
-#   铜锁        : <core>/libs/bin/tongsuo/
-#   oqs-provider: <core>/libs/bin/tongsuo/libs/ossl-modules/oqsprovider.so
+# 说明：
+#   ZLMediaKit 通过 CMAKE_INSTALL_RPATH 已将 Tongsuo 部署路径写入 MediaServer，
+#   故本脚本不复制 Tongsuo 到 VideoRoot，直接沿用 CoreRoot 的部署。
 #
 # 用法：
 #   sudo ./tests/deploy_tmp.sh
@@ -30,9 +15,6 @@
 # =============================================================================
 set -euo pipefail
 
-# -----------------------------------------------------------------------------
-# 颜色
-# -----------------------------------------------------------------------------
 if [ -t 1 ]; then
   RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
 else
@@ -43,9 +25,6 @@ warn() { echo -e "${YELLOW}[deploy][WARN]${NC} $*" >&2; }
 err()  { echo -e "${RED}[deploy][ERROR]${NC} $*" >&2; }
 info() { echo -e "${CYAN}[deploy]${NC} $*"; }
 
-# -----------------------------------------------------------------------------
-# 默认参数
-# -----------------------------------------------------------------------------
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_SOURCE="$(cd "$SCRIPT_DIR/.." && pwd)"
 SOURCE="$DEFAULT_SOURCE"
@@ -56,7 +35,7 @@ UNINSTALL=0
 DO_BUILD=1
 
 usage() {
-  sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
@@ -73,9 +52,6 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# -----------------------------------------------------------------------------
-# 参数校验
-# -----------------------------------------------------------------------------
 if [ ! -d "$SOURCE" ]; then
   err "源目录不存在：$SOURCE"; exit 1
 fi
@@ -94,9 +70,6 @@ case "$TARGET" in
 esac
 TARGET="${TARGET%/}"
 
-# -----------------------------------------------------------------------------
-# 目标路径
-# -----------------------------------------------------------------------------
 TARGET_CORE_ROOT="$TARGET/core"
 TARGET_CORE_BIN="$TARGET_CORE_ROOT/bin"
 TARGET_CORE_SBIN="$TARGET_CORE_ROOT/sbin"
@@ -107,102 +80,74 @@ TARGET_TONGSUO="$TARGET_CORE_LIBS/tongsuo"
 TARGET_OPENSSL="$TARGET_TONGSUO/bin/openssl"
 TARGET_NGINX="$TARGET_CORE_SBIN/nginx"
 TARGET_MIME="$TARGET_CORE_CONF_DIR/mime.types"
-
-# oqs-provider 目标路径
-#   Tongsuo 构建前缀内部布局：bin/、libs/、include/、...
-#   ossl-modules 位于 <prefix>/libs/ossl-modules/
 TARGET_OQSPROVIDER="$TARGET_TONGSUO/libs/ossl-modules/oqsprovider.so"
+# ZLM 运行时通过 rpath 找 Tongsuo 的路径
+TARGET_TONGSUO_RUNTIME_LIB_DIR="$TARGET_TONGSUO/libs"
 
-# 源路径
+TARGET_VIDEO_ROOT="$TARGET/video"
+TARGET_VIDEO_LIBS="$TARGET_VIDEO_ROOT/libs/ZLMediaKit"
+TARGET_VIDEO_BIN="$TARGET_VIDEO_ROOT/run/bin"
+TARGET_VIDEO_CONF="$TARGET_VIDEO_ROOT/conf/zlmediakit"
+
 SOURCE_TOOL_DIR="$SOURCE/src/tool"
 SOURCE_TOOL_BIN="$SOURCE_TOOL_DIR/bin"
 SOURCE_TONGSUO="$SOURCE/libs/bin/tongsuo"
 SOURCE_NGINX="$SOURCE/src/tengine-3.1.0/bin/sbin/nginx"
 SOURCE_MIME="$SOURCE/src/tengine-3.1.0/bin/conf/mime.types"
 SOURCE_TEMPLATES="$SOURCE/src/tengine-3.1.0/conf/template"
-
-# oqs-provider 源路径
 SOURCE_OQSPROVIDER="$SOURCE_TONGSUO/libs/ossl-modules/oqsprovider.so"
 
-# -----------------------------------------------------------------------------
-# 卸载
-# -----------------------------------------------------------------------------
+SOURCE_ZLM_BUILD="$SOURCE/libs/bin/zlmediakit"
+SOURCE_ZLM_MEDIASERVER="$SOURCE_ZLM_BUILD/MediaServer"
+SOURCE_ZLM_CONFIG="$SOURCE_ZLM_BUILD/config.ini"
+SOURCE_ZLM_LIB_DIR="$SOURCE_ZLM_BUILD/lib"
+
 if [ "$UNINSTALL" -eq 1 ]; then
   log "开始卸载：$TARGET"
   removed=0
-
-  # C 工具
   if [ -d "$TARGET_CORE_BIN" ]; then
     shopt -s nullglob
     for f in "$TARGET_CORE_BIN"/*; do
       base="$(basename "$f")"
-      case "$base" in
-        core|core.exe) continue ;;
-      esac
-      log "  移除工具：$f"
-      rm -f "$f"
-      removed=$((removed+1))
+      case "$base" in core|core.exe) continue ;; esac
+      log "  移除工具：$f"; rm -f "$f"; removed=$((removed+1))
     done
     shopt -u nullglob
   fi
-
-  # Tengine
-  if [ -f "$TARGET_NGINX" ]; then
-    log "  移除 Tengine：$TARGET_NGINX"
-    rm -f "$TARGET_NGINX"
-    removed=$((removed+1))
-  fi
-
-  # mime.types
-  if [ -f "$TARGET_MIME" ]; then
-    log "  移除 mime.types：$TARGET_MIME"
-    rm -f "$TARGET_MIME"
-    removed=$((removed+1))
-  fi
-
-  # 模板
+  [ -f "$TARGET_NGINX" ] && { log "  移除 Tengine：$TARGET_NGINX"; rm -f "$TARGET_NGINX"; removed=$((removed+1)); }
+  [ -f "$TARGET_MIME" ]  && { log "  移除 mime.types：$TARGET_MIME"; rm -f "$TARGET_MIME"; removed=$((removed+1)); }
   if [ -d "$TARGET_CORE_CONF" ]; then
     shopt -s nullglob
     for f in "$TARGET_CORE_CONF"/*.tmpl; do
-      log "  移除模板：$f"
-      rm -f "$f"
-      removed=$((removed+1))
+      log "  移除模板：$f"; rm -f "$f"; removed=$((removed+1))
     done
     shopt -u nullglob
   fi
-
-  # 铜锁
   if [ -L "$TARGET_TONGSUO" ]; then
-    log "  移除铜锁链接：$TARGET_TONGSUO"
-    rm -f "$TARGET_TONGSUO"
-    removed=$((removed+1))
+    log "  移除铜锁链接：$TARGET_TONGSUO"; rm -f "$TARGET_TONGSUO"; removed=$((removed+1))
   elif [ -d "$TARGET_TONGSUO" ]; then
     warn "  铜锁是真实目录，未自动删除：$TARGET_TONGSUO"
-    if [ -f "$TARGET_OQSPROVIDER" ]; then
-      warn "  其中包含 oqsprovider.so，未单独删除：$TARGET_OQSPROVIDER"
-    fi
+    [ -f "$TARGET_OQSPROVIDER" ] && warn "  其中包含 oqsprovider.so，未单独删除：$TARGET_OQSPROVIDER"
   fi
-
+  [ -f "$TARGET_VIDEO_BIN/MediaServer" ] && { log "  移除 ZLMediaKit 二进制"; rm -f "$TARGET_VIDEO_BIN/MediaServer"; removed=$((removed+1)); }
+  [ -f "$TARGET_VIDEO_CONF/config.ini" ] && { log "  移除 ZLMediaKit 配置"; rm -f "$TARGET_VIDEO_CONF/config.ini"; removed=$((removed+1)); }
+  if [ -d "$TARGET_VIDEO_LIBS" ]; then
+    shopt -s nullglob
+    for f in "$TARGET_VIDEO_LIBS"/*.so; do
+      log "  移除 ZLMediaKit 库：$f"; rm -f "$f"; removed=$((removed+1))
+    done
+    shopt -u nullglob
+  fi
   log "✅ 卸载完成（共移除 $removed 项）"
   exit 0
 fi
 
-# -----------------------------------------------------------------------------
-# 权限检查
-# -----------------------------------------------------------------------------
 need_root=0
-case "$TARGET" in
-  /opt/*|/usr/*|/var/*|/etc/*|/srv/*) need_root=1 ;;
-esac
+case "$TARGET" in /opt/*|/usr/*|/var/*|/etc/*|/srv/*) need_root=1 ;; esac
 if [ "$need_root" -eq 1 ] && [ "$(id -u)" != "0" ]; then
-  err "部署到 $TARGET 需要 root 权限"
-  err "请使用：sudo $0 $*"
-  exit 2
+  err "部署到 $TARGET 需要 root 权限"; err "请使用：sudo $0 $*"; exit 2
 fi
 
-# -----------------------------------------------------------------------------
-# 编译 C 工具
-# -----------------------------------------------------------------------------
 if [ "$DO_BUILD" -eq 1 ]; then
   info "编译 C 工具（$SOURCE_TOOL_DIR）..."
   if make -C "$SOURCE_TOOL_DIR" all >/dev/null 2>&1; then
@@ -215,135 +160,79 @@ else
 fi
 
 if [ ! -d "$SOURCE_TOOL_BIN" ]; then
-  err "未找到 C 工具产物目录：$SOURCE_TOOL_BIN"
-  err "请先执行：make -C $SOURCE_TOOL_DIR"
-  exit 3
+  err "未找到 C 工具产物目录：$SOURCE_TOOL_BIN"; exit 3
 fi
 
 TOOLS=()
 shopt -s nullglob
 for f in "$SOURCE_TOOL_BIN"/*; do
   base="$(basename "$f")"
-  case "$base" in
-    .*) continue ;;
-    core|core.exe) continue ;;
-  esac
+  case "$base" in .*) continue ;; core|core.exe) continue ;; esac
   [ -f "$f" ] && TOOLS+=("$base")
 done
 shopt -u nullglob
+if [ "${#TOOLS[@]}" -eq 0 ]; then err "C 工具目录为空：$SOURCE_TOOL_BIN"; exit 3; fi
 
-if [ "${#TOOLS[@]}" -eq 0 ]; then
-  err "C 工具目录为空：$SOURCE_TOOL_BIN"
-  exit 3
-fi
-
-# -----------------------------------------------------------------------------
-# 准备目标目录
-# -----------------------------------------------------------------------------
 info "准备目标目录..."
-mkdir -p "$TARGET_CORE_BIN"
-mkdir -p "$TARGET_CORE_SBIN"
-mkdir -p "$TARGET_CORE_CONF_DIR"
-mkdir -p "$TARGET_CORE_CONF"
-mkdir -p "$TARGET_CORE_LIBS"
+mkdir -p "$TARGET_CORE_BIN" "$TARGET_CORE_SBIN" "$TARGET_CORE_CONF_DIR" "$TARGET_CORE_CONF" \
+         "$TARGET_CORE_LIBS" "$TARGET_VIDEO_LIBS" "$TARGET_VIDEO_BIN" "$TARGET_VIDEO_CONF"
 
-# -----------------------------------------------------------------------------
-# 部署 C 工具
-# -----------------------------------------------------------------------------
 info "部署 C 工具 → $TARGET_CORE_BIN/"
 for name in "${TOOLS[@]}"; do
-  src="$SOURCE_TOOL_BIN/$name"
-  dst="$TARGET_CORE_BIN/$name"
-
+  src="$SOURCE_TOOL_BIN/$name"; dst="$TARGET_CORE_BIN/$name"
   if [ -e "$dst" ] || [ -L "$dst" ]; then
-    if [ "$FORCE" -ne 1 ]; then
-      warn "  已存在，跳过：$dst（加 --force 覆盖）"
-      continue
-    fi
+    if [ "$FORCE" -ne 1 ]; then warn "  已存在，跳过：$dst（加 --force 覆盖）"; continue; fi
     rm -f "$dst"
   fi
-
-  install -m 0755 "$src" "$dst"
-  log "  install: $dst"
+  install -m 0755 "$src" "$dst"; log "  install: $dst"
 done
 
-# -----------------------------------------------------------------------------
-# 部署 Tengine
-# -----------------------------------------------------------------------------
 if [ -x "$SOURCE_NGINX" ]; then
   info "部署 Tengine → $TARGET_NGINX"
-  if [ -e "$TARGET_NGINX" ]; then
-    if [ "$FORCE" -ne 1 ]; then
-      warn "  已存在，跳过：$TARGET_NGINX（加 --force 覆盖）"
-    else
-      rm -f "$TARGET_NGINX"
-    fi
-  fi
-  if [ ! -e "$TARGET_NGINX" ]; then
-    install -m 0755 "$SOURCE_NGINX" "$TARGET_NGINX"
-    log "  install: $TARGET_NGINX"
+  if [ -e "$TARGET_NGINX" ] && [ "$FORCE" -ne 1 ]; then
+    warn "  已存在，跳过：$TARGET_NGINX（加 --force 覆盖）"
+  else
+    rm -f "$TARGET_NGINX"
+    install -m 0755 "$SOURCE_NGINX" "$TARGET_NGINX"; log "  install: $TARGET_NGINX"
   fi
 else
-  warn "Tengine 二进制不存在：$SOURCE_NGINX"
-  warn "  请先执行：cd $SOURCE && make tengine"
+  warn "Tengine 二进制不存在：$SOURCE_NGINX"; warn "  请先执行：cd $SOURCE && make tengine"
 fi
 
-# -----------------------------------------------------------------------------
-# 部署 mime.types
-# -----------------------------------------------------------------------------
 if [ -f "$SOURCE_MIME" ]; then
   info "部署 mime.types → $TARGET_MIME"
-  if [ -e "$TARGET_MIME" ]; then
-    if [ "$FORCE" -ne 1 ]; then
-      warn "  已存在，跳过：$TARGET_MIME（加 --force 覆盖）"
-    else
-      rm -f "$TARGET_MIME"
-    fi
-  fi
-  if [ ! -e "$TARGET_MIME" ]; then
-    install -m 0644 "$SOURCE_MIME" "$TARGET_MIME"
-    log "  install: $TARGET_MIME"
+  if [ -e "$TARGET_MIME" ] && [ "$FORCE" -ne 1 ]; then
+    warn "  已存在，跳过：$TARGET_MIME（加 --force 覆盖）"
+  else
+    rm -f "$TARGET_MIME"
+    install -m 0644 "$SOURCE_MIME" "$TARGET_MIME"; log "  install: $TARGET_MIME"
   fi
 else
   warn "mime.types 不存在：$SOURCE_MIME"
-  warn "  请先执行：cd $SOURCE && make tengine"
 fi
 
-# -----------------------------------------------------------------------------
-# 部署模板
-# -----------------------------------------------------------------------------
 if [ -d "$SOURCE_TEMPLATES" ]; then
   info "部署模板 → $TARGET_CORE_CONF"
-  info "  模板源：$SOURCE_TEMPLATES"
-
   shopt -s nullglob
   tmpls=("$SOURCE_TEMPLATES"/*.tmpl)
   shopt -u nullglob
-
   if [ "${#tmpls[@]}" -eq 0 ]; then
     warn "  模板目录为空：$SOURCE_TEMPLATES"
   else
     for t in "${tmpls[@]}"; do
-      bn="$(basename "$t")"
-      dst="$TARGET_CORE_CONF/$bn"
+      bn="$(basename "$t")"; dst="$TARGET_CORE_CONF/$bn"
       if [ -e "$dst" ] && [ "$FORCE" -ne 1 ]; then
-        warn "  已存在，跳过：$dst（加 --force 覆盖）"
-        continue
+        warn "  已存在，跳过：$dst（加 --force 覆盖）"; continue
       fi
-      install -m 0644 "$t" "$dst"
-      log "  install: $dst"
+      install -m 0644 "$t" "$dst"; log "  install: $dst"
     done
   fi
 else
   warn "模板目录不存在：$SOURCE_TEMPLATES"
 fi
 
-# -----------------------------------------------------------------------------
-# 部署铜锁
-# -----------------------------------------------------------------------------
 if [ -d "$SOURCE_TONGSUO" ]; then
   info "部署铜锁 openssl → $TARGET_TONGSUO"
-
   if [ "$MODE" = "link" ]; then
     if [ -e "$TARGET_TONGSUO" ] || [ -L "$TARGET_TONGSUO" ]; then
       if [ "$FORCE" -ne 1 ]; then
@@ -359,8 +248,7 @@ if [ -d "$SOURCE_TONGSUO" ]; then
     fi
   else
     if ! command -v rsync >/dev/null 2>&1; then
-      err "copy 模式需要 rsync，请先安装：apt install rsync"
-      exit 2
+      err "copy 模式需要 rsync，请先安装：apt install rsync"; exit 2
     fi
     [ "$FORCE" -eq 1 ] && [ -d "$TARGET_TONGSUO" ] && rm -rf "$TARGET_TONGSUO"
     mkdir -p "$TARGET_TONGSUO"
@@ -368,21 +256,9 @@ if [ -d "$SOURCE_TONGSUO" ]; then
     log "  copy: $TARGET_TONGSUO"
   fi
 else
-  err "铜锁目录不存在：$SOURCE_TONGSUO"
-  exit 3
+  err "铜锁目录不存在：$SOURCE_TONGSUO"; exit 3
 fi
 
-# -----------------------------------------------------------------------------
-# 部署 oqs-provider（oqsprovider.so）
-#
-# 说明：
-#   - link 模式：TARGET_TONGSUO 是 SOURCE_TONGSUO 的符号链接，
-#     oqsprovider.so 已随铜锁目录自动暴露，无需额外复制。
-#   - copy 模式：rsync -a 会复制整个目录树，若源中存在
-#     libs/ossl-modules/oqsprovider.so，也会一并复制。
-#   - 此处只做「源存在性 + 目标存在性」检查与提示；
-#     若源不存在，说明尚未执行 make -C libs oqs-provider。
-# -----------------------------------------------------------------------------
 if [ -f "$SOURCE_OQSPROVIDER" ]; then
   info "oqs-provider: 源存在 $SOURCE_OQSPROVIDER"
   if [ -f "$TARGET_OQSPROVIDER" ]; then
@@ -393,14 +269,52 @@ if [ -f "$SOURCE_OQSPROVIDER" ]; then
   fi
 else
   warn "oqs-provider: 源不存在 $SOURCE_OQSPROVIDER"
-  warn "  如需 Falcon 后量子签名支持，请先执行："
-  warn "    cd $SOURCE && make -C libs oqs-provider"
-  warn "  然后重新运行本脚本。"
 fi
 
-# -----------------------------------------------------------------------------
-# 权限修正
-# -----------------------------------------------------------------------------
+info "部署 ZLMediaKit → $TARGET_VIDEO_ROOT"
+# 注意：MediaServer 已通过 CMAKE_INSTALL_RPATH 将 Tongsuo 部署路径写入，
+#       此处不再复制 Tongsuo，直接依赖 $TARGET_TONGSUO_RUNTIME_LIB_DIR。
+if [ -x "$SOURCE_ZLM_MEDIASERVER" ]; then
+  if [ -e "$TARGET_VIDEO_BIN/MediaServer" ] && [ "$FORCE" -ne 1 ]; then
+    warn "  已存在，跳过：$TARGET_VIDEO_BIN/MediaServer（加 --force 覆盖）"
+  else
+    rm -f "$TARGET_VIDEO_BIN/MediaServer"
+    install -m 0755 "$SOURCE_ZLM_MEDIASERVER" "$TARGET_VIDEO_BIN/MediaServer"
+    log "  install: $TARGET_VIDEO_BIN/MediaServer"
+  fi
+else
+  warn "ZLMediaKit MediaServer 不存在：$SOURCE_ZLM_MEDIASERVER"
+  warn "  请先执行：cd $SOURCE && make zlmediakit"
+fi
+
+if [ -f "$SOURCE_ZLM_CONFIG" ]; then
+  if [ -e "$TARGET_VIDEO_CONF/config.ini" ] && [ "$FORCE" -ne 1 ]; then
+    warn "  已存在，跳过：$TARGET_VIDEO_CONF/config.ini（加 --force 覆盖）"
+  else
+    rm -f "$TARGET_VIDEO_CONF/config.ini"
+    install -m 0644 "$SOURCE_ZLM_CONFIG" "$TARGET_VIDEO_CONF/config.ini"
+    log "  install: $TARGET_VIDEO_CONF/config.ini"
+  fi
+else
+  warn "ZLMediaKit config.ini 不存在：$SOURCE_ZLM_CONFIG"
+fi
+
+if [ -d "$SOURCE_ZLM_LIB_DIR" ]; then
+  shopt -s nullglob
+  zlm_libs=("$SOURCE_ZLM_LIB_DIR"/*.so)
+  shopt -u nullglob
+  if [ "${#zlm_libs[@]}" -eq 0 ]; then
+    warn "  ZLMediaKit 库目录为空：$SOURCE_ZLM_LIB_DIR"
+  else
+    find "$SOURCE_ZLM_LIB_DIR" -maxdepth 1 -type f \
+      -name '*.so' -not -name '*.debug' \
+      -exec install -m 0755 {} "$TARGET_VIDEO_LIBS/" \;
+    log "  install libs → $TARGET_VIDEO_LIBS/"
+  fi
+else
+  warn "ZLMediaKit 库目录不存在：$SOURCE_ZLM_LIB_DIR"
+fi
+
 for name in "${TOOLS[@]}"; do
   [ -e "$TARGET_CORE_BIN/$name" ] && chmod 0755 "$TARGET_CORE_BIN/$name" 2>/dev/null || true
 done
@@ -408,197 +322,140 @@ done
 [ -f "$TARGET_OQSPROVIDER" ] && chmod 0755 "$TARGET_OQSPROVIDER" 2>/dev/null || true
 [ -f "$TARGET_NGINX" ]   && chmod 0755 "$TARGET_NGINX"   2>/dev/null || true
 [ -f "$TARGET_MIME" ]    && chmod 0644 "$TARGET_MIME"    2>/dev/null || true
+[ -f "$TARGET_VIDEO_BIN/MediaServer" ] && chmod 0755 "$TARGET_VIDEO_BIN/MediaServer" 2>/dev/null || true
+[ -f "$TARGET_VIDEO_CONF/config.ini" ] && chmod 0644 "$TARGET_VIDEO_CONF/config.ini" 2>/dev/null || true
 
-# -----------------------------------------------------------------------------
-# 校验 1：文件存在
-# -----------------------------------------------------------------------------
 info "校验文件..."
 FAIL=0
-
-# C 工具
 for name in "${TOOLS[@]}"; do
   bin="$TARGET_CORE_BIN/$name"
-  if [ -x "$bin" ]; then
-    log "  可执行：$bin"
-  else
-    err "  不可执行或缺失：$bin"
-    FAIL=1
-  fi
+  if [ -x "$bin" ]; then log "  可执行：$bin"; else err "  不可执行或缺失：$bin"; FAIL=1; fi
 done
-
-# Tengine
 if [ -x "$TARGET_NGINX" ]; then
   log "  Tengine：$TARGET_NGINX"
   log "  版本：$("$TARGET_NGINX" -v 2>&1 | head -1 || echo unknown)"
 else
-  err "  Tengine 缺失或不可执行：$TARGET_NGINX"
-  FAIL=1
+  err "  Tengine 缺失或不可执行：$TARGET_NGINX"; FAIL=1
 fi
-
-# mime.types
-if [ -f "$TARGET_MIME" ]; then
-  log "  mime.types：$TARGET_MIME"
-else
-  err "  mime.types 缺失：$TARGET_MIME"
-  FAIL=1
-fi
-
-# 模板
+[ -f "$TARGET_MIME" ] && log "  mime.types：$TARGET_MIME" || { err "  mime.types 缺失：$TARGET_MIME"; FAIL=1; }
 if [ -d "$TARGET_CORE_CONF" ]; then
   shopt -s nullglob
   tmpl_files=("$TARGET_CORE_CONF"/*.tmpl)
   shopt -u nullglob
   tmpl_count=${#tmpl_files[@]}
-  if [ "$tmpl_count" -ge 2 ]; then
-    log "  模板：$tmpl_count 个（$TARGET_CORE_CONF）"
-    for f in "${tmpl_files[@]}"; do
-      log "    - $(basename "$f")"
-    done
-  else
-    warn "  模板数不足（期望 2 个）：$tmpl_count"
-  fi
+  [ "$tmpl_count" -ge 2 ] && log "  模板：$tmpl_count 个" || warn "  模板数不足：$tmpl_count"
 fi
-
-# 铜锁
 if [ -x "$TARGET_OPENSSL" ]; then
   log "  铜锁 openssl：$TARGET_OPENSSL"
   log "  版本：$("$TARGET_OPENSSL" version 2>/dev/null | head -1 || echo unknown)"
 else
   warn "  铜锁 openssl 未找到：$TARGET_OPENSSL"
 fi
-
-# oqs-provider
 if [ -f "$TARGET_OQSPROVIDER" ]; then
   log "  oqsprovider.so：$TARGET_OQSPROVIDER"
-  # 检查 openssl 硬编码模块路径与部署路径是否一致
-  if [ -x "$TARGET_OPENSSL" ]; then
-    MODDIR="$("$TARGET_OPENSSL" version -m 2>/dev/null | sed -n 's/^MODULESDIR: "\(.*\)"$/\1/p' || true)"
-    MODDEPLOY="$(dirname "$TARGET_OQSPROVIDER")"
-    if [ -n "$MODDIR" ] && [ "$MODDIR" != "$MODDEPLOY" ]; then
-      warn "  openssl 硬编码模块路径：$MODDIR"
-      warn "  oqsprovider 实际路径：    $MODDEPLOY"
-      warn "  使用 Falcon 前请设置环境变量："
-      warn "    export OPENSSL_MODULES=$MODDEPLOY"
-    else
-      log "  模块路径与硬编码路径一致，可直接加载 oqsprovider"
-    fi
-  fi
+fi
+if [ -x "$TARGET_VIDEO_BIN/MediaServer" ]; then
+  log "  ZLMediaKit MediaServer：$TARGET_VIDEO_BIN/MediaServer"
 else
-  warn "  oqsprovider.so 未部署（Falcon 不可用）：$TARGET_OQSPROVIDER"
+  err "  ZLMediaKit MediaServer 缺失或不可执行：$TARGET_VIDEO_BIN/MediaServer"; FAIL=1
+fi
+[ -f "$TARGET_VIDEO_CONF/config.ini" ] && log "  ZLMediaKit config.ini：$TARGET_VIDEO_CONF/config.ini" \
+  || warn "  ZLMediaKit config.ini 缺失：$TARGET_VIDEO_CONF/config.ini"
+if [ -d "$TARGET_VIDEO_LIBS" ]; then
+  shopt -s nullglob
+  deployed_zlm_libs=("$TARGET_VIDEO_LIBS"/*.so)
+  shopt -u nullglob
+  log "  ZLMediaKit 库：${#deployed_zlm_libs[@]} 个"
 fi
 
 [ "$FAIL" -ne 0 ] && { err "部署校验失败（文件缺失）"; exit 3; }
 
 # -----------------------------------------------------------------------------
-# 校验 2：模板 include mime.types 引用检查
+# 校验：ZLMediaKit MediaServer 的 rpath 是否指向部署后的 Tongsuo 目录
 # -----------------------------------------------------------------------------
-info "校验模板 include 配置..."
-if [ -d "$TARGET_CORE_CONF" ]; then
-  shopt -s nullglob
-  for t in "$TARGET_CORE_CONF"/*.tmpl; do
-    # 检查 include 行是否是绝对路径（避免 -p 相对路径陷阱）
-    if grep -qE '^\s*include\s+mime\.types\s*;' "$t"; then
-      warn "  $(basename "$t") 使用相对路径 'include mime.types;'"
-      warn "    建议改为：include {{mime_types_path}};"
+info "校验 MediaServer rpath → $TARGET_TONGSUO_RUNTIME_LIB_DIR"
+if [ -x "$TARGET_VIDEO_BIN/MediaServer" ]; then
+  rpath=""
+  if command -v patchelf >/dev/null 2>&1; then
+    rpath="$(patchelf --print-rpath "$TARGET_VIDEO_BIN/MediaServer" 2>/dev/null || true)"
+  elif command -v readelf >/dev/null 2>&1; then
+    rpath="$(readelf -d "$TARGET_VIDEO_BIN/MediaServer" 2>/dev/null \
+             | sed -n 's/.*\(RUNPATH\|RPATH\).*\[\(.*\)\]/\2/p' || true)"
+  fi
+  if [ -z "$rpath" ]; then
+    warn "  未能读取 MediaServer 的 rpath（缺少 patchelf/readelf），跳过检查"
+  else
+    log "  当前 rpath: $rpath"
+    if echo "$rpath" | tr ':' '\n' | grep -qx "$TARGET_TONGSUO_RUNTIME_LIB_DIR"; then
+      log "  ✅ rpath 已包含 $TARGET_TONGSUO_RUNTIME_LIB_DIR"
+    else
+      warn "  rpath 不包含 $TARGET_TONGSUO_RUNTIME_LIB_DIR"
+      warn "  建议：(1) 重新编译 ZLM，确认 CMAKE_INSTALL_RPATH 生效"
+      warn "         (2) 或临时使用: export LD_LIBRARY_PATH=$TARGET_TONGSUO_RUNTIME_LIB_DIR:\$LD_LIBRARY_PATH"
     fi
-  done
-  shopt -u nullglob
+  fi
 fi
 
-# -----------------------------------------------------------------------------
-# 校验 3：动态库可达性
-# -----------------------------------------------------------------------------
 info "校验动态库可达性..."
 if command -v ldd >/dev/null 2>&1; then
   LIBFAIL=0
-
   for name in "${TOOLS[@]}"; do
-    bin="$TARGET_CORE_BIN/$name"
-    [ -x "$bin" ] || continue
+    bin="$TARGET_CORE_BIN/$name"; [ -x "$bin" ] || continue
     missing="$(ldd "$bin" 2>/dev/null | grep 'not found' || true)"
-    if [ -n "$missing" ]; then
-      err "  $name 动态库缺失："
-      echo "$missing" | sed 's/^/    /' >&2
-      LIBFAIL=1
-    else
-      log "  动态库可达：$name"
-    fi
+    [ -n "$missing" ] && { err "  $name 动态库缺失："; echo "$missing" | sed 's/^/    /' >&2; LIBFAIL=1; } \
+                       || log "  动态库可达：$name"
   done
-
   if [ -x "$TARGET_NGINX" ]; then
     missing="$(ldd "$TARGET_NGINX" 2>/dev/null | grep 'not found' || true)"
-    if [ -n "$missing" ]; then
-      err "  nginx 动态库缺失："
-      echo "$missing" | sed 's/^/    /' >&2
-      LIBFAIL=1
-    else
-      log "  动态库可达：nginx"
-    fi
+    [ -n "$missing" ] && { err "  nginx 动态库缺失："; echo "$missing" | sed 's/^/    /' >&2; LIBFAIL=1; } \
+                       || log "  动态库可达：nginx"
   fi
-
   if [ -f "$TARGET_OQSPROVIDER" ]; then
     missing="$(ldd "$TARGET_OQSPROVIDER" 2>/dev/null | grep 'not found' || true)"
+    [ -n "$missing" ] && { err "  oqsprovider.so 动态库缺失："; echo "$missing" | sed 's/^/    /' >&2; LIBFAIL=1; } \
+                       || log "  动态库可达：oqsprovider.so"
+  fi
+  if [ -x "$TARGET_VIDEO_BIN/MediaServer" ]; then
+    missing="$(ldd "$TARGET_VIDEO_BIN/MediaServer" 2>/dev/null | grep 'not found' || true)"
     if [ -n "$missing" ]; then
-      err "  oqsprovider.so 动态库缺失："
+      warn "  MediaServer 动态库存在未找到项："
       echo "$missing" | sed 's/^/    /' >&2
-      LIBFAIL=1
+      warn "  若为 Tongsuo 的 libcrypto/libssl，请确认 rpath 或设置："
+      warn "    export LD_LIBRARY_PATH=$TARGET_TONGSUO_RUNTIME_LIB_DIR:\$LD_LIBRARY_PATH"
     else
-      log "  动态库可达：oqsprovider.so"
+      log "  动态库可达：MediaServer"
     fi
   fi
-
-  if [ "$LIBFAIL" -ne 0 ]; then
-    echo
-    err "动态库校验失败"
-    err "  排查："
-    err "    readelf -d $TARGET_NGINX | grep -iE 'rpath|runpath'"
-    err "    ldd $TARGET_NGINX | grep 'not found'"
-    err "  常见修复："
-    err "    1) 设置 LD_LIBRARY_PATH=$TARGET_TONGSUO/libs"
-    err "    2) 或 patchelf --set-rpath '$TARGET_TONGSUO/libs' $TARGET_NGINX"
-    exit 3
-  fi
+  [ "$LIBFAIL" -ne 0 ] && { err "动态库校验失败"; exit 3; }
 else
   warn "系统无 ldd，跳过动态库校验"
 fi
 
-# -----------------------------------------------------------------------------
-# 完成
-# -----------------------------------------------------------------------------
 echo
 echo "============================================================"
 echo -e "${GREEN}✅ core 库与工具临时部署完成${NC}"
 echo "============================================================"
-echo "部署模式：     $MODE（C 工具与 Tengine 始终真拷贝）"
+echo "部署模式：     $MODE"
 echo "源目录：       $SOURCE"
 echo "目标根：       $TARGET"
 echo "CoreRoot：     $TARGET_CORE_ROOT"
 echo "Tengine：      $TARGET_NGINX"
 echo "mime.types：   $TARGET_MIME"
-echo "模板源：       $SOURCE_TEMPLATES"
 echo "模板目标：     $TARGET_CORE_CONF"
 echo "C 工具目录：   $TARGET_CORE_BIN"
 echo "铜锁目录：     $TARGET_TONGSUO"
 echo "oqs-provider： $TARGET_OQSPROVIDER"
-echo
-echo "已部署的 C 工具："
-for name in "${TOOLS[@]}"; do
-  echo "  - $name"
-done
+echo "VideoRoot：    $TARGET_VIDEO_ROOT"
+echo "ZLM 二进制：   $TARGET_VIDEO_BIN/MediaServer"
+echo "ZLM 库目录：   $TARGET_VIDEO_LIBS"
+echo "ZLM 配置：     $TARGET_VIDEO_CONF/config.ini"
+echo "ZLM 运行时找 Tongsuo：$TARGET_TONGSUO_RUNTIME_LIB_DIR（通过 rpath，不复制）"
 echo
 echo "验证命令："
 echo "  $TARGET_NGINX -V 2>&1 | head -2"
-echo "  ldd $TARGET_NGINX | grep -iE 'ssl|crypto|not found'"
-echo "  ls -la $TARGET_CORE_CONF_DIR/"
-echo "  ls -la $TARGET_CORE_CONF/"
-if [ -f "$TARGET_OQSPROVIDER" ]; then
-  echo
-  echo "oqs-provider 验证（Falcon）："
-  echo "  export OPENSSL_MODULES=$(dirname "$TARGET_OQSPROVIDER")"
-  echo "  $TARGET_OPENSSL list -providers -provider oqsprovider -provider default"
-  echo "  $TARGET_OPENSSL genpkey -provider oqsprovider -provider default \\"
-  echo "      -algorithm falcon512 -out falcon.key"
-fi
+echo "  ldd $TARGET_VIDEO_BIN/MediaServer | grep -E 'ssl|crypto|srtp|not found'"
+echo "  patchelf --print-rpath $TARGET_VIDEO_BIN/MediaServer"
+echo "  $TARGET_VIDEO_BIN/MediaServer -h 2>&1 | head -5"
 echo
 echo "卸载："
 echo "  sudo $0 --uninstall"

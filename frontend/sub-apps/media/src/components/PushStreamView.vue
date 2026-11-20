@@ -15,7 +15,7 @@
     <n-empty v-else description="当前没有本地推流，或流已断开" />
 
     <template #action>
-      <n-button @click="visible = false">关闭窗口 (后台推流)</n-button>
+      <n-button @click="backgroundPush">收起（后台继续推流）</n-button>
       <n-button v-if="isPushing" type="error" @click="stopPush">停止推流</n-button>
     </template>
   </n-modal>
@@ -77,8 +77,15 @@ onMounted(() => {
   }
 });
 
+function backgroundPush() {
+  // 后台推流：不停止，只收起窗口
+  livePusher.backgroundKeep(props.streamId);
+  message.success('已收起窗口，推流继续（可回到推流画面）');
+  visible.value = false;
+}
+
 function stopPush() {
-  livePusher.stopPush(props.streamId);
+  livePusher.stopPush(props.streamId, true);
   message.success('已停止推流');
   emit('stop');
   visible.value = false;

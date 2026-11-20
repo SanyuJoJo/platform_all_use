@@ -36,8 +36,8 @@ func NewNginxGenerator(resolver CertResolver) *NginxGenerator {
 //     proxy_ssl_server_name / proxy_ssl_name / proxy_ssl_trusted_certificate /
 //     proxy_ssl_verify / proxy_ssl_verify_depth
 //   - proxy_ssl_name 值：
-//       用户填了 SSL Server Name → 用它
-//       用户没填 → 输出 ''（空字符串，用户已修改 nginx 适配）
+//     用户填了 SSL Server Name → 用它
+//     用户没填 → 输出 ”（空字符串，用户已修改 nginx 适配）
 //   - 不做自动探测、不读本地证书、不用 backend_ip 兜底
 func (g *NginxGenerator) Render(p *PlatformSSLProxy) (confPath, pidPath string, err error) {
 	confDir := filepath.Join(g.ConfRoot, p.ServiceID)
@@ -106,7 +106,7 @@ func (g *NginxGenerator) renderLines(
 			cmdName := firstToken(cmdLine)
 
 			rendered := renderVars(cmdLine, vars)
-			if shouldEnable(cmdName, p, resolvedSNI) {
+			if shouldEnable(cmdName, p, resolvedSNI) && !shouldSuppress(cmdName, rendered, vars) {
 				out = append(out, indent+rendered)
 			} else {
 				out = append(out, indent+"# "+rendered)
@@ -151,8 +151,8 @@ func renderVars(line string, vars map[string]string) string {
 // ★ 变量职责划分：
 //   - ssl_server_name        原始值（不兜底），用于日志/调试
 //   - server_name_value      给 server_name 用，空时兜底 "_"（nginx 要求非空）
-//   - proxy_ssl_name_expr    给 proxy_ssl_name 用，空时输出 "''"
-//                            （用户已改 nginx 支持空字符串）
+//   - proxy_ssl_name_expr    给 proxy_ssl_name 用，空时输出 "”"
+//     （用户已改 nginx 支持空字符串）
 func buildVars(
 	p *PlatformSSLProxy,
 	c *ResolvedCertPaths,
@@ -185,9 +185,9 @@ func buildVars(
 		"backend_scheme":    p.BackendScheme,
 
 		// ★ 三变量并存，各司其职
-		"ssl_server_name":      resolvedSNI,                            // 原始值
-		"server_name_value":    defStr(resolvedSNI, "_"),               // server_name 用
-		"proxy_ssl_name_expr":  proxySSLNameExpr,                       // proxy_ssl_name 用
+		"ssl_server_name":     resolvedSNI,              // 原始值
+		"server_name_value":   defStr(resolvedSNI, "_"), // server_name 用
+		"proxy_ssl_name_expr": proxySSLNameExpr,         // proxy_ssl_name 用
 
 		"ssl_protocols":    sslProtocols,
 		"ssl_ciphers":      defaultIfEmpty(p.SSLCiphers, DefaultSSLCiphers),
@@ -274,9 +274,10 @@ func isClientTLSTraffic(p *PlatformSSLProxy) bool {
 // hasCAConfigured 是否配置了 CA。
 //
 // ★ 服务端模式（双向认证）即使 ca_domain 为空也按默认信任域 safe 处理：
-//   cert_resolver.resolveCAPath 对空值同样兜底 safe，两边必须保持一致，
-//   否则会生成 `ssl_verify_client on;` 而没有 `ssl_client_certificate`，
-//   nginx -t 直接失败（历史数据 / 直接调 API 创建等场景）。
+//
+//	cert_resolver.resolveCAPath 对空值同样兜底 safe，两边必须保持一致，
+//	否则会生成 `ssl_verify_client on;` 而没有 `ssl_client_certificate`，
+//	nginx -t 直接失败（历史数据 / 直接调 API 创建等场景）。
 func hasCAConfigured(p *PlatformSSLProxy) bool {
 	if p.CACertID != "" || strings.TrimSpace(p.CADomain) != "" {
 		return true
@@ -290,7 +291,7 @@ func hasCAConfigured(p *PlatformSSLProxy) bool {
 //   - proxy_ssl_server_name / proxy_ssl_name / proxy_ssl_trusted_certificate /
 //     proxy_ssl_verify / proxy_ssl_verify_depth 全部启用
 //   - 前提：hasCA（ca_domain 默认 safe 保证）
-//   - proxy_ssl_name 值为空时输出 ''（用户已修改 nginx 适配）
+//   - proxy_ssl_name 值为空时输出 ”（用户已修改 nginx 适配）
 func shouldEnable(cmd string, p *PlatformSSLProxy, resolvedSNI string) bool {
 	clientTLS := isClientTLSTraffic(p)
 	clientIntlTLS := clientTLS && (p.Protocol == ProtocolHTTP || p.Protocol == ProtocolPQC)
@@ -383,4 +384,39 @@ func defaultIfEmpty(s, def string) string {
 		return def
 	}
 	return s
+}
+
+// shouldSuppress 对已启用指令做二次抑制（渲染值为空 / 无 CA 可用时）。
+//
+// ★ 修复两类“生成了空参数或自相矛盾指令”导致 nginx -t 失败的问题：
+//   - `ssl_client_certificate ;`   ← ca bundle / ca_cert_id 缺失
+//   - `ssl_verify_client on;`      ← 双向认证开启但没有可用的 CA
+func shouldSuppress(cmdName, rendered string, vars map[string]string) bool {
+	if hasEmptyDirectiveValue(rendered, cmdName) {
+		return true
+	}
+	switch cmdName {
+	case "ssl_client_certificate", "ssl_verify_client":
+		// 双向认证相关指令需要真实存在的 CA 路径；ca_cert_path 为空时
+		// 一起注释，避免只剩 `ssl_verify_client on;` 触发 nginx -t 报错。
+		if strings.TrimSpace(vars["ca_cert_path"]) == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// hasEmptyDirectiveValue 判断渲染后的 nginx 指令是否没有有效参数。
+//
+// 例：
+//
+//	"ssl_client_certificate ;"        → true（空路径）
+//	"ssl_conf_command ;"              → true（空参数）
+//	"ssl_verify_client off;"          → false（有 off）
+//	"proxy_ssl_name '';"              → false（显式空串引号也算有效）
+//	"ssl_session_tickets  on;"        → false
+func hasEmptyDirectiveValue(rendered, cmdName string) bool {
+	rest := strings.TrimSpace(strings.TrimPrefix(rendered, cmdName))
+	rest = strings.TrimSpace(rest)
+	return rest == "" || rest == ";" || rest == "{}" || rest == "{};"
 }

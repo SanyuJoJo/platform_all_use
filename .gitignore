@@ -29,6 +29,8 @@
 /create_package/.staging/
 /create_package/bin/bin/backend.tar.gz
 /create_package/bin/bin/dist.war
+/create_package/bin/bin/core.tar.gz
+/create_package/bin/bin/video.tar.gz
 
 # 最终产品安装包（v1.3 新增）
 /create_package/out/

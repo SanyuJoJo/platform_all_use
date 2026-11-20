@@ -267,8 +267,22 @@ func (m *EngineManager) Start(ctx context.Context) error {
 	// 4. 构造 cmd（不涉及锁）
 	cmd := exec.CommandContext(ctx, bin, args...)
 	env := os.Environ()
+	// ★ v1.5：ZLM 动态链接库（libmk_api.so）+ 铜锁 libssl/libcrypto 都要进
+	//   LD_LIBRARY_PATH。MediaServer 的 RUNPATH 是构建机绝对路径
+	//   （/opt/plats_tool/core/libs/tongsuo），自定义安装目录时依赖此注入。
+	libDirs := []string{}
 	if dir := strings.TrimSpace(m.cfg.ZLMEngineLibDir); dir != "" {
-		env = append(env, "LD_LIBRARY_PATH="+dir)
+		libDirs = append(libDirs, dir)
+	}
+	// 铜锁库目录：<installRoot>/core/libs/tongsuo/libs（由 installRoot 推导）
+	if installRoot := strings.TrimSpace(m.cfg.InstallRoot); installRoot != "" {
+		libDirs = append(libDirs,
+			filepath.Join(installRoot, "core", "libs", "tongsuo", "libs"),
+			filepath.Join(installRoot, "core", "libs", "tongsuo"),
+		)
+	}
+	if len(libDirs) > 0 {
+		env = append(env, "LD_LIBRARY_PATH="+strings.Join(libDirs, ":"))
 	}
 	cmd.Env = env
 	if wd := strings.TrimSpace(m.cfg.ZLMEngineWorkDir); wd != "" {

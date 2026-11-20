@@ -96,14 +96,14 @@ func Load() (*Config, error) {
 		DataDir:           resolvePath(coreRoot, defaultStr(yc.Core.DataDir, "data")),
 		TmpDir:            resolvePath(coreRoot, defaultStr(yc.Core.TmpDir, "tmp")),
 		WhitelistPath:     filepath.Join(confDir, "algorithm-whitelist.yaml"),
-		OpenSSLBin:        yc.Core.TongsuoOpenSSLBin,
+		OpenSSLBin:        resolveConfiguredPath(coreRoot, yc.Core.TongsuoOpenSSLBin),
 		TongsuoMinVersion: defaultStr(yc.Core.TongsuoMinVersion, "8.5.0"),
 		TimeoutMs:         defaultInt(yc.Core.TimeoutMs, 5000),
 		MaxConcurrency:    defaultInt(yc.Core.MaxConcurrency, 8),
 
 		// ★ oqs-provider
 		EnableOQS:       yc.Core.OQSProvider.Enabled,
-		OQSProviderPath: strings.TrimSpace(yc.Core.OQSProvider.Path),
+		OQSProviderPath: resolveConfiguredPath(coreRoot, yc.Core.OQSProvider.Path),
 	}
 
 	cfg.KeysDir = filepath.Join(cfg.DataDir, "keys")
@@ -146,22 +146,43 @@ func applyOQSEnv(cfg *Config) {
 	}
 	_ = os.Setenv("CORE_OQS_ENABLED", "1")
 
-	// 如果配了 .so 完整路径 → 设置其所在目录；
-	// 如果配了目录 → 直接设置；
-	// 如果留空 → 不动环境变量，依赖系统默认搜索路径。
-	p := cfg.OQSProviderPath
+	// 配了 .so 完整路径 → 设置其所在目录；
+	// 配了目录 → 直接设置。
+	if p := cfg.OQSProviderPath; p != "" {
+		if info, err := os.Stat(p); err == nil {
+			dir := p
+			if !info.IsDir() {
+				dir = filepath.Dir(p)
+			}
+			_ = os.Setenv("OPENSSL_MODULES", dir)
+			return
+		}
+	}
+
+	// ★ 配置路径不存在（典型：安装包换了部署目录）时，回退到 core 包内的
+	//   标准 ossl-modules 目录，避免 oqs-provider（Falcon 等 PQC）不可用。
+	for _, dir := range []string{
+		filepath.Join(cfg.CoreRoot, "libs", "tongsuo", "libs", "ossl-modules"),
+		filepath.Join(cfg.CoreRoot, "libs", "tongsuo", "ossl-modules"),
+	} {
+		st, err := os.Stat(filepath.Join(dir, "oqsprovider.so"))
+		if err == nil && !st.IsDir() {
+			_ = os.Setenv("OPENSSL_MODULES", dir)
+			return
+		}
+	}
+}
+
+// resolveConfiguredPath 解析 conf/core.yaml 中的路径。
+//
+// config 里留空 → 返回空（由调用方走默认推导）；
+// 相对路径 → 相对 coreRoot 解析（否则会落到进程 CWD，安装到别的目录后失效）。
+func resolveConfiguredPath(root, p string) string {
+	p = strings.TrimSpace(p)
 	if p == "" {
-		return
+		return ""
 	}
-	info, err := os.Stat(p)
-	if err != nil {
-		return
-	}
-	dir := p
-	if !info.IsDir() {
-		dir = filepath.Dir(p)
-	}
-	_ = os.Setenv("OPENSSL_MODULES", dir)
+	return resolvePath(root, p)
 }
 
 func resolvePath(root, p string) string {

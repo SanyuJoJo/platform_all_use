@@ -8,6 +8,11 @@
 #   - listen 行的 " ssl" 后缀由 {{listen_ssl_suffix}} 控制：
 #       listen_ssl=true  → " ssl"（TLS 服务端）
 #       listen_ssl=false → ""（明文 HTTP 反代）
+#
+# ★ server_name 必须使用 {{server_name_value}}：
+#   该变量在 buildVars 中已做 "_" 兜底。
+#   若用 {{ssl_server_name}}（原始值，可能为空），
+#   nginx 会报 invalid number of arguments。
 # ============================================================
 worker_processes auto;
 pid {{pid_path}};
@@ -24,7 +29,7 @@ http {
 
     server {
         listen       {{listen_ip}}:{{listen_port}}{{listen_ssl_suffix}};
-        server_name  {{ssl_server_name}};
+        server_name  {{server_name_value}};
 
         # ---------- 标准 TLS 服务端证书（listen_ssl + http/pqc，或双栈） ----------
         #@ ssl_certificate      {{cert_path}};
@@ -48,9 +53,6 @@ http {
 
         # ---------- SSL 会话票据（listen_ssl 启用，值由开关控制） ----------
         #@ ssl_session_tickets  {{ssl_session_tickets_value}};
-
-        # ---------- SSL 会话重协商（listen_ssl 启用，值由开关控制） ----------
-        #@ ssl_session_renegotiation {{ssl_session_renegotiation_value}};
 
         # ---------- SSL 扩展指令（Groups 等） ----------
         #@ ssl_conf_command {{ssl_conf_command}};

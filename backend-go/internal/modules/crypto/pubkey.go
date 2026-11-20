@@ -2,9 +2,9 @@ package crypto
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -42,12 +42,12 @@ func PubkeySM3FromCertPEM(opensslBin, certPEM string) (string, error) {
 		return "", err
 	}
 
-	pubPEM, err := exec.Command(opensslBin, "x509", "-in", certPath, "-pubkey", "-noout").Output()
+	pubPEM, err := opensslCmd(context.Background(), opensslBin, "x509", "-in", certPath, "-pubkey", "-noout").Output()
 	if err != nil {
 		return "", fmt.Errorf("openssl x509 -pubkey: %w", err)
 	}
 
-	pkeyCmd := exec.Command(opensslBin, "pkey", "-pubin", "-outform", "DER", "-out", pubDerPath)
+	pkeyCmd := opensslCmd(context.Background(), opensslBin, "pkey", "-pubin", "-outform", "DER", "-out", pubDerPath)
 	pkeyCmd.Stdin = bytes.NewReader(pubPEM)
 	if err := pkeyCmd.Run(); err != nil {
 		return "", fmt.Errorf("openssl pkey -outform DER: %w", err)
@@ -78,12 +78,12 @@ func PubkeySM3FromCSRPEM(opensslBin, csrPEM string) (string, error) {
 		return "", err
 	}
 
-	pubPEM, err := exec.Command(opensslBin, "req", "-in", csrPath, "-pubkey", "-noout").Output()
+	pubPEM, err := opensslCmd(context.Background(), opensslBin, "req", "-in", csrPath, "-pubkey", "-noout").Output()
 	if err != nil {
 		return "", fmt.Errorf("openssl req -pubkey: %w", err)
 	}
 
-	pkeyCmd := exec.Command(opensslBin, "pkey", "-pubin", "-outform", "DER", "-out", pubDerPath)
+	pkeyCmd := opensslCmd(context.Background(), opensslBin, "pkey", "-pubin", "-outform", "DER", "-out", pubDerPath)
 	pkeyCmd.Stdin = bytes.NewReader(pubPEM)
 	if err := pkeyCmd.Run(); err != nil {
 		return "", fmt.Errorf("openssl pkey -outform DER: %w", err)
@@ -94,7 +94,7 @@ func PubkeySM3FromCSRPEM(opensslBin, csrPEM string) (string, error) {
 
 // sm3HexOfFile 用铜锁 openssl 计算文件 SM3，返回小写 hex。
 func sm3HexOfFile(opensslBin, path string) (string, error) {
-	out, err := exec.Command(opensslBin, "dgst", "-sm3", "-r", path).Output()
+	out, err := opensslCmd(context.Background(), opensslBin, "dgst", "-sm3", "-r", path).Output()
 	if err != nil {
 		return "", fmt.Errorf("openssl dgst -sm3: %w", err)
 	}

@@ -239,6 +239,15 @@ func (s *Service) Execute(
 		// 元数据落库（用 req.Params 里的平台 ID）
 		s.persistMetadata(op, req.Params, coreResp.Data)
 
+		// ★ ca.create / ca.intermediate.create 后重建信任域 bundle：
+		//   否则 SSL 代理双向认证（ssl_client_certificate）找不到
+		//   <cert_root>/ca/<domain>/bundle.crt，nginx -t 失败。
+		if op == "ca.create" || op == "ca.intermediate.create" {
+			if err := s.rebuildBundleAfterCA(req.Params); err != nil {
+				log.Warn().Err(err).Str("op", op).Msg("CA 域 bundle 重建失败（不阻断）")
+			}
+		}
+
 		// ★ csr.create 后处理：把 core 私钥导出并白盒加密落盘
 		if op == "csr.create" {
 			s.postProcessCsrCreate(ctx, req.Params, coreResp.Data)
@@ -504,4 +513,18 @@ func cloneParams(src map[string]interface{}) map[string]interface{} {
 		dst[k] = v
 	}
 	return dst
+}
+
+
+// rebuildBundleAfterCA 在 ca.create / ca.intermediate.create 成功后
+// 重建对应信任域的 bundle.crt（复用 CAService 的包级实现）。
+func (s *Service) rebuildBundleAfterCA(params map[string]interface{}) error {
+	if s.layout == nil {
+		return nil
+	}
+	domain := strings.TrimSpace(getString(params, "domain"))
+	if domain == "" {
+		domain = "safe"
+	}
+	return rebuildDomainBundle(s.layout, domain)
 }

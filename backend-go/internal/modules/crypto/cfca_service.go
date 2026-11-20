@@ -32,13 +32,20 @@ import (
 //
 // 首次启动时若缺失会自动生成；之后所有 CFCA P10 生成 / 双证签发 / 信封解密
 // 均复用同一对密钥。
-const defaultCFCATmpDir = "/opt/plats_tool/user_data/cert/cfca_tmp"
+// defaultInstallRoot 默认部署根（与 config.PLATS_INSTALL_ROOT 的默认值一致）。
+const defaultInstallRoot = "/opt/plats_tool"
 
 func resolveCFCATmpDir() string {
 	if v := strings.TrimSpace(os.Getenv("CFCA_TMP_KEY_DIR")); v != "" {
 		return v
 	}
-	return defaultCFCATmpDir
+	// ★ 安装包把 backend / core / user_data 统一装到同一个根目录，
+	//   临时密钥目录跟随 PLATS_INSTALL_ROOT，不再写死 /opt/plats_tool。
+	root := strings.TrimSpace(os.Getenv("PLATS_INSTALL_ROOT"))
+	if root == "" {
+		root = defaultInstallRoot
+	}
+	return filepath.Join(root, "user_data", "cert", "cfca_tmp")
 }
 
 func oidTmpPubString() string {

@@ -70,6 +70,8 @@ log "脚本目录：$SCRIPT_DIR"
 [ -f "$BIN_DIR/install.sh" ] || fail "缺少安装脚本：$BIN_DIR/install.sh"
 [ -f "$PAYLOAD_DIR/backend.tar.gz" ] || fail "缺少后端包：$PAYLOAD_DIR/backend.tar.gz"
 [ -f "$PAYLOAD_DIR/dist.war" ] || fail "缺少前端包：$PAYLOAD_DIR/dist.war"
+[ -f "$PAYLOAD_DIR/core.tar.gz" ] || fail "缺少 core 包：$PAYLOAD_DIR/core.tar.gz（请先执行 build-core-payload.sh）"
+[ -f "$PAYLOAD_DIR/video.tar.gz" ] || fail "缺少音视频包：$PAYLOAD_DIR/video.tar.gz（请先执行 build-zlm-payload.sh）"
 [ -d "$TEMPLATES_DIR" ] || fail "缺少模板目录：$TEMPLATES_DIR"
 # ============================================================================
 # 后端载荷结构校验（Go 版，v1.1 增强）
@@ -178,6 +180,43 @@ else
 fi
 validate_frontend_war "$TMP_FRONTEND"
 # ============================================================================
+# core 载荷结构校验（v1.4 新增）
+# ============================================================================
+log "校验 core.tar.gz 内部结构..."
+TMP_CORE="$(mktemp -d)"
+cleanup_tmp() { rm -rf "$TMP_BACKEND" "$TMP_FRONTEND" "$TMP_CORE"; }
+if ! tar -xzf "$PAYLOAD_DIR/core.tar.gz" -C "$TMP_CORE" 2>/dev/null; then
+  fail "core.tar.gz 不是合法 tar.gz"
+fi
+for f in \
+  bin/core sbin/nginx conf/core.yaml conf/mime.types \
+  libs/tongsuo/bin/openssl libs/tongsuo/libs/libcrypto.so.3; do
+  [ -e "$TMP_CORE/core/$f" ] || fail "core.tar.gz 缺少 core/$f"
+done
+[ -d "$TMP_CORE/core/conf/template" ] || fail "core.tar.gz 缺少 core/conf/template"
+[ -x "$TMP_CORE/core/bin/core" ] || fail "core.tar.gz 中 core/bin/core 不可执行"
+[ -x "$TMP_CORE/core/sbin/nginx" ] || fail "core.tar.gz 中 core/sbin/nginx 不可执行"
+if [ -f "$TMP_CORE/core/libs/tongsuo/libs/ossl-modules/oqsprovider.so" ]; then
+  log "✅ core 载荷已包含 oqs-provider（Falcon 等 PQC）"
+else
+  warn "core 载荷未包含 oqs-provider（Falcon 等 PQC 算法不可用）"
+fi
+log "✅ core.tar.gz 校验通过"
+# ============================================================================
+# 音视频载荷结构校验（v1.5 新增）
+# ============================================================================
+log "校验 video.tar.gz 内部结构..."
+TMP_VIDEO="$(mktemp -d)"
+cleanup_tmp() { rm -rf "$TMP_BACKEND" "$TMP_FRONTEND" "$TMP_CORE" "$TMP_VIDEO"; }
+if ! tar -xzf "$PAYLOAD_DIR/video.tar.gz" -C "$TMP_VIDEO" 2>/dev/null; then
+  fail "video.tar.gz 不是合法 tar.gz"
+fi
+[ -x "$TMP_VIDEO/video/run/bin/MediaServer" ] \
+  || fail "video.tar.gz 缺少可执行文件 video/run/bin/MediaServer"
+[ -f "$TMP_VIDEO/video/conf/zlmediakit/config.ini" ] \
+  || fail "video.tar.gz 缺少 video/conf/zlmediakit/config.ini"
+log "✅ video.tar.gz 校验通过"
+# ============================================================================
 # 复制到 staging
 # ============================================================================
 rm -rf "$STAGING_DIR"
@@ -186,6 +225,8 @@ log "复制安装脚本与载荷..."
 cp "$BIN_DIR/install.sh" "$STAGING_DIR/install.sh"
 cp "$PAYLOAD_DIR/backend.tar.gz" "$STAGING_DIR/bin/backend.tar.gz"
 cp "$PAYLOAD_DIR/dist.war" "$STAGING_DIR/bin/dist.war"
+cp "$PAYLOAD_DIR/core.tar.gz" "$STAGING_DIR/bin/core.tar.gz"
+cp "$PAYLOAD_DIR/video.tar.gz" "$STAGING_DIR/bin/video.tar.gz"
 cp -R "$TEMPLATES_DIR/." "$STAGING_DIR/templates/"
 chmod +x "$STAGING_DIR/install.sh"
 find "$STAGING_DIR/templates" -type f -name "*.sh" -exec chmod +x {} \;
@@ -196,14 +237,20 @@ echo "$VERSION" > "$STAGING_DIR/VERSION"
 if command -v sha256sum >/dev/null 2>&1; then
   BACKEND_SHA="$(sha256sum "$PAYLOAD_DIR/backend.tar.gz" | awk '{print $1}')"
   FRONTEND_SHA="$(sha256sum "$PAYLOAD_DIR/dist.war" | awk '{print $1}')"
+  CORE_SHA="$(sha256sum "$PAYLOAD_DIR/core.tar.gz" | awk '{print $1}')"
+  VIDEO_SHA="$(sha256sum "$PAYLOAD_DIR/video.tar.gz" | awk '{print $1}')"
 elif command -v shasum >/dev/null 2>&1; then
   BACKEND_SHA="$(shasum -a 256 "$PAYLOAD_DIR/backend.tar.gz" | awk '{print $1}')"
   FRONTEND_SHA="$(shasum -a 256 "$PAYLOAD_DIR/dist.war" | awk '{print $1}')"
+  CORE_SHA="$(shasum -a 256 "$PAYLOAD_DIR/core.tar.gz" | awk '{print $1}')"
+  VIDEO_SHA="$(shasum -a 256 "$PAYLOAD_DIR/video.tar.gz" | awk '{print $1}')"
 else
   fail "缺少 sha256sum 或 shasum"
 fi
 BACKEND_SIZE="$(stat -c%s "$PAYLOAD_DIR/backend.tar.gz" 2>/dev/null || stat -f%z "$PAYLOAD_DIR/backend.tar.gz")"
 FRONTEND_SIZE="$(stat -c%s "$PAYLOAD_DIR/dist.war" 2>/dev/null || stat -f%z "$PAYLOAD_DIR/dist.war")"
+CORE_SIZE="$(stat -c%s "$PAYLOAD_DIR/core.tar.gz" 2>/dev/null || stat -f%z "$PAYLOAD_DIR/core.tar.gz")"
+VIDEO_SIZE="$(stat -c%s "$PAYLOAD_DIR/video.tar.gz" 2>/dev/null || stat -f%z "$PAYLOAD_DIR/video.tar.gz")"
 cat > "$STAGING_DIR/manifest.json" <<EOF
 {
   "name": "platform-product-installer",
@@ -211,9 +258,11 @@ cat > "$STAGING_DIR/manifest.json" <<EOF
   "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "files": {
     "backend":  { "path": "bin/backend.tar.gz", "size": ${BACKEND_SIZE},  "sha256": "${BACKEND_SHA}" },
-    "frontend": { "path": "bin/dist.war",       "size": ${FRONTEND_SIZE}, "sha256": "${FRONTEND_SHA}" }
+    "frontend": { "path": "bin/dist.war",       "size": ${FRONTEND_SIZE}, "sha256": "${FRONTEND_SHA}" },
+    "core":     { "path": "bin/core.tar.gz",    "size": ${CORE_SIZE},     "sha256": "${CORE_SHA}" },
+    "video":    { "path": "bin/video.tar.gz",   "size": ${VIDEO_SIZE},    "sha256": "${VIDEO_SHA}" }
   },
-  "default_install_dir": "/opt/platform",
+  "default_install_dir": "/opt/plats_tool",
   "default_port": 8000
 }
 EOF

@@ -882,17 +882,90 @@ func normalizeDNOrder(dn string) string {
 // openssl 输出文本解析辅助
 // =============================================================================
 
-// RunOpenSSLFull 执行 openssl 命令。
+// RunOpenSSLFull 执行 openssl 命令并返回 stdout、stderr。
+//
+// ★ 铜锁 openssl 二进制的 RUNPATH 是构建机绝对路径，换机部署后动态库
+//   找不到；这里给子进程注入 LD_LIBRARY_PATH=core/libs/tongsuo/libs。
+//   目录存在才注入，不影响系统 openssl 场景。
 func RunOpenSSLFull(bin string, args ...string) (string, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := opensslCmd(ctx, bin, args...)
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
 	cmd.Stdin = bytes.NewReader(nil)
 	err := cmd.Run()
 	return outBuf.String(), errBuf.String(), err
+}
+
+// opensslCmd 构造带 LD_LIBRARY_PATH 的铜锁 openssl 子进程命令。
+//
+// 铜锁 openssl 二进制的 RUNPATH 是构建机的绝对路径（如
+// /code/platform_all_use/core/libs/bin/tongsuo/libs），换机部署后动态库
+// 找不到；这里把 core 包内 libs 目录注入子进程环境。目录不存在时保持
+// 原环境（兼容系统 openssl 场景）。
+func opensslCmd(ctx context.Context, bin string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, bin, args...)
+	env := os.Environ()
+	if libdir := tongsuoLibDirFor(bin); libdir != "" {
+		existing := os.Getenv("LD_LIBRARY_PATH")
+		ld := libdir
+		if existing != "" {
+			ld += string(os.PathListSeparator) + existing
+		}
+		env = append(env, "LD_LIBRARY_PATH="+ld)
+	}
+	// ★ openssl 二进制的 OPENSSLDIR 是编译期写死的构建机绝对路径，
+	//   换机后 openssl req 等命令找不到 openssl.cnf；这里显式指向
+	//   core 包内自带的 cnf（OPENSSL_CONF 优先级最高）。
+	if os.Getenv("OPENSSL_CONF") == "" {
+		if cnf := tongsuoCnfFor(bin); cnf != "" {
+			env = append(env, "OPENSSL_CONF="+cnf)
+		}
+	}
+	cmd.Env = env
+	return cmd
+}
+
+// tongsuoCnfFor 返回 bin 对应 core 包内铜锁 openssl.cnf（仅存在时）。
+//
+// bin 位置：
+//   <coreRoot>/libs/tongsuo/bin/openssl        → cnf 在 <coreRoot>/libs/tongsuo/ssl
+//   <coreRoot>/libs/bin/tongsuo/bin/openssl    → cnf 在 <coreRoot>/libs/bin/tongsuo/ssl
+func tongsuoCnfFor(bin string) string {
+	dir := filepath.Dir(bin)
+	for _, candidate := range []string{
+		filepath.Join(dir, "..", "ssl", "openssl.cnf"),                // libs/tongsuo/bin/.. = libs/tongsuo/ssl
+		filepath.Join(dir, "..", "..", "tongsuo", "ssl", "openssl.cnf"), // libs/bin/tongsuo/bin/.. = libs/bin/tongsuo/ssl
+	} {
+		if abs, err := filepath.Abs(candidate); err == nil {
+			if st, err := os.Stat(abs); err == nil && !st.IsDir() {
+				return abs
+			}
+		}
+	}
+	return ""
+}
+
+// tongsuoLibDirFor 返回 bin 对应 core 包内铜锁 libs 目录（仅存在时）。
+//
+// 兼容布局：
+//   <coreRoot>/libs/tongsuo/libs        ← 安装包布局（推荐）
+//   <coreRoot>/libs/bin/tongsuo/libs    ← 旧构建树布局
+func tongsuoLibDirFor(bin string) string {
+	dir := filepath.Dir(bin)
+	for _, candidate := range []string{
+		filepath.Join(dir, "..", "libs"),               // <root>/libs/tongsuo/libs
+		filepath.Join(dir, "..", "..", "tongsuo", "libs"), // <root>/libs/bin/tongsuo/libs
+	} {
+		if abs, err := filepath.Abs(candidate); err == nil {
+			if st, err := os.Stat(abs); err == nil && st.IsDir() {
+				return abs
+			}
+		}
+	}
+	return ""
 }
 
 // RunOpenSSL 执行 openssl 命令并返回 stdout。

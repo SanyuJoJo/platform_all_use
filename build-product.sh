@@ -11,6 +11,14 @@
 #   - P2-FE-05：前端 [2/4] 阶段前置检测 frontend/deploy/main-app/index.html
 #   - P2-FE-08：dist.war 打入 deploy-manifest.json（若存在）
 #   - P1-FE-03：前端 [3/4] 阶段校验增强（main-app/assets + 每个子应用）
+# v1.4 变更（安装包含 core）：
+#   - 阶段扩展为 [1/5]~[5/5]
+#   - 新增 [3/5] 构建 core 载荷（build-core-payload.sh → core.tar.gz）
+#   - [4/5] 载荷校验增加 core.tar.gz 结构校验
+# v1.5 变更（安装包含音视频）：
+#   - 阶段扩展为 [1/6]~[6/6]
+#   - 新增 [4/6] 构建 ZLM 载荷（build-zlm-payload.sh → video.tar.gz）
+#   - [5/6] 载荷校验增加 video.tar.gz 结构校验
 # ============================================================================
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,9 +28,9 @@ log() { echo -e "\n===== $* ====="; }
 warn() { echo -e "  ⚠️  $*"; }
 die() { echo -e "\n❌ $*" >&2; exit 1; }
 # ============================================================================
-# [1/4] 后端：前置校验 + 构建
+# [1/5] 后端：前置校验 + 构建
 # ============================================================================
-log "[1/4] 构建后端 Flat 包（含 goose）"
+log "[1/6] 构建后端 Flat 包（含 goose）"
 cd "$ROOT/backend-go"
 # ---- P1-FE-01：前置校验前端托管集成 ----
 echo "  → 校验 cmd/server/main.go 前端托管集成..."
@@ -64,9 +72,9 @@ rm -f "$PAYLOAD_DIR/backend.tar.gz"
 cp -f "$LATEST_FLAT" "$PAYLOAD_DIR/backend.tar.gz"
 echo "已复制到：$PAYLOAD_DIR/backend.tar.gz"
 # ============================================================================
-# [2/4] 前端：前置检测 + 构建 dist.war
+# [2/5] 前端：前置检测 + 构建 dist.war
 # ============================================================================
-log "[2/4] 构建前端 dist.war"
+log "[2/6] 构建前端 dist.war"
 FRONTEND_DEPLOY="$ROOT/frontend/deploy"
 # ---- P2-FE-05：前置检测 ----
 if [ ! -d "$FRONTEND_DEPLOY/main-app" ]; then
@@ -92,9 +100,32 @@ fi
 zip -qr "$PAYLOAD_DIR/dist.war" "${ZIP_ARGS[@]}"
 echo "已生成：$PAYLOAD_DIR/dist.war"
 # ============================================================================
-# [3/4] 载荷校验
+# [3/5] 构建 core 载荷（core-go + Tengine + 铜锁 + oqs-provider）
 # ============================================================================
-log "[3/4] 载荷校验"
+log "[3/6] 构建 core 载荷"
+CORE_PAYLOAD_SH="$ROOT/create_package/build-core-payload.sh"
+[ -x "$CORE_PAYLOAD_SH" ] || die "缺少或不可执行：$CORE_PAYLOAD_SH"
+if ! command -v go >/dev/null 2>&1; then
+  if [ -x /usr/local/go/bin/go ]; then
+    export PATH="/usr/local/go/bin:$PATH"
+  fi
+fi
+bash "$CORE_PAYLOAD_SH"
+[ -f "$PAYLOAD_DIR/core.tar.gz" ] || die "core 载荷构建未生成 core.tar.gz"
+echo "  ✅ core.tar.gz 已生成"
+# ============================================================================
+# [4/6] 构建音视频载荷（ZLMediaKit → video.tar.gz）
+# ============================================================================
+log "[4/6] 构建音视频载荷"
+ZLM_PAYLOAD_SH="$ROOT/create_package/build-zlm-payload.sh"
+[ -x "$ZLM_PAYLOAD_SH" ] || die "缺少或不可执行：$ZLM_PAYLOAD_SH"
+bash "$ZLM_PAYLOAD_SH"
+[ -f "$PAYLOAD_DIR/video.tar.gz" ] || die "音视频载荷构建未生成 video.tar.gz"
+echo "  ✅ video.tar.gz 已生成"
+# ============================================================================
+# [5/6] 载荷校验
+# ============================================================================
+log "[5/6] 载荷校验"
 TMP_BACKEND="$(mktemp -d)"
 TMP_FRONTEND="$(mktemp -d)"
 cleanup_tmp() { rm -rf "$TMP_BACKEND" "$TMP_FRONTEND"; }
@@ -184,11 +215,56 @@ fi
 if [ -f "$TMP_FRONTEND/deploy-manifest.json" ]; then
   echo "  ✅ deploy-manifest.json"
 fi
+# --- core 载荷校验（v1.4）---
+if [ -f "$PAYLOAD_DIR/core.tar.gz" ]; then
+  TMP_CORE="$(mktemp -d)"
+  tar -xzf "$PAYLOAD_DIR/core.tar.gz" -C "$TMP_CORE" 2>/dev/null \
+    || die "core.tar.gz 不是合法 tar.gz"
+  CORE_FAIL=0
+  for f in bin/core sbin/nginx conf/core.yaml conf/mime.types \
+           libs/tongsuo/bin/openssl libs/tongsuo/libs/libcrypto.so.3; do
+    if [ -e "$TMP_CORE/core/$f" ]; then
+      echo "  ✅ core/$f"
+    else
+      echo "  ❌ core/$f"
+      CORE_FAIL=1
+    fi
+  done
+  rm -rf "$TMP_CORE"
+  if [ "$CORE_FAIL" -ne 0 ]; then
+    die "core.tar.gz 校验失败"
+  fi
+else
+  warn "core.tar.gz 缺失（可能未构建 core 载荷）"
+fi
+# --- 音视频载荷校验（v1.5）---
+if [ -f "$PAYLOAD_DIR/video.tar.gz" ]; then
+  TMP_VIDEO="$(mktemp -d)"
+  tar -xzf "$PAYLOAD_DIR/video.tar.gz" -C "$TMP_VIDEO" 2>/dev/null \
+    || die "video.tar.gz 不是合法 tar.gz"
+  if [ -x "$TMP_VIDEO/video/run/bin/MediaServer" ]; then
+    echo "  ✅ video/run/bin/MediaServer"
+  else
+    echo "  ❌ video/run/bin/MediaServer"
+    rm -rf "$TMP_VIDEO"
+    die "video.tar.gz 校验失败"
+  fi
+  if [ -f "$TMP_VIDEO/video/conf/zlmediakit/config.ini" ]; then
+    echo "  ✅ video/conf/zlmediakit/config.ini"
+  else
+    echo "  ❌ video/conf/zlmediakit/config.ini"
+    rm -rf "$TMP_VIDEO"
+    die "video.tar.gz 校验失败"
+  fi
+  rm -rf "$TMP_VIDEO"
+else
+  warn "video.tar.gz 缺失（可能未构建音视频载荷）"
+fi
 echo "✅ 载荷校验通过"
 # ============================================================================
-# [4/4] 生成产品安装包
+# [6/6] 生成产品安装包
 # ============================================================================
-log "[4/4] 生成产品安装包"
+log "[6/6] 生成产品安装包"
 [ -x "$CREATE_SH" ] || die "缺少或不可执行：$CREATE_SH"
 cd "$ROOT/create_package"
 bash "$CREATE_SH"

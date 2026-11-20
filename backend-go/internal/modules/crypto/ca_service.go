@@ -45,12 +45,20 @@ func (s *CAService) RebuildDomainBundle(domain string) error {
 	if s.layout == nil {
 		return fmt.Errorf("PathLayout 未初始化")
 	}
+	return rebuildDomainBundle(s.layout, domain)
+}
+
+// rebuildDomainBundle 重建 <CARoot>/<domain>/bundle.crt（全量根证书）。
+//
+// 被 CAService.RebuildDomainBundle 与操作服务（ca.create 后）共用，
+// 保证通过密码操作 API 新建的 CA 也能被 SSL 代理双向认证使用。
+func rebuildDomainBundle(layout *PathLayout, domain string) error {
 	domain = strings.TrimSpace(domain)
 	if domain == "" {
 		return fmt.Errorf("domain 为空")
 	}
 
-	dir := filepath.Join(s.layout.CARoot, domain)
+	dir := filepath.Join(layout.CARoot, domain)
 	st, err := os.Stat(dir)
 	if err != nil {
 		if os.IsNotExist(err) {

@@ -1,7 +1,8 @@
 core:
   # 铜锁 openssl 路径。留空则按平台自动解析：
   #   <coreRoot>/libs/openssl/<os>-<arch>/openssl(.exe)
-  tongsuo_openssl_bin: "/opt/plats_tool/core/libs/tongsuo/bin/openssl"
+  # ★ 相对路径基于 coreRoot（安装到任意目录都能用）。
+  tongsuo_openssl_bin: "libs/tongsuo/bin/openssl"
   tongsuo_min_version: "8.5.0"
   whitebox_bin: "bin/whitebox_sm4"
   timeout_ms: 5000
@@ -30,9 +31,9 @@ core:
     #
     # 三种配置方式：
     #   1. 完整路径：指定到 .so 文件，加载时通过 OPENSSL_MODULES 定位
-    #      path: "/opt/plats_tool/core/libs/tongsuo/lib/ossl-modules/oqsprovider.so"
+    #      path: "libs/tongsuo/libs/ossl-modules/oqsprovider.so"
     #   2. 目录路径：只指定目录，由 openssl 自动寻找 oqsprovider.so
-    #      path: "/opt/plats_tool/core/libs/tongsuo/lib/ossl-modules"
+    #      path: "libs/tongsuo/libs/ossl-modules"
     #   3. 留空：依赖系统默认搜索路径（$OPENSSL_MODULES、/usr/lib/ossl-modules/）
     #      path: ""
-    path: "/opt/plats_tool/core/libs/tongsuo/lib/ossl-modules/oqsprovider.so"
+    path: "libs/tongsuo/libs/ossl-modules/oqsprovider.so"
