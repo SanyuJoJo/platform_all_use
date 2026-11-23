@@ -157,9 +157,6 @@ extern "C" {
 # ifndef OPENSSL_NO_NIZK
 #  define OPENSSL_NO_NIZK
 # endif
-# ifndef OPENSSL_NO_NTLS
-#  define OPENSSL_NO_NTLS
-# endif
 # ifndef OPENSSL_NO_OPTIMIZE_CHACHA_CHOOSE
 #  define OPENSSL_NO_OPTIMIZE_CHACHA_CHOOSE
 # endif
@@ -214,6 +211,9 @@ extern "C" {
 # ifndef OPENSSL_NO_STATUS
 #  define OPENSSL_NO_STATUS
 # endif
+# ifndef OPENSSL_NO_TESTS
+#  define OPENSSL_NO_TESTS
+# endif
 # ifndef OPENSSL_NO_TFO
 #  define OPENSSL_NO_TFO
 # endif
@@ -240,9 +240,6 @@ extern "C" {
 # endif
 # ifndef OPENSSL_NO_WBSM4_XIAOLAI
 #  define OPENSSL_NO_WBSM4_XIAOLAI
-# endif
-# ifndef OPENSSL_NO_WEAK_SSL_CIPHERS
-#  define OPENSSL_NO_WEAK_SSL_CIPHERS
 # endif
 # ifndef OPENSSL_NO_WHIRLPOOL
 #  define OPENSSL_NO_WHIRLPOOL

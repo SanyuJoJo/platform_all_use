@@ -157,9 +157,6 @@ extern "C" {
 # ifndef OPENSSL_NO_NIZK
 #  define OPENSSL_NO_NIZK
 # endif
-# ifndef OPENSSL_NO_NTLS
-#  define OPENSSL_NO_NTLS
-# endif
 # ifndef OPENSSL_NO_OPTIMIZE_CHACHA_CHOOSE
 #  define OPENSSL_NO_OPTIMIZE_CHACHA_CHOOSE
 # endif
