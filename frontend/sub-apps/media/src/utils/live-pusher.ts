@@ -46,13 +46,11 @@ class LivePusherManager {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    // ★ 核心修复 1：修剪 SDP，只保留 OPUS 音频，剔除 PCMA，避免 FLV 播放失败
+    // 注：保留 SDP 原样（含 opus）。mpegts.js 不能解 opus FLV，
+    // 但 opus 是 WebRTC 推流的唯一可靠音频（captureStream/getUserMedia 均如此）。
+    // 去掉 opus 会导致 captureStream(文件推流) 的 m=audio 无 codec -> 推流失败。
+    // 拉流侧应使用 WebRTC 播放（浏览器原生支持 opus）或转码。
     let modifiedSdp = offer.sdp!;
-    if (modifiedSdp.includes('PCMA')) {
-      // 移除 PCMA (PT=8) 的支持
-      modifiedSdp = modifiedSdp.replace(/a=rtpmap:8 PCMA\/8000\r\n/g, '');
-      modifiedSdp = modifiedSdp.replace(/ 8 /g, ' '); // 从 m=audio 列表里去掉 8
-    }
 
     const resp = await mediaApi.pushWebRTC(streamId, modifiedSdp);
     await pc.setRemoteDescription(new RTCSessionDescription({

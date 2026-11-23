@@ -124,7 +124,7 @@ func (h *CSRCreateHandler) Execute(
 		return genErr("CORE_EXEC_FAILED", err.Error())
 	}
 
-	if _, err := client.Run(ctx, "req", "-new", "-key", keyPath,
+	if _, err := client.Run(ctx, "req", "-new", "-utf8", "-key", keyPath,
 		"-out", csrAbs, "-config", extPath); err != nil {
 		return genErr("CORE_EXEC_FAILED", "csr: "+err.Error())
 	}

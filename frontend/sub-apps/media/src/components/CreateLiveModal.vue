@@ -180,10 +180,20 @@ async function handleSubmit() {
       } else {
         hiddenVideo = document.createElement('video');
         hiddenVideo.src = localFileUrl.value;
-        hiddenVideo.muted = true;
+        // 注意：不能 muted（静音会使 captureStream() 丢失音频轨道，导致拉流无声）
+        hiddenVideo.muted = false;
+        hiddenVideo.volume = 1;
         hiddenVideo.loop = true;
         await hiddenVideo.play();
-        await new Promise(r => setTimeout(r, 500));
+        // 等视频可播放（确保音频轨道已就绪）再捕获
+        const hv = hiddenVideo!;
+        await new Promise<void>((resolve) => {
+          const onReady = () => { hv.removeEventListener('loadedmetadata', onReady); hv.removeEventListener('canplay', onReady); resolve(); };
+          if (hv.readyState >= 1) { resolve(); return; }
+          hv.addEventListener('loadedmetadata', onReady);
+          hv.addEventListener('canplay', onReady);
+        });
+        await new Promise(r => setTimeout(r, 300));
         mediaStream = (hiddenVideo as any).captureStream ? (hiddenVideo as any).captureStream() : (hiddenVideo as any).mozCaptureStream();
       }
 

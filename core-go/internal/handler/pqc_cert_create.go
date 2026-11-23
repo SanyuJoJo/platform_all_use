@@ -73,7 +73,7 @@ func (h *PQCCertCreateHandler) Execute(
     _ = os.WriteFile(extPath, []byte(ext), 0600)
 
     args := []string{
-        "req", "-new", "-x509",
+        "req", "-new", "-utf8", "-x509",
         "-key", keyPath,
         "-out", certAbs,
         "-days", fmt.Sprintf("%d", days),

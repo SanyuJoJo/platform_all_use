@@ -251,7 +251,7 @@ func (h *DualCertCreateHandler) Execute(
 	}
 
 	encCSR := filepath.Join(tmpDir, "enc.csr")
-	if _, err := client.Run(ctx, "req", "-new", "-key", encKeyPath,
+	if _, err := client.Run(ctx, "req", "-new", "-utf8", "-key", encKeyPath,
 		"-out", encCSR, "-subj", subjectArg); err != nil {
 		return genErr("CORE_EXEC_FAILED", "enc csr: "+err.Error())
 	}

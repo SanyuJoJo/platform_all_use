@@ -176,7 +176,7 @@ func (h *CertSignHandler) Execute(
 		subject, _ := subjectFromParams(req.Params)
 		subjArg := subjectToOpenSSL(subject)
 		csrPath = filepath.Join(tmpDir, "leaf.csr")
-		if _, err := client.Run(ctx, "req", "-new", "-key", keyPath,
+		if _, err := client.Run(ctx, "req", "-new", "-utf8", "-key", keyPath,
 			"-out", csrPath, "-subj", subjArg); err != nil {
 			return genErr("CORE_EXEC_FAILED", "csr: "+err.Error())
 		}

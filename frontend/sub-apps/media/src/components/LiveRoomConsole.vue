@@ -24,7 +24,7 @@
           <video ref="localVideoRef" autoplay muted playsinline class="video-el" />
         </div>
         
-        <!-- 右侧：拉流预览 -->
+        <!-- 右侧：拉流预览（HTTP-FLV，mpegts.js 播放） -->
         <div class="video-box">
           <div class="box-title">拉流观看 (HTTP-FLV)</div>
           <video ref="flvVideoRef" controls autoplay playsinline class="video-el" />
@@ -111,7 +111,7 @@ function bindLocalStream() {
   }
 }
 
-// 拉流播放
+// 拉流播放：HTTP-FLV（mpegts.js）
 async function playRemoteStream() {
   if (!flvVideoRef.value) return;
   loadingUrl.value = true;
@@ -121,7 +121,7 @@ async function playRemoteStream() {
   try {
     const res = await mediaApi.getPlayUrlOfStream(props.streamId, 'flv');
     let url = res.data.url;
-    
+
     // 规范 URL
     if (!/^https?:\/\//i.test(url)) {
       url = `${window.location.origin}${url.startsWith('/') ? url : '/' + url}`;

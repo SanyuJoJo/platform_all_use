@@ -2,6 +2,7 @@ package live
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -68,12 +69,35 @@ func (s *Service) requireEngine(action string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if err := s.engine.Probe(ctx); err != nil {
-		return exception.New(exception.CodeInternalError,
-			fmt.Sprintf("%s失败：直播引擎未就绪（%s）", action, err.Error()),
-			503, nil)
+
+	// 1) 先探活：ZLM 就绪直接返回
+	if s.engine.Probe(ctx) == nil {
+		return nil
 	}
-	return nil
+
+	// 2) 未就绪且开启托管 → 按需拉起 ZLM（幂等：已在运行返回 409/CodeParamInvalid）
+	//    ⚠️ 必须用 context.Background()：Start() 内部 exec.CommandContext 在 ctx 被取消时会
+	//    kill 掉 ZLM 子进程。不能用带 timeout 且随即 cancel 的 ctx，否则刚拉起的 ZLM 会被杀死。
+	if s.cfg.ZLMAutoStart {
+		err := s.engine.Start(context.Background())
+		if err != nil {
+			var pe *exception.PlatformError
+			// 409 = 已在运行（外部进程），属正常，继续重新探活确认
+			if !errors.As(err, &pe) || pe.Code != exception.CodeParamInvalid {
+				return exception.New(exception.CodeInternalError,
+					fmt.Sprintf("%s失败：直播引擎未就绪（%s）", action, err.Error()),
+					503, nil)
+			}
+		}
+	}
+
+	// 3) 拉起/确认后重新探活；仍失败才返回 503
+	if s.engine.Probe(ctx) == nil {
+		return nil
+	}
+	return exception.New(exception.CodeInternalError,
+		fmt.Sprintf("%s失败：直播引擎未就绪（%s）", action, "ZLM 启动后仍不可达"),
+		503, nil)
 }
 
 func (s *Service) gcLoop() {
@@ -493,12 +517,12 @@ func sumTrackBitrate(tracks []track) int {
 }
 
 func (s *Service) buildPlayURLs(app, stream string) StreamPlayURL {
-	httpBase := fmt.Sprintf("http://%s:%d", s.cfg.ZLMHTTPHost, s.cfg.ZLMHTTPPort)
+	httpBase := fmt.Sprintf("https://%s:8443", s.cfg.ZLMHTTPHost)
 	return StreamPlayURL{
 		HLS:  fmt.Sprintf("%s/%s/%s/hls.m3u8", httpBase, app, stream),
 		FLV:  fmt.Sprintf("%s/%s/%s.live.flv", httpBase, app, stream),
 		RTMP: fmt.Sprintf("rtmp://%s:%d/%s/%s", s.cfg.ZLMHTTPHost, s.cfg.ZLMRTMPPort, app, stream),
-		WebRTC: fmt.Sprintf("%s/index/api/webrtc?app=%s&stream=%s&type=play",
+		WebRTC: fmt.Sprintf("%s/webrtc/index.html?app=%s&stream=%s&type=play&audioEnable=1&videoEnable=1",
 			httpBase, app, url.QueryEscape(stream)),
 	}
 }

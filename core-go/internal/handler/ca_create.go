@@ -119,7 +119,7 @@ func (h *CACreateHandler) Execute(
 	}
 
 	args := []string{
-		"req", "-new", "-x509",
+		"req", "-new", "-utf8", "-x509",
 		"-key", keyPath,
 		"-out", certAbs,
 		"-days", fmt.Sprintf("%d", validityDays),

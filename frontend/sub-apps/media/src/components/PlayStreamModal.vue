@@ -147,7 +147,7 @@ const visible = computed({
 });
 
 type Format = 'hls' | 'flv' | 'webrtc';
-const format = ref<Format>('flv');
+const format = ref<Format>('webrtc');
 const currentUrl = ref('');
 // 仅 WebRTC 播放页使用 iframe，避免 FLV/HLS 地址被 iframe 导航后触发浏览器下载
 const webrtcUrl = ref('');

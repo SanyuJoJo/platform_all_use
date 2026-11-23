@@ -129,7 +129,7 @@ func (h *CAIntermediateHandler) Execute(
 		return genErr("CORE_EXEC_FAILED", err.Error())
 	}
 
-	if _, err := client.Run(ctx, "req", "-new", "-key", keyPath,
+	if _, err := client.Run(ctx, "req", "-new", "-utf8", "-key", keyPath,
 		"-out", csrPath, "-subj", subjArg); err != nil {
 		return genErr("CORE_EXEC_FAILED", "csr: "+err.Error())
 	}

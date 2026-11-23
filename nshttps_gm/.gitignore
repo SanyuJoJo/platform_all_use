@@ -16,3 +16,19 @@ tongsuo/libssl.so*
 tongsuo/configdata.pm
 tongsuo/builddata.pm
 tongsuo/installdata.pm
+# ---- 追加：Tongsuo 编译中间产物 / 依赖文件 / pkg-config ----
+tongsuo/.openssl/
+tongsuo/**/*.o
+tongsuo/**/*.s
+tongsuo/**/*.a
+tongsuo/**/*.so
+tongsuo/**/*.so.*
+tongsuo/**/*.pc
+tongsuo/**/*.cmake
+tengine-3.1.0/**/*.o
+tongsuo/.openssl/
+tongsuo/providers/*.module
+tongsuo/providers/*.o
+tongsuo/providers/*.so
+tongsuo/providers/*.a
+tengine-3.1.0/packages/debian/files

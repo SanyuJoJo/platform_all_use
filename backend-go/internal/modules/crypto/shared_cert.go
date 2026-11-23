@@ -234,8 +234,8 @@ func (p *CertParser) Parse(certAbs string) (*CertDetail, error) {
 	}
 
 	// 6. DN 顺序统一为 C → ST → L → O → OU → CN
-	detail.Issuer = normalizeDNOrder(detail.Issuer)
-	detail.Subject = normalizeDNOrder(detail.Subject)
+	detail.Issuer = unescapeRFC2253Value(normalizeDNOrder(detail.Issuer))
+	detail.Subject = unescapeRFC2253Value(normalizeDNOrder(detail.Subject))
 
 	// 7. 公钥值统一为完整 SPKI DER hex（字节间空格分隔）
 	if bin != "" {
@@ -752,6 +752,45 @@ func (p *CertParser) parseWithOpenSSL(bin, certPath string) (*CertDetail, error)
 		detail.Fingerprint = strings.ToLower(cleanHex(fp))
 	}
 	return detail, nil
+}
+
+// unescapeRFC2253Value 把 openssl RFC2253 输出的 \xx 十六进制转义还原为 UTF-8 文本。
+// 例如 "CN=\E5\BC\A0\E4\B8\89" -> "CN=张三"。
+// 只处理 \xx 字节转义；普通字符原样保留。
+func unescapeRFC2253Value(v string) string {
+    if !strings.Contains(v, "\\") {
+        return v
+    }
+    buf := make([]byte, 0, len(v))
+    i := 0
+    for i < len(v) {
+        c := v[i]
+        if c == '\\' && i+2 < len(v) && isHexByte(v[i+1]) && isHexByte(v[i+2]) {
+            b := hexNibble(v[i+1])<<4 | hexNibble(v[i+2])
+            buf = append(buf, b)
+            i += 3
+            continue
+        }
+        // 普通字节：若是 ASCII 直接追加；若是 RFC2253 的 utf8 多字节（可能已被转义），此处不处理
+        buf = append(buf, c)
+        i++
+    }
+    return string(buf)
+}
+
+func isHexByte(c byte) bool {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+
+func hexNibble(c byte) byte {
+    switch {
+    case c >= '0' && c <= '9':
+        return c - '0'
+    case c >= 'a' && c <= 'f':
+        return c - 'a' + 10
+    default:
+        return c - 'A' + 10
+    }
 }
 
 // extractSPKIHex 提取证书公钥的完整 SubjectPublicKeyInfo DER，返回带空格的 hex。
