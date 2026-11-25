@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+		"strconv"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -332,8 +332,8 @@ func (s *Service) buildPushURLs(app, stream string) PushURLs {
 	return PushURLs{
 		RTMP: fmt.Sprintf("rtmp://%s:%d/%s/%s",
 			s.cfg.ZLMHTTPHost, s.cfg.ZLMRTMPPort, app, stream),
-		WebRTC: fmt.Sprintf("http://%s:%d/index/api/webrtc?app=%s&stream=%s&type=push",
-			s.cfg.ZLMHTTPHost, s.cfg.ZLMHTTPPort, app, url.QueryEscape(stream)),
+		WebRTC: fmt.Sprintf("https://%s:8443/index/api/webrtc?app=%s&stream=%s&type=push",
+			s.cfg.ZLMHTTPHost, app, url.QueryEscape(stream)),
 	}
 }
 
@@ -522,8 +522,8 @@ func (s *Service) buildPlayURLs(app, stream string) StreamPlayURL {
 		HLS:  fmt.Sprintf("%s/%s/%s/hls.m3u8", httpBase, app, stream),
 		FLV:  fmt.Sprintf("%s/%s/%s.live.flv", httpBase, app, stream),
 		RTMP: fmt.Sprintf("rtmp://%s:%d/%s/%s", s.cfg.ZLMHTTPHost, s.cfg.ZLMRTMPPort, app, stream),
-		WebRTC: fmt.Sprintf("%s/webrtc/index.html?app=%s&stream=%s&type=play&audioEnable=1&videoEnable=1",
-			httpBase, app, url.QueryEscape(stream)),
+		WebRTC: fmt.Sprintf("https://%s:8443/index/api/webrtc?app=%s&stream=%s&type=play",
+			s.cfg.ZLMHTTPHost, app, url.QueryEscape(stream)),
 	}
 }
 

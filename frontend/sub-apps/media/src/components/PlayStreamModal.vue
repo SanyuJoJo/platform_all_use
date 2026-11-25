@@ -38,17 +38,7 @@
         <div class="video-container">
           <video v-show="format === 'flv'" ref="videoElFlv" controls autoplay playsinline class="video-el" />
           <video v-show="format === 'hls'" ref="videoElHls" controls autoplay playsinline class="video-el" />
-          <!--
-            注意：iframe 必须使用 v-if 并且只承载 WebRTC 播放页。
-            如果把 FLV / HLS 地址交给 iframe，即使 v-show 隐藏，浏览器仍会导航到该地址，
-            触发文件下载（点击“拉流”或关闭弹窗时都会出现下载行为）。
-          -->
-          <iframe
-            v-if="format === 'webrtc' && webrtcUrl"
-            :src="webrtcUrl"
-            class="video-el"
-            allow="autoplay; fullscreen"
-          />
+          <video v-show="format === 'webrtc'" ref="videoElWebrtc" controls autoplay playsinline class="video-el" />
         </div>
       </div>
 
@@ -157,11 +147,13 @@ const errorMsg = ref('');
 
 const videoElHls = ref<HTMLVideoElement | null>(null);
 const videoElFlv = ref<HTMLVideoElement | null>(null);
+const videoElWebrtc = ref<HTMLVideoElement | null>(null);
 // 弹窗内容容器：复制降级时临时 textarea 必须放在弹窗内部，否则会被 Modal 焦点陷阱抢走焦点
 const bodyRef = ref<HTMLElement | null>(null);
 
 let hls: Hls | null = null;
 let flvPlayer: mpegts.Player | null = null;
+let webrtcPc: RTCPeerConnection | null = null;
 // 用于中止“弹窗已关闭/已切换格式”后仍然返回的异步拉流请求
 let switchSeq = 0;
 
@@ -197,7 +189,7 @@ function getAddr(type: Format | 'rtmp' | 'rtsp'): string {
     case 'hls':
       return `http://${host}/live/${sid}/hls.m3u8`;
     case 'webrtc':
-      return `http://${host}/index/api/webrtc?app=live&stream=${sid}&type=play`;
+      return `https://${host}:8443/index/api/webrtc?app=live&stream=${sid}&type=play`;
     default:
       return '';
   }
@@ -213,9 +205,13 @@ function cleanup() {
   if (flvPlayer) {
     flvPlayer.pause(); flvPlayer.unload(); flvPlayer.detachMediaElement(); flvPlayer.destroy(); flvPlayer = null;
   }
+  if (webrtcPc) {
+    try { webrtcPc.close(); } catch (_) { /* noop */ }
+    webrtcPc = null;
+  }
   videoElHls.value?.removeAttribute('src');
   videoElFlv.value?.removeAttribute('src');
-  // 清空 iframe 地址，防止关闭弹窗时浏览器继续请求/下载流地址
+  if (videoElWebrtc.value) { videoElWebrtc.value.srcObject = null; videoElWebrtc.value.removeAttribute('src'); }
   webrtcUrl.value = '';
   errorMsg.value = '';
 }
@@ -251,6 +247,54 @@ function playFlv(url: string) {
   }
 }
 
+/** WebRTC 播放：原生 RTCPeerConnection，信令经 /index/api/webrtc?type=play（同域 nginx 转发到 ZLM） */
+async function playWebrtc(url: string) {
+  const v = videoElWebrtc.value;
+  if (!v) return;
+  if (typeof RTCPeerConnection === 'undefined') {
+    errorMsg.value = '浏览器不支持 WebRTC';
+    return;
+  }
+  const sid = currentStreamId.value;
+  if (!sid) return;
+  const signalUrl = url && /index\/api\/webrtc/i.test(url)
+    ? url
+    : `https://${window.location.hostname}:8443/index/api/webrtc?app=live&stream=${sid}&type=play`;
+
+  const pc = new RTCPeerConnection({ iceServers: [] });
+  webrtcPc = pc;
+  pc.ontrack = (e) => {
+    const [stream] = e.streams;
+    if (stream && videoElWebrtc.value) {
+      videoElWebrtc.value.srcObject = stream;
+      videoElWebrtc.value.play().catch(() => {});
+    }
+  };
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+      errorMsg.value = 'WebRTC 播放连接失败';
+    }
+  };
+  try {
+    // 播放方向：声明接收音频/视频（recvonly），否则 offer 里没有 m= 行，ZLM 会报 media.empty
+    pc.addTransceiver('audio', { direction: 'recvonly' });
+    pc.addTransceiver('video', { direction: 'recvonly' });
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    const resp = await fetch(signalUrl, { method: 'POST', body: pc.localDescription!.sdp });
+    const json = await resp.json();
+    if (!json || !json.sdp) {
+      throw new Error(json?.msg || 'WebRTC 信令响应异常');
+    }
+    await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: json.sdp }));
+  } catch (e: any) {
+    console.error('[WebRTC播放]', e);
+    errorMsg.value = 'WebRTC 播放失败: ' + (e?.message || String(e));
+    try { pc.close(); } catch (_) {}
+    if (webrtcPc === pc) webrtcPc = null;
+  }
+}
+
 async function switchFormat(next?: Format | string | number) {
   // 直接使用事件传入的目标格式，避免 v-model 与 @update:value 执行顺序导致的错位
   const target = (next ?? format.value) as Format;
@@ -279,12 +323,13 @@ async function switchFormat(next?: Format | string | number) {
   }
 
   currentUrl.value = withToken(url);
-  // 只有 WebRTC 播放页才交给 iframe，FLV/HLS 永远不进入 iframe
+  // WebRTC 也走原生 RTCPeerConnection（不再用 iframe）；FLV/HLS 用各自播放器
   webrtcUrl.value = target === 'webrtc' ? currentUrl.value : '';
 
   void nextTick(() => {
     if (target === 'flv') playFlv(currentUrl.value);
     else if (target === 'hls') playHls(currentUrl.value);
+    else if (target === 'webrtc') playWebrtc(currentUrl.value);
   });
 }
 
@@ -309,6 +354,7 @@ async function playManual() {
     void nextTick(() => {
       if (format.value === 'flv') playFlv(currentUrl.value);
       else if (format.value === 'hls') playHls(currentUrl.value);
+      else if (format.value === 'webrtc') playWebrtc(currentUrl.value);
     });
   } else {
     resolving.value = true;

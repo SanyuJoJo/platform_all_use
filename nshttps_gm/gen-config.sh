@@ -5,12 +5,18 @@
 # 生成 nshttps.conf：监听 8443，国际 TLS + 国密 NTLS 双协议共存，
 # 单向认证（仅服务端证书，不强制客户端证书），反代到 127.0.0.1 内部服务。
 #
+# 路由：
+#   /api/*                -> 后端 REST     ${UPSTREAM}  (/api/v1/live, /api/v1/media)
+#   音视频播放流(HLS/FLV/TS) -> ZLMediaKit   127.0.0.1:8080
+#   /index/api/, /webrtc/  -> ZLMediaKit   127.0.0.1:8080
+#   /                     -> 后端前端托管   ${UPSTREAM}
+#
 # 证书分工：
 #   - 国际 TLS 通道：标准 ECC(P-256) 证书 international.* （标准浏览器可用）
 #   - 国密 NTLS 通道：SM2 双证书 server.* + server_enc.* （国密浏览器可用）
 #
 # 用法：
-#   bash gen-config.sh [--port 8443] [--upstream 127.0.0.1:8000]
+#   bash gen-config.sh [--port 8443] [--upstream 127.0.0.1:8000] [--zlm 127.0.0.1:8080]
 # ============================================================
 set -euo pipefail
 
@@ -28,10 +34,12 @@ mkdir -p "$CONF_DIR" "$LOG_DIR" "$PID_DIR" "$TMP_DIR" "$RUN_DIR"
 # ---------- 参数 ----------
 PORT=8443
 UPSTREAM="127.0.0.1:8000"
+ZLM="127.0.0.1:8080"
 while [ $# -gt 0 ]; do
   case "$1" in
     --port)     PORT="$2";     shift 2 ;;
     --upstream) UPSTREAM="$2"; shift 2 ;;
+    --zlm)      ZLM="$2";      shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -43,7 +51,11 @@ cat > "$CONF_DIR/nshttps.conf" <<EOF
 # ============================================================
 # nshttps_gm 统一入口配置（自动生成，勿手改）
 # 监听 ${PORT}：国际 TLS + 国密 NTLS 双协议共存（单向认证）
-# 反代目标：${UPSTREAM}
+#   /api/*                -> 后端 REST     ${UPSTREAM}
+#   音视频播放流(HLS/FLV/TS) -> ZLMediaKit   ${ZLM}
+#   /index/api/, /webrtc/  -> ZLMediaKit   ${ZLM}
+#   /                     -> 后端前端托管  ${UPSTREAM}
+# 说明: 内部服务仅监听 127.0.0.1, 对外统一由本入口承载
 # ============================================================
 worker_processes auto;
 pid ${PID_DIR}/nginx.pid;
@@ -58,7 +70,6 @@ http {
     default_type  application/octet-stream;
     access_log    ${LOG_DIR}/access.log;
     sendfile      on;
-    # 显式指定临时目录（避免 nginx 依赖编译期 prefix 创建失败）
     client_body_temp_path ${TMP_DIR}/client_body 2;
     proxy_temp_path       ${TMP_DIR}/proxy 2;
     fastcgi_temp_path     ${TMP_DIR}/fastcgi 2;
@@ -76,15 +87,11 @@ http {
     ssl_enc_certificate_key  ${CERT_DIR}/server/server_enc.key;
     ssl_trusted_certificate  ${CERT_DIR}/ca/sm2-root.crt;
 
-    # 标准 TLS 协议与套件（国际通道）
     ssl_protocols  TLSv1.2 TLSv1.3;
     ssl_ciphers    HIGH:!aNULL:!MD5:!RC4:!kRSA:!kSRP:!kPSK:@STRENGTH;
     ssl_prefer_server_ciphers on;
-
-    # 国密 NTLS 通道开关（与标准 TLS 在同一 listen 上共存）
     enable_ntls on;
 
-    # 会话
     ssl_session_cache   shared:NSG:10m;
     ssl_session_timeout 10m;
     ssl_session_tickets on;
@@ -93,12 +100,61 @@ http {
         listen       0.0.0.0:${PORT} ssl;
         server_name  localhost;
 
-        # 单向认证：服务端只出示证书，不校验客户端证书
-        # （如需双向认证，放开下面两行并提供客户端 CA）
-        # ssl_client_certificate ${CERT_DIR}/ca/sm2-root.crt;
-        # ssl_verify_client on;
+        # 后端 REST（含音视频业务 /api/v1/live, /api/v1/media）
+        location /api/ {
+            proxy_pass http://${UPSTREAM};
+            proxy_set_header Host              \$host;
+            proxy_set_header X-Real-IP         \$remote_addr;
+            proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto https;
+        }
 
-        # 统一入口反代：内部服务全部走 127.0.0.1
+        # ZLMediaKit API / WebRTC 信令 -> ZLM
+        location /index/api/ {
+            proxy_pass http://${ZLM};
+            proxy_set_header Host              \$host;
+            proxy_set_header X-Real-IP         \$remote_addr;
+            proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto https;
+        }
+
+        # ZLMediaKit WebRTC 播放页 -> ZLM
+        location /webrtc/ {
+            proxy_pass http://${ZLM};
+            proxy_set_header Host              \$host;
+            proxy_set_header X-Real-IP         \$remote_addr;
+            proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto https;
+        }
+
+        # ZLMediaKit HLS m3u8 -> ZLM
+        location ~ ^/[A-Za-z0-9_]+/[^/]+/hls\.m3u8$ {
+            proxy_pass http://${ZLM};
+            proxy_set_header Host              \$host;
+            proxy_set_header X-Real-IP         \$remote_addr;
+            proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto https;
+        }
+
+        # ZLMediaKit HLS ts 分片 -> ZLM
+        location ~ ^/[A-Za-z0-9_]+/[^/]+/[0-9-]+/[0-9]+/[^/]+\.ts$ {
+            proxy_pass http://${ZLM};
+            proxy_set_header Host              \$host;
+            proxy_set_header X-Real-IP         \$remote_addr;
+            proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto https;
+        }
+
+        # ZLMediaKit HTTP-FLV/TS/FMP4/MP4 -> ZLM
+        location ~ ^/[A-Za-z0-9_]+/[^/]+\.(flv|ts|mp4|fmp4)$ {
+            proxy_pass http://${ZLM};
+            proxy_set_header Host              \$host;
+            proxy_set_header X-Real-IP         \$remote_addr;
+            proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto https;
+        }
+
+        # 前端托管 / 其他 -> 后端
         location / {
             proxy_pass http://${UPSTREAM};
             proxy_set_header Host              \$host;
@@ -112,6 +168,7 @@ EOF
 
 echo "[nshttps_gm] 已生成配置：$CONF_DIR/nshttps.conf"
 echo "[nshttps_gm] 监听端口  : ${PORT}（国际TLS + 国密NTLS 共存）"
-echo "[nshttps_gm] 反代目标  : ${UPSTREAM}"
+echo "[nshttps_gm] 后端REST  : ${UPSTREAM}"
+echo "[nshttps_gm] 音视频播放: ${ZLM}"
 echo "[nshttps_gm] 国际TLS证书 : ${CERT_DIR}/server/international.crt"
 echo "[nshttps_gm] 国密NTLS证书: ${CERT_DIR}/server/server.crt + server_enc.crt"
