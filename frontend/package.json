@@ -1,45 +1,28 @@
 {
   "name": "platform-frontend",
-  "private": true,
   "version": "1.0.0",
+  "private": true,
+  "type": "module",
   "scripts": {
-    "dev:main": "pnpm --filter main-app dev",
-    "dev:subapp": "pnpm --filter './sub-apps/*' --filter '!./sub-apps/_template' dev",
-    "dev:all": "concurrently \"pnpm dev:main\" \"pnpm dev:subapp\"",
-    "build:main": "pnpm --filter main-app build",
-    "build:all": "concurrently \"pnpm --filter main-app build\" \"pnpm --filter './sub-apps/*' --filter '!./sub-apps/_template' build\"",
-    "build:prod": "node scripts/build-all.mjs",
-    "verify:deploy": "node scripts/verify-deploy.mjs",
-    "clean:deploy": "node -e \"require('fs').rmSync('deploy',{recursive:true,force:true})\"",
-    "lint": "eslint . --ext .vue,.ts,.tsx --fix",
-    "format": "prettier --write .",
-    "test": "pnpm --filter main-app test",
-    "prepare": "cd .. && husky install frontend/.husky || true"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@fingerprintjs/fingerprintjs": "^5.3.0",
+    "@vueuse/core": "^15.1.0",
+    "axios": "^1.21.1",
+    "hls.js": "^1.7.4",
+    "mpegts.js": "^1.8.2",
+    "pinia": "^2.1.7",
+    "tdesign-vue-next": "^1.20.0",
+    "vue": "^3.4.0",
+    "vue-router": "^4.2.5"
   },
   "devDependencies": {
-    "@types/node": "^20.11.0",
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "@typescript-eslint/parser": "^7.0.0",
-    "@vue/eslint-config-prettier": "^9.0.0",
-    "@vue/eslint-config-typescript": "^13.0.0",
-    "concurrently": "^8.2.2",
-    "eslint": "^8.56.0",
-    "eslint-plugin-vue": "^9.20.0",
-    "husky": "^8.0.3",
-    "lint-staged": "^15.2.0",
-    "prettier": "^3.2.4",
-    "typescript": "^5.3.3"
-  },
-  "engines": {
-    "node": ">=18.18.0"
-  },
-  "packageManager": "pnpm@8.15.4",
-  "lint-staged": {
-    "*.{vue,ts,tsx}": ["eslint --fix", "prettier --write"]
-  },
-  "pnpm": {
-    "overrides": {
-      "undici": "5.28.4"
-    }
+    "@vitejs/plugin-vue": "^5.0.0",
+    "typescript": "^5.3.3",
+    "vite": "^5.4.0",
+    "vue-tsc": "^2.0.0"
   }
 }
