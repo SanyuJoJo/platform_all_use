@@ -19,12 +19,13 @@ import (
 //
 // ★ 路径约定：
 //   - output_dir 非空：
-//       <output_dir>/<pubkey_sm3>.cert.pem
-//       <output_dir>/<pubkey_sm3>.key.pem     白盒密文（若 core 持有私钥）
+//     <output_dir>/<pubkey_sm3>.cert.pem
+//     <output_dir>/<pubkey_sm3>.key.pem     白盒密文（若 core 持有私钥）
 //   - output_dir 为空：data/certs/<cert_id>.pem（旧行为）
 //
 // ★ 不再生成 -chain.pem：
-//   证书校验依赖 <CertRoot>/ca/<domain>/ 下的 rehash 文件（<hash>.0）。
+//
+//	证书校验依赖 <CertRoot>/ca/<domain>/ 下的 rehash 文件（<hash>.0）。
 type CertSignHandler struct{}
 
 func (h *CertSignHandler) Execute(
@@ -221,7 +222,13 @@ func (h *CertSignHandler) Execute(
 	}
 
 	// ---------- 签发 ----------
-	digest := digestForCertAlg(ctx, client, caCertAbs)
+	// ★ 摘要：优先使用用户显式选择的 digest_algorithm，
+	//   未指定时按 CA 公钥算法自动选择（SM2→SM3，RSA/ECC→SHA256）。
+	digest, derr := pickDigestForCA(ctx, client, req.Params, caCertAbs, "")
+	if derr != nil {
+		return genErr("INVALID_PARAM", derr.Error())
+	}
+	digestID := resolvedDigestID(req.Params, digest)
 	days := intParam(req.Params, "validity_days", 365)
 	if _, err := client.Run(ctx, "x509", "-req", "-in", csrPath,
 		"-CA", caCertAbs, "-CAkey", caKeyAbs, "-CAcreateserial",
@@ -279,9 +286,10 @@ func (h *CertSignHandler) Execute(
 	audit.Log(req, "cert.sign", start, "SUCCESS", "")
 
 	data := map[string]interface{}{
-		"cert_id":   certID,
-		"cert_path": certRespPath,
-		"serial":    extractSerial(ctx, client, certAbs),
+		"cert_id":          certID,
+		"cert_path":        certRespPath,
+		"serial":           extractSerial(ctx, client, certAbs),
+		"digest_algorithm": digestID,
 	}
 	if useNewLayout {
 		data["pubkey_sm3"] = pubKeySM3

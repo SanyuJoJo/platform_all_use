@@ -19,9 +19,9 @@ import (
 //
 // ★ 证书路径改造：
 //   - output_dir 非空时走新规范：
-//       <output_dir>/<pubkey_sm3>.req.csr
+//     <output_dir>/<pubkey_sm3>.req.csr
 //   - output_dir 为空时保持旧行为：
-//       <CoreRoot>/data/csr/<csr_id>.csr
+//     <CoreRoot>/data/csr/<csr_id>.csr
 type CSRCreateHandler struct{}
 
 func (h *CSRCreateHandler) Execute(
@@ -124,8 +124,20 @@ func (h *CSRCreateHandler) Execute(
 		return genErr("CORE_EXEC_FAILED", err.Error())
 	}
 
-	if _, err := client.Run(ctx, "req", "-new", "-utf8", "-key", keyPath,
-		"-out", csrAbs, "-config", extPath); err != nil {
+	// ★ 摘要：优先使用用户显式选择的 digest_algorithm，
+	//   未指定时按密钥算法自动选择（SM2→SM3，RSA/ECC→SHA256）。
+	//   注意 openssl req -new 不指定 -md 时默认 SHA1，必须显式传入。
+	digest, derr := pickDigest(req.Params, alg)
+	if derr != nil {
+		return genErr("INVALID_PARAM", derr.Error())
+	}
+	digestID := resolvedDigestID(req.Params, digest)
+	reqArgs := []string{"req", "-new", "-utf8", "-key", keyPath,
+		"-out", csrAbs, "-config", extPath}
+	if digest != "" {
+		reqArgs = append(reqArgs, digest)
+	}
+	if _, err := client.Run(ctx, reqArgs...); err != nil {
 		return genErr("CORE_EXEC_FAILED", "csr: "+err.Error())
 	}
 	_ = os.Chmod(csrAbs, 0640)
@@ -151,9 +163,10 @@ func (h *CSRCreateHandler) Execute(
 	audit.Log(req, "csr.create", start, "SUCCESS", "")
 
 	data := map[string]interface{}{
-		"csr_id":   csrID,
-		"csr_path": csrRespPath,
-		"key_ref":  keyRef,
+		"csr_id":           csrID,
+		"csr_path":         csrRespPath,
+		"key_ref":          keyRef,
+		"digest_algorithm": digestID,
 	}
 	if useNewLayout {
 		data["pubkey_sm3"] = pubKeySM3

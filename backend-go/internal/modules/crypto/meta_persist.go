@@ -1,6 +1,8 @@
 package crypto
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -262,18 +264,52 @@ func getString(m map[string]interface{}, key string) string {
 }
 
 // getNestedString 从嵌套 map 取字符串，如 getNestedString(params, "subject", "CN")。
+//
+// ★ 兼容三种来源，缺一就会静默落空串：
+//  1. JSON / gin 反序列化：map[string]interface{}；
+//  2. 平台侧手工构造：map[string]string（见 CertService 等调用方）；
+//  3. 历史脏数据：值不是字符串（此时用 fmt.Sprint 兜底，避免整行丢失）。
+//
+// 内层 key 先按原样查，再按大写查（DN 属性 O/OU/CN 约定大写，
+// 但防御性调用方可能传小写；platform_resolver 里同样做了大小写兼容）。
 func getNestedString(m map[string]interface{}, outer, inner string) string {
 	if m == nil {
 		return ""
 	}
-	sub, ok := m[outer].(map[string]interface{})
-	if !ok {
+	raw, ok := m[outer]
+	if !ok || raw == nil {
 		return ""
 	}
-	if s, ok := sub[inner].(string); ok {
+
+	var v interface{}
+	var found bool
+	switch sub := raw.(type) {
+	case map[string]interface{}:
+		if v, found = sub[inner]; !found {
+			v, found = sub[strings.ToUpper(inner)]
+		}
+		if !found {
+			v, found = sub[strings.ToLower(inner)]
+		}
+	case map[string]string:
+		s, ok := sub[inner]
+		if !ok {
+			s, ok = sub[strings.ToUpper(inner)]
+		}
+		if !ok {
+			s, ok = sub[strings.ToLower(inner)]
+		}
+		v, found = s, ok
+	default:
+		return ""
+	}
+	if !found || v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
 		return s
 	}
-	return ""
+	return fmt.Sprint(v)
 }
 
 // getInt 从 map 取整数（JSON 解析后通常为 float64）。

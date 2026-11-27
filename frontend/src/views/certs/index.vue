@@ -53,7 +53,10 @@
         </t-form-item>
       </template>
       <t-form-item label="算法">
-        <t-select v-model="signForm.algorithm" :options="algStore.options" :loading="algStore.loading" placeholder="选择算法" />
+        <t-select v-model="signForm.algorithm" :options="algStore.options" :loading="algStore.loading" placeholder="选择算法" @change="syncDigestForAlgorithm" />
+      </t-form-item>
+      <t-form-item label="摘要算法">
+        <t-select v-model="signForm.digest_algorithm" :options="certDigestOptions" placeholder="选择摘要算法" style="width: 100%" />
       </t-form-item>
       <t-form-item label="使用者 DN">
         <div class="dn-row">
@@ -212,6 +215,13 @@ import {
 } from '@/utils/dn';
 import { useAlgorithmStore } from '@/store/algorithm';
 import { publicKeyLabel } from '@/utils/crypto-algorithms';
+import {
+  algorithmFamily,
+  defaultDigestFor,
+  defaultDigestForAlgorithm,
+  digestOptionsFor,
+  type DigestId,
+} from '@/utils/digest';
 
 const algStore = useAlgorithmStore();
 
@@ -250,8 +260,27 @@ const signForm = reactive({
   dnSeparator: DEFAULT_DN_SEPARATOR,
   san: '',
   cert_types: ['signature'] as CertTypeItem[],
+  /** 签名摘要算法（SM3 / SHA256 / SHA384 / SHA512），空则由后端自动选择 */
+  digest_algorithm: 'SM3' as DigestId | '',
   validity_days: 365,
 });
+
+/** 当前表单公钥算法所属算法族 */
+const certFormFamily = computed(() => algorithmFamily(signForm.algorithm, algStore.find(signForm.algorithm)));
+
+/** 摘要算法下拉选项 */
+const certDigestOptions = computed(() =>
+  digestOptionsFor(certFormFamily.value, signForm.algorithm, algStore.find(signForm.algorithm)).map((o) => ({
+    label: o.label,
+    value: o.value,
+  })),
+);
+
+/** 切换公钥算法时同步摘要默认值 */
+function syncDigestForAlgorithm() {
+  const next = defaultDigestForAlgorithm(signForm.algorithm, algStore.find(signForm.algorithm));
+  signForm.digest_algorithm = (next || (certFormFamily.value === 'PQC' ? signForm.algorithm : '')) as DigestId;
+}
 
 const importForm = reactive({
   cert_pem: '',
@@ -474,6 +503,7 @@ function openSign() {
   signForm.dnSeparator = DEFAULT_DN_SEPARATOR;
   signForm.san = '';
   signForm.cert_types = ['signature'];
+  syncDigestForAlgorithm();
   signForm.validity_days = 365;
   if (caList.value.length === 0) {
     fetchCAOptions();
@@ -504,6 +534,11 @@ async function handleSign() {
 
     const sanList = signForm.san.split(',').map((s) => s.trim()).filter(Boolean);
     if (sanList.length) payload.san = sanList;
+
+    // 签名摘要算法：PQC 算法无需摘要；普通证书按用户选择传递
+    if (certFormFamily.value !== 'PQC' && signForm.digest_algorithm) {
+      payload.digest_algorithm = signForm.digest_algorithm;
+    }
 
     if (signForm.ca_source === 'local') {
       if (!signForm.ca_id) {

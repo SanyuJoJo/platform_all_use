@@ -25,7 +25,10 @@
         <t-select v-model="form.domain" :options="domainOptions" :loading="domainLoading" placeholder="选择域" style="width: 100%" />
       </t-form-item>
       <t-form-item label="公钥算法">
-        <t-select v-model="form.algorithm" :options="algStore.options" :loading="algStore.loading" placeholder="选择算法" />
+        <t-select v-model="form.algorithm" :options="algStore.options" :loading="algStore.loading" placeholder="选择算法" style="width: 260px" @change="syncDigestForAlgorithm" />
+      </t-form-item>
+      <t-form-item label="摘要算法">
+        <t-select v-model="form.digest_algorithm" :options="digestOptions" placeholder="选择摘要算法" style="width: 260px" />
       </t-form-item>
       <t-form-item label="使用者 DN">
         <div class="dn-row">
@@ -192,6 +195,13 @@ import { useOperation } from '@/composables/useOperation';
 import { DEFAULT_DN_SEPARATOR, DN_HELP_KEYS, DN_HELP_EXAMPLE, validateDN, parseDN } from '@/utils/dn';
 import { useAlgorithmStore } from '@/store/algorithm';
 import { publicKeyLabel } from '@/utils/crypto-algorithms';
+import {
+  algorithmFamily,
+  defaultDigestFor,
+  defaultDigestForAlgorithm,
+  digestOptionsFor,
+  type DigestId,
+} from '@/utils/digest';
 
 const { run } = useOperation();
 const algStore = useAlgorithmStore();
@@ -222,10 +232,28 @@ const keyFileInputRef = ref<HTMLInputElement | null>(null);
 const form = reactive({
   domain: 'safe',
   algorithm: 'SM2',
+  digest_algorithm: 'SM3' as DigestId | '',
   dn: '',
   dnSeparator: DEFAULT_DN_SEPARATOR,
   validity_days: 3650,
 });
+
+/** 当前表单公钥算法所属算法族 */
+const formFamily = computed(() => algorithmFamily(form.algorithm, algStore.find(form.algorithm)));
+
+/** 摘要算法下拉选项（随算法族变化；PQC 由标签显示子算法本身） */
+const digestOptions = computed(() =>
+  digestOptionsFor(formFamily.value, form.algorithm, algStore.find(form.algorithm)).map((o) => ({
+    label: o.label,
+    value: o.value,
+  })),
+);
+
+/** 切换到某算法时同步摘要默认值 */
+function syncDigestForAlgorithm() {
+  const next = defaultDigestForAlgorithm(form.algorithm, algStore.find(form.algorithm));
+  form.digest_algorithm = (next || (formFamily.value === 'PQC' ? form.algorithm : '')) as DigestId;
+}
 
 const importForm = reactive({
   domain: 'safe',
@@ -369,6 +397,7 @@ function openCreate() {
   form.dn = '';
   form.dnSeparator = DEFAULT_DN_SEPARATOR;
   form.validity_days = 3650;
+  syncDigestForAlgorithm();
   if (domains.value.length === 0) fetchDomains();
   showCreate.value = true;
 }
@@ -381,13 +410,18 @@ async function handleCreate() {
   }
   submitting.value = true;
   try {
-    await run('ca.create', {
+    const payload: Record<string, unknown> = {
       domain: form.domain,
       algorithm: form.algorithm,
       subject: result.subject,
       validity_days: form.validity_days,
       key_protection: { cipher: 'AES-256-GCM' },
-    });
+    };
+    // 摘要算法：仅非 PQC 算法需要显式传递，PQC 由后端自动处理
+    if (formFamily.value !== 'PQC' && form.digest_algorithm) {
+      payload.digest_algorithm = form.digest_algorithm;
+    }
+    await run('ca.create', payload);
     showCreate.value = false;
     form.dn = '';
     form.dnSeparator = DEFAULT_DN_SEPARATOR;

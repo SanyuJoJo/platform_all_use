@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -207,9 +208,10 @@ func genErr(code, msg string) *envelope.Response {
 //	  "falcon512" / "Falcon-512" / "Falcon512" / "FALCON-512" / "falcon-512"
 //
 // ★ 关于 oqs-provider：
-//   Falcon 由 oqs-provider 提供，不在 default provider 中。
-//   首次调用可能失败，openssl.Client.Run 会自动注入
-//   `-provider oqsprovider -provider default` 重试（见 internal/openssl/client.go）。
+//
+//	Falcon 由 oqs-provider 提供，不在 default provider 中。
+//	首次调用可能失败，openssl.Client.Run 会自动注入
+//	`-provider oqsprovider -provider default` 重试（见 internal/openssl/client.go）。
 func genPrivateKey(ctx context.Context, alg string, params map[string]interface{}, out string) error {
 	client, err := openssl.NewClient()
 	if err != nil {
@@ -389,10 +391,58 @@ func normalizeFalconName(name string) string {
 // 摘要选择
 // -----------------------------------------------------------------------------
 
-// digestForAlgorithm 返回 openssl 摘要参数（按算法）。
+// Digest 摘要算法描述（平台 → openssl 参数）。
+type Digest struct {
+	// ID 平台规范 ID，如 SM3 / SHA256 / SHA1。
+	ID string
+	// Arg openssl 摘要参数，如 -sm3 / -sha256 / -sha1。
+	Arg string
+}
+
+// digestRegistry 支持的摘要算法（除 SM3 外均为国际摘要，按算法族约束可用性）。
 //
-// PQC 算法（ML-DSA / SLH-DSA / Falcon）的签名是"自带哈希"的，
-// 不需要 openssl 再指定摘要，因此返回空串。
+// ★ 默认行为：未显式指定 digest_algorithm 时，沿用"按算法自动选择"的逻辑
+// （SM2 → SM3，RSA/ECC → SHA256）。显式指定时严格按用户选择，不做自动切换，
+// 但会按公钥算法校验合法性（见 digest_policy.go：SM2 只能 SM3；PQC 不可指定）。
+var digestRegistry = map[string]Digest{
+	"SM3":    {ID: "SM3", Arg: "-sm3"},
+	"SHA1":   {ID: "SHA1", Arg: "-sha1"},
+	"SHA224": {ID: "SHA224", Arg: "-sha224"},
+	"SHA256": {ID: "SHA256", Arg: "-sha256"},
+	"SHA384": {ID: "SHA384", Arg: "-sha384"},
+	"SHA512": {ID: "SHA512", Arg: "-sha512"},
+}
+
+// defaultDigestID 显式指定摘要时使用的默认值。
+const defaultDigestID = "SM3"
+
+// AllowedDigestAlgorithms 返回平台允许使用的全部摘要算法 ID。
+// 具体某算法可用哪些由 allowedDigestsForAlgorithm 决定。
+func AllowedDigestAlgorithms() []string {
+	return []string{"SM3", "SHA1", "SHA224", "SHA256", "SHA384", "SHA512"}
+}
+
+// DefaultDigestForAlgorithm 返回某密钥算法对应的默认摘要 ID。
+func DefaultDigestForAlgorithm(alg string) string {
+	return defaultDigestForAlgorithm(alg)
+}
+
+// defaultDigestForAlgorithm 返回某密钥算法对应的默认摘要 ID。
+func defaultDigestForAlgorithm(alg string) string {
+	switch alg {
+	case "RSA", "ECC":
+		return "SHA256"
+	}
+	// SM2 / PQC（ML-DSA、SLH-DSA、Falcon）：SM2 默认 SM3；
+	// PQC 实际摘要由 openssl 子算法决定，这里仅用于展示兜底。
+	return defaultDigestID
+}
+
+// digestForAlgorithm 返回 openssl 摘要参数（按密钥算法的默认值）。
+//
+// ★ 必须始终显式返回一个 -xxx 参数：
+// openssl req -x509 / openssl req -new 在不指定 -md 时默认使用 SHA1，
+// 这正是历史上"界面申请到的证书摘要全是 SHA1"的根因。
 func digestForAlgorithm(alg string) string {
 	switch alg {
 	case "SM2":
@@ -400,9 +450,201 @@ func digestForAlgorithm(alg string) string {
 	case "RSA", "ECC":
 		return "-sha256"
 	case "ML-DSA", "SLH-DSA", "Falcon":
+		// PQC 算法签名自带哈希，不需要 openssl 再指定摘要
 		return ""
 	}
 	return "-sha256"
+}
+
+// NormalizeDigestID 把前端/调用方传入的摘要名归一化为规范 ID。
+//
+// 兼容：sm3 / SM3 / sha256 / SHA-256 / sha2-256 / sha1 / SHA-1 / md5 等写法。
+// 返回空串表示未指定或未识别。
+func NormalizeDigestID(raw string) string {
+	s := strings.ToUpper(strings.TrimSpace(raw))
+	s = strings.NewReplacer("-", "", "_", "", ".", "", " ", "").Replace(s)
+	switch s {
+	case "", "AUTO":
+		return ""
+	case "SM3":
+		return "SM3"
+	case "SHA1":
+		return "SHA1"
+	case "SHA224":
+		return "SHA224"
+	case "SHA256":
+		return "SHA256"
+	case "SHA384":
+		return "SHA384"
+	case "SHA512":
+		return "SHA512"
+	case "MD5":
+		return "MD5"
+	}
+	// 兼容 ECDSA-WITH-SHA256 / SHA256WITHRSAENCRYPTION / SM2-WITH-SM3 等写法
+	switch {
+	case strings.Contains(s, "SM3"):
+		return "SM3"
+	case strings.Contains(s, "SHA1"):
+		return "SHA1"
+	case strings.Contains(s, "SHA224"):
+		return "SHA224"
+	case strings.Contains(s, "SHA256"):
+		return "SHA256"
+	case strings.Contains(s, "SHA384"):
+		return "SHA384"
+	case strings.Contains(s, "SHA512"):
+		return "SHA512"
+	}
+	return ""
+}
+
+// ErrInvalidDigest 摘要参数错误（由调用方转换为 INVALID_PARAM）。
+var ErrInvalidDigest = errors.New("invalid digest_algorithm")
+
+// ResolveDigest 解析 digest_algorithm 参数，返回摘要描述符。
+//
+// 返回 ok=false 表示调用方未显式指定摘要，应沿用"按算法自动选择"的逻辑。
+// 返回 error 表示显式指定的摘要不可识别。
+func ResolveDigest(raw string) (Digest, bool, error) {
+	id := NormalizeDigestID(raw)
+	if id == "" {
+		return Digest{}, false, nil
+	}
+	if d, ok := digestRegistry[id]; ok {
+		return d, true, nil
+	}
+	return Digest{}, true, ErrInvalidDigest
+}
+
+// explicitDigestFromParams 从 params 中解析调用方显式指定的摘要 ID（未指定返回空串）。
+//
+// 兼容两个键：digest_algorithm（推荐）与 md（openssl 原生写法）。
+// 两个键：digest_algorithm（推荐）与 md（openssl 原生写法）。
+// 调用方若传了不可识别的值，会返回 error。
+func explicitDigestFromParams(params map[string]interface{}) (string, error) {
+	raw := strParam(params, "digest_algorithm")
+	if raw == "" {
+		raw = strParam(params, "md")
+	}
+	if d, ok, err := ResolveDigest(raw); ok || err != nil {
+		return d.ID, err
+	}
+	return "", nil
+}
+
+// digestArgFor 返回 digest ID 对应的 openssl 参数；空 ID 返回空串（PQC）。
+func digestArgFor(id string) string {
+	if id == "" {
+		return ""
+	}
+	if d, ok := digestRegistry[id]; ok {
+		return d.Arg
+	}
+	return ""
+}
+
+// pickDigest 摘要选择总入口（CA / CSR 自签）：
+//   - params 显式指定 digest_algorithm → 按公钥算法校验后严格使用；
+//   - 未指定 → 按密钥算法自动选择（SM2→SM3，RSA/ECC→SHA256，PQC 无需摘要）。
+//
+// 校验确保：SM2 只能 SM3；RSA/ECC 可选 SHA1/SHA224/SHA256/SHA384/SHA512；
+// PQC 不可指定（摘要即子算法本身）。
+func pickDigest(params map[string]interface{}, alg string) (string, error) {
+	explicit, err := explicitDigestFromParams(params)
+	if err != nil {
+		return "", err
+	}
+	if explicit != "" {
+		id, verr := ValidateDigestForAlgorithm(alg, explicit)
+		if verr != nil {
+			return "", verr
+		}
+		return digestArgFor(id), nil
+	}
+	// ★ 关键修复：RSA / ECC 的自签名证书过去不带 -md，openssl req -x509
+	//   会退化为 SHA1 默认摘要；这里显式给出 SHA256，保证"未指定也安全"。
+	//   PQC 则返回空串，由 openssl 使用子算法自带散列。
+	return digestForAlgorithm(alg), nil
+}
+
+// resolvedDigestID 返回本次实际使用的摘要规范 ID（写入审计 / 响应）。
+func resolvedDigestID(params map[string]interface{}, arg string) string {
+	if d, ok, err := ResolveDigest(strParam(params, "digest_algorithm")); ok && err == nil {
+		return d.ID
+	}
+	if d, ok, err := ResolveDigest(strParam(params, "md")); ok && err == nil {
+		return d.ID
+	}
+	switch arg {
+	case "-sm3":
+		return "SM3"
+	case "-sha256":
+		return "SHA256"
+	case "-sha384":
+		return "SHA384"
+	case "-sha512":
+		return "SHA512"
+	case "-sha1":
+		return "SHA1"
+	case "-sha224":
+		return "SHA224"
+	case "-md5":
+		return "MD5"
+	}
+	return ""
+}
+
+// pickDigestForCA 按 CA 证书选择摘要（签发终端证书 / 中间 CA 使用）。
+//
+// caFamily 为 CA 公钥算法族（SM2 / RSA / ECC / PQC），空则从证书探测。
+// params 未显式指定时，按 CA 公钥算法自动选择（SM2→SM3，RSA/ECC→SHA256）。
+// 显式指定时按 caFamily 校验合法性。
+func pickDigestForCA(
+	ctx context.Context, client *openssl.Client, params map[string]interface{},
+	caCert, caFamily string,
+) (string, error) {
+	explicit, err := explicitDigestFromParams(params)
+	if err != nil {
+		return "", err
+	}
+	if explicit != "" {
+		if caFamily == "" {
+			caFamily = digestFamilyOfCert(ctx, client, caCert)
+		}
+		id, verr := ValidateDigestForAlgorithm(caFamily, explicit)
+		if verr != nil {
+			return "", verr
+		}
+		return digestArgFor(id), nil
+	}
+	return digestForCertAlg(ctx, client, caCert), nil
+}
+
+// digestFamilyOfCert 探测 CA 证书公钥算法族。
+func digestFamilyOfCert(ctx context.Context, client *openssl.Client, caCert string) string {
+	out, err := client.Run(ctx, "x509", "-in", caCert, "-noout", "-text")
+	if err != nil {
+		return "RSA"
+	}
+	s := string(out)
+	if strings.Contains(s, "SM2") || strings.Contains(s, "sm2") ||
+		strings.Contains(s, "1.2.156.10197.1.301") {
+		return "SM2"
+	}
+	lower := strings.ToLower(s)
+	switch {
+	case strings.Contains(lower, "ml-dsa"), strings.Contains(lower, "mldsa"):
+		return "ML-DSA"
+	case strings.Contains(lower, "slh-dsa"), strings.Contains(lower, "slhdsa"):
+		return "SLH-DSA"
+	case strings.Contains(lower, "falcon"):
+		return "Falcon"
+	case strings.Contains(lower, "ecpublickey"), strings.Contains(lower, "prime256v1"),
+		strings.Contains(lower, "secp256r1"), strings.Contains(lower, "ecdsa"):
+		return "ECC"
+	}
+	return "RSA"
 }
 
 // digestForCertAlg 根据 CA 证书公钥算法选摘要。

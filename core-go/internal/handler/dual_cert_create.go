@@ -18,10 +18,10 @@ import (
 // DualCertCreateHandler dual_cert.create 国密双证签发。
 //
 // ★ 正确流程：
-//   1. 客户本地生成 CSR，私钥 s_pri 永不上传（签名私钥归客户）；
-//   2. core 用 CSR 的公钥 s_pub 签发【签名证书】；
-//   3. core 内部生成加密密钥对 e_pri / e_pub，用 e_pub 签发【加密证书】；
-//   4. 返回 sign_cert_path / enc_cert_path / enc_key_ref。
+//  1. 客户本地生成 CSR，私钥 s_pri 永不上传（签名私钥归客户）；
+//  2. core 用 CSR 的公钥 s_pub 签发【签名证书】；
+//  3. core 内部生成加密密钥对 e_pri / e_pub，用 e_pub 签发【加密证书】；
+//  4. 返回 sign_cert_path / enc_cert_path / enc_key_ref。
 //
 // ★ CA 来源两种模式：
 //   - local  ：ca_key_ref 非空（core keystore）
@@ -29,9 +29,9 @@ import (
 //
 // ★ 路径约定（无 -chain.pem）：
 //   - sign_output_dir 非空：
-//       <sign_output_dir>/<sign_pubkey_sm3>.cert.pem
+//     <sign_output_dir>/<sign_pubkey_sm3>.cert.pem
 //   - enc_output_dir 非空：
-//       <enc_output_dir>/<enc_pubkey_sm3>.cert.pem
+//     <enc_output_dir>/<enc_pubkey_sm3>.cert.pem
 type DualCertCreateHandler struct{}
 
 func (h *DualCertCreateHandler) Execute(
@@ -134,7 +134,8 @@ func (h *DualCertCreateHandler) Execute(
 		return genErr("CORE_EXEC_FAILED", err.Error())
 	}
 
-	digest := digestForCertAlg(ctx, client, caCertAbs)
+	// ★ 摘要：双证必须 SM2+SM3，忽略用户传入的 digest_algorithm，强制使用 SM3。
+	digest := digestForAlgorithm(signAlg)
 
 	// ========================================================================
 	// 步骤 0：确定使用者 DN
@@ -367,6 +368,7 @@ func (h *DualCertCreateHandler) Execute(
 		data["enc_pubkey_sm3"] = encPubSM3
 	}
 	data["output_layout"] = outputLayout
+	data["digest_algorithm"] = "SM3" // 双证固定 SM3，忽略调用方传入值
 
 	return envelope.NewSuccess(data)
 }
@@ -384,7 +386,8 @@ func (h *DualCertCreateHandler) Execute(
 //     用于旧数据或 backend-go 拷入 core/tmp/ 的临时文件。
 //
 // 说明：只做"是否存在于预期位置"的判断；不强制所有输入都在受控目录下，
-//      因为新规范的证书/CSR 就在 <CertRoot> 下，不在 coreRoot 内。
+//
+//	因为新规范的证书/CSR 就在 <CertRoot> 下，不在 coreRoot 内。
 func resolveInputPath(p string) (string, error) {
 	p = strings.TrimSpace(p)
 	if p == "" {

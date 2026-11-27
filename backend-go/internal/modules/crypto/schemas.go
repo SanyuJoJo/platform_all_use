@@ -130,13 +130,16 @@ type SignCertRequest struct {
 	CSRKeyPassword string `json:"csr_key_password,omitempty"`
 
 	// ---------- 证书参数 ----------
-	Algorithm    string                 `json:"algorithm,omitempty"`
-	KeyParams    map[string]interface{} `json:"key_params,omitempty"`
-	Subject      map[string]string      `json:"subject,omitempty"`
-	SAN          []string               `json:"san,omitempty"`
-	CertTypes    []string               `json:"cert_types,omitempty"`
-	ValidityDays int                    `json:"validity_days"`
-	CertMode     string                 `json:"cert_mode,omitempty"` // normal（默认） | dual
+	Algorithm string                 `json:"algorithm,omitempty"`
+	KeyParams map[string]interface{} `json:"key_params,omitempty"`
+	// ★ DigestAlgorithm 签名摘要算法（SM3 / SHA256 / SHA384 / SHA512 等）。
+	//   为空时按 CA 公钥算法自动选择（SM2 → SM3，RSA/ECC → SHA256）。
+	DigestAlgorithm string            `json:"digest_algorithm,omitempty"`
+	Subject         map[string]string `json:"subject,omitempty"`
+	SAN             []string          `json:"san,omitempty"`
+	CertTypes       []string          `json:"cert_types,omitempty"`
+	ValidityDays    int               `json:"validity_days"`
+	CertMode        string            `json:"cert_mode,omitempty"` // normal（默认） | dual
 
 	// ---------- 私钥回传 ----------
 	ReturnKey         bool   `json:"return_key,omitempty"`
@@ -235,7 +238,8 @@ type SignCertResult struct {
 //   - mode=manual ：客户上传自己的 CSR 私钥 s_pri，Server B 临时解密。
 //
 // ★ 去掉 binding:"required"，允许不同模式下选择性传参；
-//   实际校验在 QueryEnvelope 方法内完成，错误提示更友好。
+//
+//	实际校验在 QueryEnvelope 方法内完成，错误提示更友好。
 type QueryEnvelopeRequest struct {
 	Format            string `json:"format"`             // pkcs10 | cfca
 	Mode              string `json:"mode,omitempty"`     // cert | manual，默认 cert

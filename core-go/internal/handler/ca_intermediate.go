@@ -18,8 +18,8 @@ import (
 //
 // ★ 路径约定（无 chain）：
 //   - output_dir 非空：
-//       <output_dir>/<pubkey_sm3>.cert.pem
-//       （CA 私钥走 keystore，返回 key_ref）
+//     <output_dir>/<pubkey_sm3>.cert.pem
+//     （CA 私钥走 keystore，返回 key_ref）
 //   - output_dir 为空：data/ca/<ca_id>.pem
 type CAIntermediateHandler struct{}
 
@@ -145,7 +145,12 @@ func (h *CAIntermediateHandler) Execute(
 	}
 
 	// ---------- 签发 ----------
-	digest := digestForCertAlg(ctx, client, parentCertAbs)
+	// ★ 摘要：优先使用用户显式选择的 digest_algorithm
+	digest, derr := pickDigestForCA(ctx, client, req.Params, parentCertAbs, "")
+	if derr != nil {
+		return genErr("INVALID_PARAM", derr.Error())
+	}
+	digestID := resolvedDigestID(req.Params, digest)
 
 	if _, err := client.Run(ctx, "x509", "-req", "-in", csrPath,
 		"-CA", parentCertAbs, "-CAkey", parentKeyAbs, "-CAcreateserial",
@@ -188,10 +193,11 @@ func (h *CAIntermediateHandler) Execute(
 	audit.Log(req, "ca.intermediate.create", start, "SUCCESS", "")
 
 	data := map[string]interface{}{
-		"ca_id":     caID,
-		"cert_path": certRespPath,
-		"key_ref":   keyRef,
-		"serial":    serial,
+		"ca_id":            caID,
+		"cert_path":        certRespPath,
+		"key_ref":          keyRef,
+		"serial":           serial,
+		"digest_algorithm": digestID,
 	}
 	if useNewLayout {
 		data["pubkey_sm3"] = pubKeySM3

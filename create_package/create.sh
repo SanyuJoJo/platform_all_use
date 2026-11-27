@@ -242,6 +242,10 @@ cp "$PAYLOAD_DIR/core.tar.gz" "$STAGING_DIR/bin/core.tar.gz"
 cp "$PAYLOAD_DIR/video.tar.gz" "$STAGING_DIR/bin/video.tar.gz"
 cp "$PAYLOAD_DIR/nshttps_gm.tar.gz" "$STAGING_DIR/bin/nshttps_gm.tar.gz"
 cp -R "$TEMPLATES_DIR/." "$STAGING_DIR/templates/"
+# v1.9：升级脚本（apply/rollback/preflight）随安装包分发
+if [ -d "$SCRIPT_DIR/upgrade" ]; then
+  cp -R "$SCRIPT_DIR/upgrade" "$STAGING_DIR/upgrade"
+fi
 chmod +x "$STAGING_DIR/install.sh"
 find "$STAGING_DIR/templates" -type f -name "*.sh" -exec chmod +x {} \;
 echo "$VERSION" > "$STAGING_DIR/VERSION"

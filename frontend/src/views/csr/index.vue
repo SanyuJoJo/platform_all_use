@@ -25,7 +25,10 @@
   <t-dialog :visible="showApply" :header="'申请 P10'" :confirm-btn="null" :cancel-btn="null" :width="720" @close="showApply = false">
     <t-form :data="applyForm" label-align="left" :label-width="110">
       <t-form-item label="算法">
-        <t-select v-model="applyForm.algorithm" :options="algStore.options" :loading="algStore.loading" placeholder="选择算法" />
+        <t-select v-model="applyForm.algorithm" :options="algStore.options" :loading="algStore.loading" placeholder="选择算法" @change="syncApplyDigest" />
+      </t-form-item>
+      <t-form-item label="摘要算法">
+        <t-select v-model="applyForm.digest_algorithm" :options="applyDigestOptions" placeholder="选择摘要算法" style="width: 260px" />
       </t-form-item>
       <t-form-item label="P10 类型">
         <t-radio-group v-model="applyForm.p10_format">
@@ -228,6 +231,9 @@
           <t-input v-model="signForm.ca_key_password" type="password" />
         </t-form-item>
       </template>
+      <t-form-item v-if="signForm.cert_mode === 'normal'" label="摘要算法">
+        <t-select v-model="signForm.digest_algorithm" :options="signDigestOptions" placeholder="留空则按 CA 类型自动选择" style="width: 100%" />
+      </t-form-item>
       <t-form-item label="有效期天数">
         <t-input-number v-model="signForm.validity_days" :min="1" />
       </t-form-item>
@@ -420,6 +426,13 @@ import {
   validateDN,
 } from '@/utils/dn';
 import { useAlgorithmStore } from '@/store/algorithm';
+import {
+  algorithmFamily,
+  defaultDigestFor,
+  defaultDigestForAlgorithm,
+  digestOptionsFor,
+  type DigestId,
+} from '@/utils/digest';
 
 const algStore = useAlgorithmStore();
 
@@ -456,10 +469,26 @@ const pagination = reactive({
 const applyForm = reactive({
   algorithm: 'SM2',
   p10_format: 'pkcs10' as P10Format,
+  /** 签名摘要算法（SM3 / SHA256 / SHA384 / SHA512） */
+  digest_algorithm: 'SM3' as DigestId | '',
   dn: '',
   dnSeparator: DEFAULT_DN_SEPARATOR,
   san: '',
 });
+
+/** 申请 P10 表单：算法族 / 摘要选项 / 提示 */
+const applyFamily = computed(() => algorithmFamily(applyForm.algorithm, algStore.find(applyForm.algorithm)));
+const applyDigestOptions = computed(() =>
+  digestOptionsFor(applyFamily.value, applyForm.algorithm, algStore.find(applyForm.algorithm)).map((o) => ({
+    label: o.label,
+    value: o.value,
+  })),
+);
+
+/** 切换公钥算法时同步摘要默认值 */
+function syncApplyDigest() {
+  applyForm.digest_algorithm = defaultDigestForAlgorithm(applyForm.algorithm, algStore.find(applyForm.algorithm));
+}
 
 const dnPreview = computed(() => parseDN(applyForm.dn, applyForm.dnSeparator));
 const applyDisabled = computed(
@@ -494,8 +523,31 @@ const signForm = reactive({
   ca_cert_pem: '',
   ca_key_pem: '',
   ca_key_password: '',
+  /** 签名摘要算法（普通证书生效）：空则由后端按 CA 公钥算法自动选择 */
+  digest_algorithm: '' as DigestId | '',
   validity_days: 365,
 });
+
+/** 签发表单：按所选本地 CA 的公钥算法给出可选摘要 */
+const signFamily = computed(() => {
+  const ca = caList.value.find((c: any) => c.ca_id === signForm.ca_id) as any;
+  const alg = ca?.algorithm || ca?.public_key_algorithm || '';
+  return algorithmFamily(alg, algStore.find(alg));
+});
+
+/** 所选 CA 的算法 ID（用于展示后量子算法自带的摘要名） */
+const signCaAlgorithm = computed(() => {
+  const ca = caList.value.find((c: any) => c.ca_id === signForm.ca_id) as any;
+  return (ca?.algorithm || ca?.public_key_algorithm || '') as string;
+});
+
+const signDigestOptions = computed(() => [
+  { label: '自动（按 CA 公钥算法选择）', value: '' },
+  ...digestOptionsFor(signFamily.value, signCaAlgorithm.value).map((o) => ({
+    label: o.label,
+    value: o.value,
+  })),
+]);
 
 const signDnPreview = computed(() => parseDN(signForm.dn, signForm.dnSeparator));
 
@@ -661,6 +713,7 @@ function handlePageChange(info: PageInfo) {
 function openApply() {
   applyForm.algorithm = 'SM2';
   applyForm.p10_format = 'pkcs10';
+  applyForm.digest_algorithm = 'SM3';
   applyForm.dn = '';
   applyForm.dnSeparator = DEFAULT_DN_SEPARATOR;
   applyForm.san = '';
@@ -681,6 +734,10 @@ async function handleApply() {
       key_source: 'generate',
       p10_format: applyForm.p10_format,
     };
+    // 签名摘要算法：PQC 无需摘要；CFCA 格式固定 SM3
+    if (applyFamily.value !== 'PQC' && applyForm.digest_algorithm) {
+      params.digest_algorithm = applyForm.digest_algorithm;
+    }
     const sanList = applyForm.san.split(',').map((s) => s.trim()).filter(Boolean);
     if (sanList.length) params.san = sanList;
 
@@ -853,6 +910,7 @@ function openSignCert() {
   signForm.ca_cert_pem = '';
   signForm.ca_key_pem = '';
   signForm.ca_key_password = '';
+  signForm.digest_algorithm = '';
   signForm.validity_days = 365;
   if (caList.value.length === 0) fetchCAOptions();
   showSignCert.value = true;
@@ -935,6 +993,13 @@ async function handleSignCert() {
       payload.cert_types = [...signForm.cert_types];
     } else {
       payload.algorithm = 'SM2';
+    }
+    // ★ 签名摘要算法：仅普通证书可指定；国密双证固定 SM3，不传
+    if (signForm.ca_source === 'local' && signForm.cert_mode === 'normal') {
+      // PQC 的摘要由子算法自带，后端不接受显式值，这里不传
+      if (signFamily.value !== 'PQC' && signForm.digest_algorithm) {
+        payload.digest_algorithm = signForm.digest_algorithm;
+      }
     }
     if (signForm.ca_source === 'local') {
       payload.ca_id = signForm.ca_id;

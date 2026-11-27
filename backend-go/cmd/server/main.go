@@ -34,6 +34,7 @@ import (
 	"backend-go/internal/modules/route_perm"
 	"backend-go/internal/modules/ssl_proxy"
 	"backend-go/internal/modules/tcps_proxy"
+	"backend-go/internal/modules/upgrade"
 )
 
 func main() {
@@ -283,6 +284,13 @@ func main() {
 
 	routePermHandler := route_perm.NewHandler(routePermSvc)
 	routePermHandler.RegisterRoutes(protected)
+
+	// ========================================================================
+	// 9.5 升级模块
+	// ========================================================================
+	upgradeSvc := upgrade.NewService(cfg, "")
+	upgradeHandler := upgrade.NewHandler(upgradeSvc)
+	upgradeHandler.RegisterRoutes(protected)
 
 	// ========================================================================
 	// 10. 前端静态资源

@@ -25,11 +25,16 @@ if [ -f "$PID_FILE" ]; then
   fi
   rm -f "$PID_FILE"
 fi
-[ -f "$ENV_FILE" ] || { echo "缺少配置文件：$ENV_FILE"; exit 1; }
-set -a
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-set +a
+# 配置文件（.env）为可选：生产环境由 start.sh 注入为环境变量，
+# 测试环境可直接用外部环境变量，无需 .env。
+# 若存在则 source（ENV_FILE 已是 install.sh 生成的绝对路径，直接 source 即可，
+# 与当前工作目录无关）。
+if [ -f "$ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
 # ★ v1.1（P1-03）：兼容 Python 版 HOST / PORT 别名
 SERVER_HOST="${SERVER_HOST:-${HOST:-@HOST@}}"
 SERVER_PORT="${SERVER_PORT:-${PORT:-@PORT@}}"
@@ -38,6 +43,14 @@ SERVER_PORT="${SERVER_PORT:-${PORT:-@PORT@}}"
 #   nginx / 铜锁 openssl 子进程在自定义安装目录下找到动态库。
 CORE_ROOT="${CORE_ROOT:-$INSTALL_DIR/core}"
 export CORE_ROOT
+# ★ v1.9：无论是否有 .env，都把本次安装根作为环境变量注入，
+#   让后端在不依赖 .env 时也能读到正确的路径，避免静默回退到默认根。
+export PLATS_INSTALL_ROOT="${PLATS_INSTALL_ROOT:-$INSTALL_DIR}"
+export PLATS_DEPLOY_ROOT="${PLATS_DEPLOY_ROOT:-$INSTALL_DIR}"
+export PLATS_CORE_GO_BIN="${PLATS_CORE_GO_BIN:-$INSTALL_DIR/core/bin/core}"
+export FRONTEND_DEPLOY_DIR="${FRONTEND_DEPLOY_DIR:-$INSTALL_DIR/frontend/deploy}"
+export DATABASE_URL="${DATABASE_URL:-sqlite+aiosqlite:///$INSTALL_DIR/data/app.db}"
+export MODULE_UPLOAD_DIR="${MODULE_UPLOAD_DIR:-$INSTALL_DIR/uploads/modules}"
 if [ -d "$CORE_ROOT/libs/tongsuo/libs" ]; then
   if [ -n "${LD_LIBRARY_PATH:-}" ]; then
     export LD_LIBRARY_PATH="$CORE_ROOT/libs/tongsuo/libs:$LD_LIBRARY_PATH"

@@ -181,6 +181,14 @@ var seedRoutePermissions = []models.RoutePermission{
 
 	// 密码操作（后端 API）
 	{HTTPMethod: "POST", RoutePattern: "/api/v1/crypto/operations/:operation_id", PermissionCode: "crypto:operation:execute", ModuleID: "crypto", Description: "执行密码操作"},
+
+	// =====================================================================
+	// 升级模块（v1.9）
+	// =====================================================================
+	{HTTPMethod: "GET", RoutePattern: "/api/v1/upgrade/status", PermissionCode: "upgrade:package:view", ModuleID: "upgrade", Description: "升级状态/提醒"},
+	{HTTPMethod: "GET", RoutePattern: "/api/v1/upgrade/packages", PermissionCode: "upgrade:package:view", ModuleID: "upgrade", Description: "升级包列表"},
+	{HTTPMethod: "POST", RoutePattern: "/api/v1/upgrade/run", PermissionCode: "upgrade:package:run", ModuleID: "upgrade", Description: "执行升级"},
+	{HTTPMethod: "POST", RoutePattern: "/api/v1/upgrade/rollback", PermissionCode: "upgrade:package:rollback", ModuleID: "upgrade", Description: "回退升级"},
 }
 
 // EnsureSeedData 幂等地写入路由权限种子数据。

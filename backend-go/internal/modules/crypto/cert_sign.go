@@ -68,6 +68,9 @@ func (s *CertService) Sign(
 		"validity_days": req.ValidityDays,
 		"algorithm":     req.Algorithm,
 	}
+	if strings.TrimSpace(req.DigestAlgorithm) != "" {
+		params["digest_algorithm"] = strings.TrimSpace(req.DigestAlgorithm)
+	}
 	// ★ 归一化：兼容旧前端残留的 server / client
 	if len(req.CertTypes) > 0 {
 		normalized := normalizeCertTypes(req.CertTypes)

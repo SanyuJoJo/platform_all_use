@@ -77,10 +77,31 @@ if [ "$(id -u)" != "0" ] && [ "$INSTALL_DIR" = "/opt/plats_tool" ]; then
   INSTALL_DIR="$HOME/plats_tool"
   log "非 root 用户，安装目录回退为：$INSTALL_DIR"
 fi
-# ---------- v1.3 P1-FE-02：强制绝对路径 ----------
+# ---------- v1.9：安装根解析（单一目录） ----------
+# 升级/重装必须沿用 state.json 里已记录的安装根，绝不生成第二套。
+# 显式 --install-dir 若与已有安装根不同 → 直接报错退出。
 mkdir -p "$INSTALL_DIR"
 if ! INSTALL_DIR="$(cd "$INSTALL_DIR" && pwd)"; then
   fail "无法解析 INSTALL_DIR 绝对路径：$INSTALL_DIR"
+fi
+STATE_FILE="$INSTALL_DIR/state.json"
+PRIOR_INSTALL_ROOT=""
+if [ -f "$STATE_FILE" ]; then
+  PRIOR_INSTALL_ROOT="$(grep -E '"install_root"' "$STATE_FILE" | head -1 \
+    | sed -E 's/.*"install_root"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/' || true)"
+  if [ -z "$PRIOR_INSTALL_ROOT" ]; then
+    warn "$STATE_FILE 存在但未记录 install_root，将按本次 $INSTALL_DIR 处理"
+  elif [ -n "$PRIOR_INSTALL_ROOT" ] && [ "$PRIOR_INSTALL_ROOT" != "$INSTALL_DIR" ]; then
+    fail "检测到已有安装根 $PRIOR_INSTALL_ROOT，与 --install-dir $INSTALL_DIR 不一致。
+  升级必须沿用已有安装根：请去掉 --install-dir，或改为 --install-dir $PRIOR_INSTALL_ROOT"
+  else
+    log "沿用已有安装根：$INSTALL_DIR"
+  fi
+fi
+# v1.9：版本号提前解析，供 state.json 与安装摘要使用。
+INSTALLED_VERSION="unknown"
+if [ -f "$VERSION_FILE" ]; then
+  INSTALLED_VERSION="$(cat "$VERSION_FILE" | tr -d '[:space:]')"
 fi
 log "安装目录（绝对路径）：$INSTALL_DIR"
 BACKEND_DIR="$INSTALL_DIR/backend"
@@ -500,7 +521,27 @@ for f in start.sh stop.sh restart.sh status.sh healthcheck.sh uninstall.sh; do
   replace_vars "$TEMPLATES_DIR/$f" > "$BIN_DIR/$f"
   chmod +x "$BIN_DIR/$f"
 done
-# ---------- systemd ----------
+# ---------- 升级脚本（v1.9：动作尽量小 + 可回退） ----------
+if [ -d "$SCRIPT_DIR/upgrade" ]; then
+  mkdir -p "$BIN_DIR/upgrade"
+  cp -f "$SCRIPT_DIR"/upgrade/*.sh "$BIN_DIR/upgrade/" 2>/dev/null || true
+  chmod +x "$BIN_DIR"/upgrade/*.sh 2>/dev/null || true
+  log "已安装升级脚本：$BIN_DIR/upgrade/"
+fi
+# ---------- v1.9：写入 state.json（记录唯一安装根，供升级沿用） ----------
+cat > "$STATE_FILE" <<EOF
+{
+  "name": "platform-product",
+  "install_root": "$INSTALL_DIR",
+  "version": "${INSTALLED_VERSION:-unknown}",
+  "installed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "last_upgrade_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+EOF
+chmod 600 "$STATE_FILE" 2>/dev/null || true
+# ---------- 自启服务（v1.9：默认 init.d，不再依赖 systemd） ----------
+# 默认：安装 /etc/init.d/platform-backend，并注册开机自启。
+# 若显式传 --systemd（需 root），才改用 systemd（兼容尚未迁移的环境）。
 RUN_USER=""
 RUN_GROUP=""
 if [ "$USE_SYSTEMD" -eq 1 ]; then
@@ -523,6 +564,35 @@ if [ "$USE_SYSTEMD" -eq 1 ]; then
   systemctl daemon-reload
   systemctl enable platform-backend
   log "已安装 systemd 服务：platform-backend（运行用户：$RUN_USER:$RUN_GROUP）"
+else
+  # init.d（默认）
+  if [ "$(id -u)" != "0" ]; then
+    log "非 root，跳过安装 /etc/init.d/platform-backend（可用 sudo 安装或直接使用 $BIN_DIR/start.sh）"
+  else
+    replace_vars "$TEMPLATES_DIR/platform-backend.initd" > /etc/init.d/platform-backend
+    chmod 755 /etc/init.d/platform-backend
+    # 注册开机自启（Debian/Ubuntu: update-rc.d；RHEL/CentOS: chkconfig）
+    if command -v update-rc.d >/dev/null 2>&1; then
+      update-rc.d platform-backend defaults >/dev/null 2>&1 || true
+      log "已注册 init.d 自启（update-rc.d）"
+    elif command -v chkconfig >/dev/null 2>&1; then
+      chkconfig --add platform-backend >/dev/null 2>&1 || true
+      chkconfig platform-backend on >/dev/null 2>&1 || true
+      log "已注册 init.d 自启（chkconfig）"
+    else
+      # 兜底：手动软链到 rc3.d/rc5.d
+      for lv in 2 3 4 5; do
+        mkdir -p "/etc/rc${lv}.d"
+        ln -sf /etc/init.d/platform-backend "/etc/rc${lv}.d/S90platform-backend" 2>/dev/null || true
+      done
+      log "已注册 init.d 自启（rc*.d 软链兜底）"
+    fi
+    # 若历史 systemd unit 存在，仅 disable 保留（避免双启），不删除
+    if [ -f "/etc/systemd/system/platform-backend.service" ]; then
+      systemctl disable platform-backend >/dev/null 2>&1 || true
+      log "已 disable 历史 systemd unit（保留文件，可确认后手动删除）"
+    fi
+  fi
 fi
 # ---------- 统一入口代理 nshttps_gm（v1.7） ----------
 NSG_DIR="$INSTALL_DIR/nshttps_gm"
@@ -577,11 +647,6 @@ if [ "$START_SERVICE" -eq 1 ]; then
   fi
 else
   log "已跳过启动。可执行：$BIN_DIR/start.sh"
-fi
-# ---------- 版本号 ----------
-INSTALLED_VERSION="unknown"
-if [ -f "$VERSION_FILE" ]; then
-  INSTALLED_VERSION="$(cat "$VERSION_FILE" | tr -d '[:space:]')"
 fi
 # ---------- 安装摘要（v1.3 P2-FE-09 增强） ----------
 FRONTEND_MAIN_STATUS="❌ 缺失"

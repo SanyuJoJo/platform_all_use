@@ -85,6 +85,13 @@ export const cryptoApi = {
       '/crypto/algorithms',
     );
   },
+  listDigests() {
+    return request.get<{
+      all: string[];
+      by_family: Record<string, string[]>;
+      weak: string[];
+    }>('/crypto/digests');
+  },
 
   listCas(params?: Record<string, unknown>) {
     return request.get('/cas', { params });

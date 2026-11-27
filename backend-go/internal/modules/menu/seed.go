@@ -101,15 +101,15 @@ type seedMenuEntry struct {
 //     主应用按 `/{microApp}/{path}` 拼接为浏览器 URL；
 //     子应用 createWebHistory('/{microApp}') 会剥离前缀得到 {path}；
 //     举例：
-//       license     : path=/licenses  → 浏览器 /license/licenses
-//       media:list  : path=/media     → 浏览器 /media/media
-//       media:live  : path=/live      → 浏览器 /media/live
+//     license     : path=/licenses  → 浏览器 /license/licenses
+//     media:list  : path=/media     → 浏览器 /media/media
+//     media:live  : path=/live      → 浏览器 /media/live
 //   - C 菜单 component：相对子应用 src/views/ 的路径，**不带 views/ 前缀**，
 //     子应用 resolveView 会自行拼 `../views/${component}.vue`；
 //     举例：
-//       license     : license/index   → ../views/license/index.vue
-//       media:list  : media/index     → ../views/media/index.vue
-//       media:live  : live/index      → ../views/live/index.vue
+//     license     : license/index   → ../views/license/index.vue
+//     media:list  : media/index     → ../views/media/index.vue
+//     media:live  : live/index      → ../views/live/index.vue
 //   - F 按钮：path 留空（不参与路由），perms 为按钮权限码；
 //   - 每个节点用「自身所属模块的 microApp」，不是父节点的。
 var seedMenuEntries = []seedMenuEntry{
@@ -173,6 +173,24 @@ var seedMenuEntries = []seedMenuEntry{
 		OrderNum: 4, Path: "/system/menus", Component: "system/menu/index",
 		MenuType: "C", Icon: "Menu", ModuleID: "auth",
 		Perms: "auth:menu:list",
+	}},
+
+	// 系统升级（v1.9）
+	{ParentChain: "系统管理", Menu: models.Menu{
+		MenuName: "系统升级", Name: "SystemUpgrade", MicroApp: "auth",
+		OrderNum: 5, Path: "/system/upgrade", Component: "system/upgrade/index",
+		MenuType: "C", Icon: "SystemUpgrade", ModuleID: "upgrade",
+		Perms: "upgrade:package:view",
+	}},
+	{ParentChain: "系统管理/系统升级", Menu: models.Menu{
+		MenuName: "执行升级", Name: "UpgradeRun", MicroApp: "auth",
+		OrderNum: 1, MenuType: "F", ModuleID: "upgrade",
+		Perms: "upgrade:package:run",
+	}},
+	{ParentChain: "系统管理/系统升级", Menu: models.Menu{
+		MenuName: "回退升级", Name: "UpgradeRollback", MicroApp: "auth",
+		OrderNum: 2, MenuType: "F", ModuleID: "upgrade",
+		Perms: "upgrade:package:rollback",
 	}},
 
 	// ========================================================================

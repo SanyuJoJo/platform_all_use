@@ -80,12 +80,32 @@ export type CertTypeItem = 'signature' | 'encryption';
 
 export type P10Format = 'pkcs10' | 'cfca';
 
+/**
+ * 摘要（散列）算法。
+ *
+ * - SM3：国密摘要，SM2 专用（SM2 密钥位数 256，仅支持 SM3）；
+ * - SHA1 / SHA224 / SHA256 / SHA384 / SHA512：国际摘要，RSA / ECC 可用；
+ * - 后量子（ML-DSA / SLH-DSA / Falcon）：摘要由子算法自带，不可另行指定，
+ *   例如 slh-dsa-shake-256s 的摘要即为 "slh-dsa-shake-256s"。
+ *
+ * 不传（undefined）时由后端按密钥算法自动选择：SM2 → SM3，RSA/ECC → SHA256。
+ */
+export type DigestAlgorithm =
+  | 'SM3'
+  | 'SHA1'
+  | 'SHA224'
+  | 'SHA256'
+  | 'SHA384'
+  | 'SHA512';
+
 export interface CSRCreateParams {
   algorithm?: string;
   subject: Record<string, string>;
   key_source?: 'generate';
   p10_format?: P10Format;
   san?: string[];
+  /** ★ 摘要算法（签名算法），仅对 RSA / ECC / SM2 生效 */
+  digest_algorithm?: DigestAlgorithm | string;
 }
 
 export interface CSRCreateResult {
@@ -115,6 +135,8 @@ export interface SignCertParams {
   validity_days: number;
   cert_mode?: 'normal' | 'dual';
   domain?: string;
+  /** ★ 摘要算法（签名算法），仅对普通证书生效：SM2→SM3，RSA/ECC→SHA256 */
+  digest_algorithm?: DigestAlgorithm | string;
   return_key?: boolean;
   key_export_password?: string;
 }
@@ -166,6 +188,8 @@ export interface CFCASignParams {
   san?: string[];
   validity_days?: number;
   domain?: string;
+  // 摘要算法（签名算法），CFCA 格式固定为 SM3
+  digest_algorithm?: DigestAlgorithm | string;
   return_sign_key?: boolean;
   key_export_password?: string;
 }

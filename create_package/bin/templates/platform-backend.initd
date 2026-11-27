@@ -1,0 +1,92 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          platform-backend
+# Required-Start:    $remote_fs $network $named
+# Required-Stop:     $remote_fs $network
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Platform Backend Service
+# Description:       Crypto/SSL platform backend (Go static binary)
+### END INIT INFO
+
+INSTALL_DIR="@INSTALL_DIR@"
+BIN_DIR="$INSTALL_DIR/bin"
+PID_FILE="$INSTALL_DIR/run/backend.pid"
+SERVICE_NAME="platform-backend"
+
+# 必须存在受控脚本，否则按 LSB 约定退出（5 = program not installed）。
+[ -x "$BIN_DIR/start.sh" ] || exit 5
+[ -x "$BIN_DIR/stop.sh" ]  || exit 5
+
+is_running() {
+  if [ -f "$PID_FILE" ]; then
+    p="$(cat "$PID_FILE" 2>/dev/null || true)"
+    [ -n "$p" ] && kill -0 "$p" 2>/dev/null && return 0
+  fi
+  return 1
+}
+
+start() {
+  if is_running; then
+    echo "$SERVICE_NAME already running (pid $(cat "$PID_FILE"))"
+    return 0
+  fi
+  rm -f "$PID_FILE"
+  "$BIN_DIR/start.sh" >/dev/null 2>&1
+  rc=$?
+  if [ $rc -eq 0 ] && is_running; then
+    echo "$SERVICE_NAME started"
+    return 0
+  fi
+  echo "$SERVICE_NAME start failed (rc=$rc), see $INSTALL_DIR/logs/backend.log" >&2
+  return 1
+}
+
+stop() {
+  if ! is_running; then
+    rm -f "$PID_FILE"
+    echo "$SERVICE_NAME not running"
+    return 0
+  fi
+  "$BIN_DIR/stop.sh" >/dev/null 2>&1
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    is_running || break
+    sleep 1
+  done
+  if is_running; then
+    echo "$SERVICE_NAME still running after 10s (pid $(cat "$PID_FILE"))" >&2
+    return 1
+  fi
+  echo "$SERVICE_NAME stopped"
+  return 0
+}
+
+case "$1" in
+  start)
+    start
+    ;;
+  stop)
+    stop
+    ;;
+  restart|force-reload|try-restart)
+    stop
+    start
+    ;;
+  status)
+    if is_running; then
+      echo "$SERVICE_NAME running (pid $(cat "$PID_FILE"))"
+      exit 0
+    fi
+    echo "$SERVICE_NAME not running"
+    exit 3
+    ;;
+  reload)
+    is_running && kill -HUP "$(cat "$PID_FILE")" 2>/dev/null && exit 0
+    exit 1
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart|status|reload}" >&2
+    exit 2
+    ;;
+esac
+exit $?

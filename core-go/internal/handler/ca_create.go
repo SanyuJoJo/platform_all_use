@@ -18,12 +18,12 @@ import (
 //
 // ★ 证书路径改造：
 //   - output_dir 非空时走新规范：
-//       <output_dir>/<pubkey_sm3>.cert.pem
-//       <output_dir>/<pubkey_sm3>.key.pem       白盒密文（密钥内嵌二进制）
-//       <output_dir>/<hash>.0                   rehash 软链（★ 本次补上）
+//     <output_dir>/<pubkey_sm3>.cert.pem
+//     <output_dir>/<pubkey_sm3>.key.pem       白盒密文（密钥内嵌二进制）
+//     <output_dir>/<hash>.0                   rehash 软链（★ 本次补上）
 //     响应 cert_path 为绝对路径；同时返回 pubkey_sm3 / key_path。
 //   - output_dir 为空时保持旧行为：
-//       <CoreRoot>/data/ca/<ca_id>.pem
+//     <CoreRoot>/data/ca/<ca_id>.pem
 //     私钥走 keystore，响应返回 key_ref。
 type CACreateHandler struct{}
 
@@ -111,7 +111,12 @@ func (h *CACreateHandler) Execute(
 
 	// ---------- 生成 CA 证书 ----------
 	subjArg := subjectToOpenSSL(subject)
-	digest := digestForAlgorithm(alg)
+	digest, derr := pickDigest(req.Params, alg)
+	if derr != nil {
+		audit.Log(req, "ca.create", start, "FAILED", "INVALID_PARAM")
+		return genErr("INVALID_PARAM", derr.Error())
+	}
+	digestID := resolvedDigestID(req.Params, digest)
 
 	client, err := openssl.NewClient()
 	if err != nil {
@@ -194,9 +199,10 @@ func (h *CACreateHandler) Execute(
 
 	// ---------- 响应 ----------
 	data := map[string]interface{}{
-		"ca_id":     caID,
-		"cert_path": certRespPath,
-		"serial":    serial,
+		"ca_id":            caID,
+		"cert_path":        certRespPath,
+		"serial":           serial,
+		"digest_algorithm": digestID,
 	}
 	if useNewLayout {
 		data["pubkey_sm3"] = pubKeySM3

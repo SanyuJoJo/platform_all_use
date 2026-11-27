@@ -58,6 +58,12 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
 			middleware.RequirePermission("crypto:operation:execute"),
 			h.ListAlgorithms,
 		)
+
+		// ★ 摘要算法清单（按公钥算法族返回可选摘要）
+		crypto.GET("/digests",
+			middleware.RequirePermission("crypto:operation:execute"),
+			h.ListDigests,
+		)
 	}
 
 	// ---- 任务路由 ----
@@ -88,6 +94,45 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
 //	}
 func (h *Handler) ListAlgorithms(c *gin.Context) {
 	response.Success(c, gin.H{"items": ListAlgorithms()}, "success")
+}
+
+// digestOptionsByFamily 摘要算法按公钥算法族的可用性（与 core-go 的
+// digest_policy.go 保持一致）：
+//
+//	SM2（密钥位数 256） → 仅 SM3
+//	RSA / ECC          → SHA1 / SHA224 / SHA256 / SHA384 / SHA512
+//	PQC（ML-DSA / SLH-DSA / Falcon）→ 不可另行指定，摘要即子算法本身
+func digestOptionsByFamily() map[string][]string {
+	return map[string][]string{
+		"SM2": {"SM3"},
+		"RSA": {"SHA1", "SHA224", "SHA256", "SHA384", "SHA512"},
+		"ECC": {"SHA1", "SHA224", "SHA256", "SHA384", "SHA512"},
+		"PQC": {},
+	}
+}
+
+// ListDigests 返回摘要算法可选项（供前端渲染下拉框）。
+//
+// 响应结构：
+//
+//	{
+//	  "code": "SUCCESS",
+//	  "data": {
+//	    "all": ["SM3","SHA1","SHA224","SHA256","SHA384","SHA512"],
+//	    "by_family": {"SM2":["SM3"],"RSA":[...],"ECC":[...],"PQC":[]},
+//	    "weak": ["SHA1"]            // 如需在 UI 中标注“已不安全”
+//	  }
+//	}
+//
+// 弱摘要不再通过环境变量开关，而是按算法族约束：RSA/ECC 下 SHA1 可选，
+// SM2 下只能 SM3。前端可直接展示“该算法可用列表”。
+func (h *Handler) ListDigests(c *gin.Context) {
+	byFamily := digestOptionsByFamily()
+	response.Success(c, gin.H{
+		"all":       []string{"SM3", "SHA1", "SHA224", "SHA256", "SHA384", "SHA512"},
+		"by_family": byFamily,
+		"weak":      []string{"SHA1"},
+	}, "success")
 }
 
 // Execute 执行密码操作。
