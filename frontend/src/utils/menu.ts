@@ -61,6 +61,35 @@ export function buildMenuTree(nodes: RouteNode[]): MenuNode[] {
   return out
 }
 
+/** 展平后的可跳转菜单项 */
+export interface FlatMenuLeaf {
+  label: string
+  path: string
+  icon?: string
+  group?: string
+}
+
+/** 展平菜单树，仅保留可跳转的叶子节点（用于搜索、快捷入口等） */
+export function flattenMenuLeaves(
+  nodes: MenuNode[],
+  parents: string[] = [],
+): FlatMenuLeaf[] {
+  const out: FlatMenuLeaf[] = []
+  for (const node of nodes) {
+    if (node.children?.length) {
+      out.push(...flattenMenuLeaves(node.children, [...parents, node.label]))
+    } else if (node.path) {
+      out.push({
+        label: node.label,
+        path: node.path,
+        icon: node.icon,
+        group: parents.join(' / '),
+      })
+    }
+  }
+  return out
+}
+
 /** 找到第一个可访问的菜单页面路径（用于根路径重定向） */
 export function findFirstMenuPath(nodes: RouteNode[]): string | null {
   for (const node of nodes) {

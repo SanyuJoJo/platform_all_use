@@ -219,6 +219,20 @@ func applyCoreAlgorithmMapping(params map[string]interface{}) {
 		params["key_params"] = kp
 	}
 
+	// ★ RSA 位数兜底：core 的 genPrivateKey 只读 key_params.key_size/bits，
+	//   而部分调用方（如前端 ca.create）只传 algorithm="RSA4096" 不带 key_params，
+	//   会导致 core 静默降级为 2048。这里按注册表 KeyBits 显式写回。
+	if spec.Family == "RSA" && spec.KeyBits > 0 {
+		kp := cloneKeyParams(params["key_params"])
+		if _, ok := kp["bits"]; !ok {
+			kp["bits"] = spec.KeyBits
+		}
+		if _, ok := kp["key_size"]; !ok {
+			kp["key_size"] = spec.KeyBits
+		}
+		params["key_params"] = kp
+	}
+
 	log.Debug().
 		Str("platform_id", spec.ID).
 		Str("core_name", coreAlg).

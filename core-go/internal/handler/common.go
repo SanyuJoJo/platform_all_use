@@ -186,9 +186,10 @@ func genErr(code, msg string) *envelope.Response {
 // genPrivateKey 生成私钥。
 //
 // ★ 字段兼容：
-//   - RSA 位数：优先 key_params.key_size，回退 key_params.bits，再回退 2048；
+//   - RSA 位数：优先 key_params.key_size，回退 key_params.bits，
+//     再回退顶层 bits / key_size / key_bits，最后回退 2048；
 //     平台侧 DefaultParams 用 "bits"，core 原代码读 "key_size"，
-//     不兼容会导致选 RSA4096 实际生成 RSA2048。
+//     不兼容会导致选 RSA4096 实际生成 RSA2048。详见 rsaBitsFromParams。
 //   - PQC 参数集：优先 key_params.parameter，回退 key_params.param_set；
 //     平台侧 DefaultParams 用 "param_set"，core 原代码读 "parameter"，
 //     不兼容会导致选 ML-DSA-44 实际生成 ML-DSA-65（默认值）。
@@ -226,13 +227,7 @@ func genPrivateKey(ctx context.Context, alg string, params map[string]interface{
 		_, err = client.Run(ctx, "genpkey", "-algorithm", "SM2", "-out", out)
 
 	case "RSA":
-		bits := intParam(kp, "key_size", 0)
-		if bits == 0 {
-			bits = intParam(kp, "bits", 0)
-		}
-		if bits == 0 {
-			bits = 2048
-		}
+		bits := rsaBitsFromParams(params)
 		_, err = client.Run(ctx, "genpkey", "-algorithm", "RSA",
 			"-pkeyopt", fmt.Sprintf("rsa_keygen_bits:%d", bits), "-out", out)
 
@@ -265,6 +260,80 @@ func genPrivateKey(ctx context.Context, alg string, params map[string]interface{
 		_ = os.Chmod(out, 0600)
 	}
 	return err
+}
+
+// rsaBitsFromParams 解析 RSA 密钥位数，兼容多种字段名与位置。
+//
+// 解析顺序（先命中先返回）：
+//  1. key_params.key_size  —— core 原始字段
+//  2. key_params.bits      —— 平台 DefaultParams 字段
+//  3. 顶层 key_size / bits —— 部分调用方（如 ca.create）直接把位数摊平在 params 上
+//  4. 平台算法 ID 推导      —— algorithm=RSA4096 / RSA2048 / RSA1024
+//  5. 兜底 2048
+//
+// 为什么要第 4 步：
+//
+//	平台侧 ca.create 只透传 algorithm="RSA4096"，**不写 key_params**，
+//	core 只读 key_params.key_size 会静默降级为 2048 —— 即"选 4096 实得 2048"。
+//	必须从算法 ID 反推位数，才能与用户选择保持一致。
+func rsaBitsFromParams(params map[string]interface{}) int {
+	if params == nil {
+		return 2048
+	}
+
+	// 1/2：key_params 内
+	kp := map[string]interface{}{}
+	if raw, ok := params["key_params"].(map[string]interface{}); ok {
+		kp = raw
+	}
+	if bits := intParam(kp, "key_size", 0); bits > 0 {
+		return bits
+	}
+	if bits := intParam(kp, "bits", 0); bits > 0 {
+		return bits
+	}
+
+	// 3：顶层
+	if bits := intParam(params, "key_size", 0); bits > 0 {
+		return bits
+	}
+	if bits := intParam(params, "bits", 0); bits > 0 {
+		return bits
+	}
+	if bits := intParam(params, "key_bits", 0); bits > 0 {
+		return bits
+	}
+
+	// 4：算法 ID 推导（RSA4096 → 4096）
+	alg := strParam(params, "algorithm")
+	if len(alg) > 3 && strings.EqualFold(alg[:3], "RSA") {
+		if bits := atoiSafe(alg[3:]); bits > 0 {
+			return bits
+		}
+	}
+
+	// 5：兜底
+	return 2048
+}
+
+// atoiSafe 宽松解析十进制数字串，失败返回 0。
+func atoiSafe(s string) int {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	n := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < '0' || c > '9' {
+			return 0
+		}
+		n = n*10 + int(c-'0')
+		if n > 1_000_000 {
+			return 0
+		}
+	}
+	return n
 }
 
 // pqcParamSet 读取 PQC 参数集，兼容 parameter / param_set 两种字段名。
